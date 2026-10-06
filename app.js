@@ -1,7 +1,36 @@
 // Isi dari Supabase: Project Settings > API. Kosong = mode demo.
-const SUPABASE_URL = '', SUPABASE_KEY = '';
-const sb = SUPABASE_URL && window.supabase ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
+const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
+const SECURE_LOGIN_FUNCTION = 'secure-login';
+const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } })
+  : null;
 const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLocaleString('id-ID');
+
+const ROLE_ACCESS = {
+  admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','akun','audit','profil']),
+  pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
+  staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
+  mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil'])
+};
+
+const ROLE_LABEL = {
+  admin: 'Administrator',
+  pembimbing: 'Pembimbing',
+  staf_keuangan: 'Staf Keuangan',
+  mahasiswa: 'Mahasiswa'
+};
+
+function canAccessView(view) {
+  if (view === 'ganti_sandi') return true;
+  if (view === 'profil') return true;
+  const role = S.user?.peran || '';
+  return ROLE_ACCESS[role]?.has(view) === true;
+}
+
+function roleLabel(role) {
+  return ROLE_LABEL[role] || 'Peran tidak dikenal';
+}
 const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
 
 // State Global
@@ -89,6 +118,10 @@ function saveLocalProfile() {
 
 function navigate(view, push=true) {
   if (!view || view === S.view) return render();
+  if (!canAccessView(view)) {
+    toast('Akses ditolak untuk role ' + roleLabel(S.user?.peran));
+    return;
+  }
   if (push) S.history.push(S.view);
   S.view = view;
   render();
@@ -216,16 +249,26 @@ async function hydrateUser(authUser) {
     const { data } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
     profile = data || {};
   }
+  const role = profile.peran || authUser.user_metadata?.peran || '';
+  if (!ROLE_ACCESS[role]) {
+    await sb?.auth.signOut();
+    resetClientState();
+    $('#app').hidden = true;
+    $('#login').hidden = false;
+    $('#le').textContent = 'Akun tidak memiliki role yang valid. Hubungi administrator.';
+    return;
+  }
+
   S.user = {
     id: authUser.id,
     nama: profile.nama || authUser.user_metadata?.nama || authUser.email?.split('@')[0] || 'Pengguna',
     email: profile.email || authUser.email || '',
     nim: profile.nim || authUser.user_metadata?.nim || '',
-    peran: profile.peran || authUser.user_metadata?.peran || 'mahasiswa',
+    peran: role,
     avatar_url: profile.avatar_url || authUser.user_metadata?.avatar_url || '',
     wajib_ganti_sandi: !!profile.wajib_ganti_sandi
   };
-  loadLocalProfile();
+  if (!sb) loadLocalProfile();
   // Drop every account-scoped collection before loading the new identity.
   // This prevents the previous account's data from flashing or remaining in memory.
   S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
@@ -238,13 +281,7 @@ async function hydrateUser(authUser) {
   } else {
     S.view = 'beranda';
   }
-  if (sb) await loadProker();
-  else if (!S.proker.length) {
-    S.proker = [
-      { id:1, nama:'Pelatihan Kader Dasar', ketua:'Andi Pratama', jenis:'mandiri', mulai:'2026-10-12', ajuan:8500000, cair:5000000, status:'berjalan' },
-      { id:2, nama:'Seminar Kesehatan Mental', ketua:'Siti Rahma', jenis:'kolaboratif', mulai:'2026-10-16', ajuan:12000000, cair:6000000, status:'proposal_diajukan' }
-    ];
-  }
+  await loadProker();
   await loadNotifications();
   render();
 }
@@ -320,8 +357,10 @@ function previewAvatar(file) {
 
 async function initAuth() {
   if (!sb) {
-    loadLocalProfile();
-    render();
+    $('#login').hidden = false;
+    $('#app').hidden = true;
+    $('#le').textContent = 'Login dinonaktifkan sampai SUPABASE_URL dan SUPABASE_ANON_KEY/PUBLISHABLE_KEY dikonfigurasi.';
+    renderShell();
     return;
   }
   const { data } = await sb.auth.getSession();
@@ -350,15 +389,18 @@ function renderShell() {
     $('#nav').innerHTML = '';
     $('#bn').innerHTML = '';
   } else {
-    $('#nav').innerHTML = MENU.map(([g, it]) =>
-      '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
-      it.map(([k, t]) =>
-        '<button class="nav flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm transition ' +
-        (S.view === k ? 'bg-sima-50 text-sima-600 font-bold' : 'text-slate-600 hover:bg-slate-50') +
-        '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
-      ).join('')
-    ).join('');
+    $('#nav').innerHTML = MENU.map(([g, it]) => {
+      const allowed = it.filter(([k]) => canAccessView(k));
+      if (!allowed.length) return '';
+      return '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
+        allowed.map(([k, t]) =>
+          '<button class="nav flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm transition ' +
+          (S.view === k ? 'bg-sima-50 text-sima-600 font-bold' : 'text-slate-600 hover:bg-slate-50') +
+          '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
+        ).join('');
+    }).join('');
     $('#bn').innerHTML = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
+      .filter(([k]) => canAccessView(k))
       .map(([k,t]) => '<button class="' + (k === 'form'
         ? 'fab bg-sima-600 text-white w-11 h-11 rounded-full text-xl -mt-5 shadow-lg'
         : 'px-2 py-2 text-[11px] ' + (S.view === k ? 'text-sima-600 font-bold' : 'text-slate-500')) +
@@ -524,42 +566,48 @@ function bacaCSV(file) {
 }
 
 async function prosesBulkCSV() {
-  const tempSb = getTempSb();
+  if (!sb) return toast('Supabase belum dikonfigurasi.');
+  if (S.user.peran !== 'admin') return toast('Hanya administrator yang boleh membuat akun.');
+
   let sukses = 0, gagal = 0;
-  const defaultPw = 'SIMA2026';
-  
+  const credentials = [];
+
   for (const row of S.csvData) {
     const [nama, email, nim, peran, orgNama, jabatan] = row;
-    if (!email || !nama) { gagal++; continue; }
+    if (!email || !nama || !nim) { gagal++; continue; }
 
-    // 1. Buat akun di Auth
-    const { data, error } = await tempSb.auth.signUp({
-      email: email,
-      password: defaultPw,
-      options: { data: { nama, nim, peran: peran || 'mahasiswa' } }
-    });
+    try {
+      const { data, error } = await sb.functions.invoke('admin-create-user', {
+        body: {
+          nama,
+          email: email.trim().toLowerCase(),
+          nim,
+          peran: peran || 'mahasiswa',
+          organisasi: orgNama || '',
+          jabatan: jabatan || 'Anggota'
+        }
+      });
 
-    if (error) { console.error(error); gagal++; continue; }
-
-    // 2. Jika ada Organisasi, daftarkan ke keanggotaan
-    if (orgNama && data.user) {
-      const { data: org } = await sb.from('organisasi').select('id').eq('nama', orgNama).single();
-      if (org) {
-        await sb.from('keanggotaan').insert({
-          akun_id: data.user.id,
-          organisasi_id: org.id,
-          jabatan: jabatan || 'Anggota',
-          status: 'aktif'
-        });
+      if (error || !data?.ok) {
+        console.error(error || data);
+        gagal++;
+        continue;
       }
+
+      credentials.push({ nama, email, temporary_password:data.temporary_password });
+      sukses++;
+    } catch (error) {
+      console.error(error);
+      gagal++;
     }
-    sukses++;
   }
-  
-  toast(`Selesai: ${sukses} sukses, ${gagal} gagal.`);
+
+  toast('Selesai: ' + sukses + ' sukses, ' + gagal + ' gagal. Password sementara unik hanya ditampilkan saat pembuatan.');
+  console.table(credentials);
   S.csvData = [];
   render();
 }
+
 
 // --- Event Listeners ---
 document.addEventListener('click', async e => {
@@ -652,17 +700,77 @@ document.addEventListener('click', e => {
 
 document.addEventListener('submit', async e => {
   // Form Login
-  if (e.target.id === 'fl') { 
+  if (e.target.id === 'fl') {
     e.preventDefault();
-    if (sb) { 
-      const { data: authData, error: authError } = await sb.auth.signInWithPassword({ email:$('#em').value.trim(), password:$('#pw').value }); 
-      if (authError) return $('#le').textContent = 'Email atau kata sandi salah.';
-      await hydrateUser(authData.user);
-      return;
+
+    const email = $('#em').value.trim().toLowerCase();
+    const password = $('#pw').value;
+    const submitBtn = e.target.querySelector('button[type="submit"], .btn.full');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Memverifikasi...';
     }
-    S.user = { ...S.user, email:$('#em').value.trim(), nama:$('#em').value.trim().split('@')[0] || 'Pengguna' };
-    loadLocalProfile();
-    await hydrateUser({ id:'demo-' + S.user.email, email:S.user.email, user_metadata:{} });
+
+    try {
+      if (!sb || !SUPABASE_URL || !SUPABASE_KEY) {
+        $('#le').textContent = 'Login dinonaktifkan: konfigurasi Supabase belum dipasang. Mode login sembarang sudah dimatikan.';
+        return;
+      }
+
+      const response = await fetch(SUPABASE_URL + '/functions/v1/' + SECURE_LOGIN_FUNCTION, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 429) {
+        const retry = Number(payload.retry_after || response.headers.get('Retry-After') || 900);
+        const minutes = Math.max(1, Math.ceil(retry / 60));
+        $('#le').textContent = 'Terlalu banyak percobaan login. Coba lagi dalam ' + minutes + ' menit.';
+        return;
+      }
+
+      if (!response.ok) {
+        $('#le').textContent = payload.error === 'SERVER_NOT_CONFIGURED'
+          ? 'Server login belum dikonfigurasi.'
+          : payload.error === 'RATE_LIMIT_UNAVAILABLE'
+            ? 'Sistem keamanan login sedang tidak tersedia. Coba lagi nanti.'
+            : 'Email atau kata sandi salah.';
+        return;
+      }
+
+      if (!payload.session?.access_token || !payload.session?.refresh_token) {
+        $('#le').textContent = 'Sesi login tidak valid.';
+        return;
+      }
+
+      const { data: sessionData, error: sessionError } = await sb.auth.setSession({
+        access_token: payload.session.access_token,
+        refresh_token: payload.session.refresh_token
+      });
+
+      if (sessionError || !sessionData.session?.user) {
+        $('#le').textContent = 'Gagal membuat sesi akun.';
+        return;
+      }
+
+      $('#le').textContent = '';
+      $('#pw').value = '';
+      await hydrateUser(sessionData.session.user);
+    } catch (error) {
+      console.error(error);
+      $('#le').textContent = 'Login tidak dapat diproses. Pastikan secure-login Edge Function sudah aktif.';
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Masuk';
+      }
+    }
     return;
   }
 
@@ -694,18 +802,28 @@ document.addEventListener('submit', async e => {
   // Form Buat Akun Tunggal
   if (e.target.id === 'form-akun') {
     e.preventDefault();
-    const nama = $('#an-nama').value, email = $('#an-email').value, nim = $('#an-nim').value, peran = $('#an-peran').value;
-    
-    const tempSb = getTempSb();
-    tempSb.auth.signUp({
-      email, password: 'SIMA2026',
-      options: { data: { nama, nim, peran } }
-    }).then(({ error }) => {
-      if (error) return toast('Gagal: ' + error.message);
-      toast('Akun berhasil dibuat. Password default: SIMA2026');
+    if (S.user.peran !== 'admin') return toast('Hanya administrator yang boleh membuat akun.');
+
+    const input = {
+      nama: $('#an-nama').value.trim(),
+      email: $('#an-email').value.trim().toLowerCase(),
+      nim: $('#an-nim').value.trim(),
+      peran: $('#an-peran').value,
+      organisasi: '',
+      jabatan: 'Anggota'
+    };
+
+    try {
+      const { data, error } = await sb.functions.invoke('admin-create-user', { body: input });
+      if (error || !data?.ok) return toast(data?.error || error?.message || 'Gagal membuat akun.');
+      toast('Akun dibuat. Password sementara: ' + data.temporary_password);
       e.target.reset();
-    });
+    } catch (error) {
+      toast('Gagal membuat akun: ' + error.message);
+    }
+    return;
   }
+
 
   // Form Profil
   if (e.target.id === 'form-profile') {
