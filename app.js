@@ -110,7 +110,7 @@ const MENU = [
   ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['struktur','Struktur dan anggota']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
   ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Pencairan dan verifikasi']]],
-  ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Unit kerja'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
+  ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Struktur organisasi'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
 ];
 
 // --- Fungsi Utilitas ---
