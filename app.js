@@ -170,7 +170,7 @@ function storageAdminBanner() {
   if(warning){
     return '<div class="card mb-4 border border-amber-200 bg-amber-50"><div class="flex items-start justify-between gap-3"><div><h3 class="!text-amber-900">Peringatan penyimpanan</h3><p class="sub !text-amber-800">Storage SIMA sudah mencapai <b>'+formatStorageBytes(used)+'</b>. Peringatan dimulai pada 900 MB. Batas aman internal '+formatStorageBytes(hard)+'.</p></div><span class="chip wa">'+percent+'%</span></div><div class="mt-3 h-2 rounded-full bg-amber-100 overflow-hidden"><div class="h-full bg-amber-500" style="width:'+percent+'%"></div></div></div>';
   }
-  return '<div class="card mb-4 border border-slate-200 bg-slate-50"><div class="flex items-center justify-between gap-3"><div><h3>Storage SIMA</h3><p class="sub">Terpakai <b>'+formatStorageBytes(used)+'</b> · batas aman '+formatStorageBytes(hard)+'</p></div><span class="chip bl">'+percent+'%</span></div><div class="mt-3 h-2 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-blue-600" style="width:'+percent+'%"></div></div></div>';
+  return '';
 }
 
 
