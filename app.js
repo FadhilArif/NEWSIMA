@@ -904,237 +904,239 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#backBtn')) return goBack();
 
   if (e.target.closest('#notifBtn')) {
-    $('#notifPanel').hidden = !$('#notifPanel').hidden;
-    $('#profileMenu').hidden = true;
+    const p=$('#notifPanel');
+    if(p)p.hidden=!p.hidden;
+    const m=$('#profileMenu'); if(m)m.hidden=true;
     return;
   }
 
   if (e.target.closest('#profileBtn')) {
-    $('#profileMenu').hidden = !$('#profileMenu').hidden;
-    $('#notifPanel').hidden = true;
+    const m=$('#profileMenu');
+    if(m)m.hidden=!m.hidden;
+    const p=$('#notifPanel'); if(p)p.hidden=true;
     return;
   }
 
-  const notif = e.target.closest('[data-notif]');
-  if (notif) {
-    if (notif.dataset.notif === 'read-all') {
-      S.notifications.forEach(n => n.read = true);
-      if (sb && S.user.id) {
-        try { await sb.from('notifikasi').update({ dibaca:true }).eq('akun_id', S.user.id); } catch (_) {}
-      }
+  const notif=e.target.closest('[data-notif]');
+  if(notif){
+    if(notif.dataset.notif==='read-all'){
+      S.notifications.forEach(n=>n.read=true);
+      if(sb&&S.user.id) await sb.from('notifikasi').update({dibaca:true}).eq('akun_id',S.user.id);
       renderNotificationPanel();
       return;
     }
-    if (notif.dataset.notif === 'open') {
-      const n = S.notifications.find(x => String(x.id) === String(notif.dataset.id));
-      if (n) {
-        n.read = true;
-        if (sb && n.id) {
-          try { await sb.from('notifikasi').update({ dibaca:true }).eq('id', n.id).eq('akun_id', S.user.id); } catch (_) {}
-        }
-        $('#notifPanel').hidden = true;
-        if (n.view) navigate(n.view);
+    if(notif.dataset.notif==='open'){
+      const n=S.notifications.find(x=>String(x.id)===String(notif.dataset.id));
+      if(n){
+        n.read=true;
+        if(sb&&n.id) await sb.from('notifikasi').update({dibaca:true}).eq('id',n.id).eq('akun_id',S.user.id);
+        if($('#notifPanel'))$('#notifPanel').hidden=true;
+        if(n.view)navigate(n.view);
         else renderNotificationPanel();
       }
       return;
     }
   }
 
-  const profileAction = e.target.closest('[data-profile-action]');
-  if (profileAction) {
-    $('#profileMenu').hidden = true;
-    if (profileAction.dataset.profileAction === 'profile') return navigate('profil');
-    if (profileAction.dataset.profileAction === 'logout') return logout();
+  const profileAction=e.target.closest('[data-profile-action]');
+  if(profileAction){
+    if($('#profileMenu'))$('#profileMenu').hidden=true;
+    if(profileAction.dataset.profileAction==='profile')return navigate('profil');
+    if(profileAction.dataset.profileAction==='logout')return logout();
   }
 
-  const go = e.target.closest('[data-go]'); 
-  if (go) { return navigate(go.dataset.go); }
-  
-  const tab = e.target.closest('[data-tab]'); 
-  if (tab) { S.tab = tab.dataset.tab; return render(); }
-  
-  if (e.target.id === 'tp') { pesertaRow(); return hitung(); }
-  if (e.target.closest('[data-del]')) { e.target.closest('.peserta').remove(); return hitung(); }
-  if (e.target.id === 'btn-csv') { prosesBulkCSV(); return; }
+  const collab=e.target.closest('[data-collab-action]');
+  if(collab){
+    if(!sb)return toast('Supabase belum tersedia.');
+    const status=collab.dataset.collabAction;
+    const {error}=await sb.from('proker_kolaborator')
+      .update({status})
+      .eq('proker_id',collab.dataset.prokerId)
+      .eq('organisasi_id',collab.dataset.orgId);
+    if(error)return toast('Gagal memperbarui undangan: '+error.message);
+    toast(status==='bergabung'?'Undangan diterima.':'Undangan ditolak.');
+    return render();
+  }
 
-  const act = e.target.closest('[data-act]');
-  if (act) {
-    const k = $('#kk').value.trim();
-    if (act.dataset.act === 'revisi' && !k) return $('#ke').textContent = 'Komentar wajib diisi saat meminta revisi.';
-    $('#ke').textContent = '';
-    if (sb) { 
-      const { error } = await sb.from('persetujuan').insert({ dokumen_id:S.dokId, tahap:'koordinator', keputusan:act.dataset.act, komentar:k }); 
-      if (error) return toast(error.message); 
+  const reviewDoc=e.target.closest('[data-review-doc]');
+  if(reviewDoc){
+    S.reviewDocId=reviewDoc.dataset.reviewDoc;
+    toast('Dokumen dipilih untuk ditinjau.');
+    return;
+  }
+
+  const prokerRef=e.target.closest('[data-proker-id]');
+  if(prokerRef) S.selectedProkerId=prokerRef.dataset.prokerId;
+
+  const go=e.target.closest('[data-go]');
+  if(go)return navigate(go.dataset.go);
+
+  const tab=e.target.closest('[data-tab]');
+  if(tab){S.tab=tab.dataset.tab;return render();}
+
+  if(e.target.id==='tp'){pesertaRow();return hitung();}
+  if(e.target.closest('[data-del]')){e.target.closest('.peserta')?.remove();return hitung();}
+  if(e.target.id==='btn-csv')return prosesBulkCSV();
+
+  const act=e.target.closest('[data-act]');
+  if(act){
+    const k=($('#kk')?.value||'').trim();
+    if(act.dataset.act==='revisi'&&!k){if($('#ke'))$('#ke').textContent='Komentar wajib diisi saat meminta revisi.';return;}
+    const docId=S.reviewDocId || S.detail?.docs?.find(d=>d.jenis==='proposal')?.id;
+    if(!docId)return toast('Tidak ada dokumen proposal yang dapat direview.');
+    if(sb){
+      const payload={dokumen_id:docId,tahap:'koordinator',keputusan:act.dataset.act,komentar:k,oleh:S.user.id,sebagai:S.user.peran};
+      const {error}=await sb.from('persetujuan').insert(payload);
+      if(error)return toast(error.message);
     }
-    toast({ revisi:'Dokumen dikembalikan untuk revisi', teruskan:'Diteruskan ke tahap berikutnya', setuju:'Dokumen disetujui' }[act.dataset.act]); 
-    navigate('inbox');
+    toast({revisi:'Dokumen dikembalikan untuk revisi',teruskan:'Diteruskan ke tahap berikutnya',setuju:'Dokumen disetujui'}[act.dataset.act]||'Tindakan tersimpan');
+    return render();
   }
 });
 
-document.addEventListener('input', e => { 
-  if (e.target.id === 'q') { S.q = e.target.value; render(); $('#q').focus(); } 
-  if (e.target.closest('#kb')) hitung(); 
+document.addEventListener('input', e => {
+  if(e.target.id==='q'){
+    S.q=e.target.value;
+    clearTimeout(S.searchTimer);
+    S.searchTimer=setTimeout(()=>render(),220);
+  }
+  if(e.target.closest('#kb'))hitung();
 });
 
-document.addEventListener('change', e => { 
-  if (e.target.name === 'pengajuan') $('#kb').hidden = e.target.value !== 'kolaboratif'; 
-  if (e.target.id === 'cx') { S.ctx = +e.target.value; render(); } 
-  if (e.target.id === 'csv-file') { bacaCSV(e.target.files[0]); }
-  if (e.target.id === 'profileAvatar') previewAvatar(e.target.files[0]);
+document.addEventListener('change', e => {
+  if(e.target.name==='pengajuan'){
+    const kb=$('#kb'); if(kb)kb.hidden=e.target.value!=='kolaboratif';
+    if(e.target.value==='kolaboratif'&&!document.querySelector('.peserta'))pesertaRow(true);
+  }
+  if(e.target.id==='cx'){
+    S.ctx=Number(e.target.value);
+    S.orgId=S.ctxs[S.ctx]?.orgId||null;
+    S.selectedProkerId=null;
+    return render();
+  }
+  if(e.target.id==='csv-file'&&e.target.files[0])bacaCSV(e.target.files[0]);
+  if(e.target.id==='profileAvatar')previewAvatar(e.target.files[0]);
 });
 
 document.addEventListener('click', e => {
-  if (!e.target.closest('#notifWrap')) $('#notifPanel').hidden = true;
-  if (!e.target.closest('#profileWrap')) $('#profileMenu').hidden = true;
+  if(!e.target.closest('#notifWrap'))$('#notifPanel').hidden=true;
+  if(!e.target.closest('#profileWrap'))$('#profileMenu').hidden=true;
 });
 
 document.addEventListener('submit', async e => {
-  // Form Login
-  if (e.target.id === 'fl') {
+  if(e.target.id==='fl'){
     e.preventDefault();
-
-    const email = $('#em').value.trim().toLowerCase();
-    const password = $('#pw').value;
-    const submitBtn = e.target.querySelector('button[type="submit"], .btn.full');
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Memverifikasi...';
-    }
-
-    try {
-      if (!sb || !SUPABASE_URL || !SUPABASE_KEY) {
-        $('#le').textContent = 'Login dinonaktifkan: konfigurasi Supabase belum dipasang. Mode login sembarang sudah dimatikan.';
+    const email=$('#em').value.trim().toLowerCase(), password=$('#pw').value;
+    const submitBtn=e.target.querySelector('button[type="submit"], .btn.full');
+    if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memverifikasi...';}
+    try{
+      if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
+      const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
+      const payload=await response.json().catch(()=>({}));
+      if(response.status===429){
+        const retry=Number(payload.retry_after||response.headers.get('Retry-After')||900);
+        return $('#le').textContent='Terlalu banyak percobaan. Coba lagi dalam '+Math.max(1,Math.ceil(retry/60))+' menit.';
+      }
+      if(!response.ok){
+        $('#le').textContent=payload.error==='RATE_LIMIT_UNAVAILABLE'?'Sistem keamanan login sedang tidak tersedia. Coba lagi nanti.':'Email atau kata sandi salah.';
         return;
       }
-
-      const response = await fetch(SUPABASE_URL + '/functions/v1/' + SECURE_LOGIN_FUNCTION, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_KEY
-        },
-        body: JSON.stringify({ email, password })
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (response.status === 429) {
-        const retry = Number(payload.retry_after || response.headers.get('Retry-After') || 900);
-        const minutes = Math.max(1, Math.ceil(retry / 60));
-        $('#le').textContent = 'Terlalu banyak percobaan login. Coba lagi dalam ' + minutes + ' menit.';
-        return;
-      }
-
-      if (!response.ok) {
-        $('#le').textContent = payload.error === 'SERVER_NOT_CONFIGURED'
-          ? 'Server login belum dikonfigurasi.'
-          : payload.error === 'RATE_LIMIT_UNAVAILABLE'
-            ? 'Sistem keamanan login sedang tidak tersedia. Coba lagi nanti.'
-            : 'Email atau kata sandi salah.';
-        return;
-      }
-
-      if (!payload.session?.access_token || !payload.session?.refresh_token) {
-        $('#le').textContent = 'Sesi login tidak valid.';
-        return;
-      }
-
-      const { data: sessionData, error: sessionError } = await sb.auth.setSession({
-        access_token: payload.session.access_token,
-        refresh_token: payload.session.refresh_token
-      });
-
-      if (sessionError || !sessionData.session?.user) {
-        $('#le').textContent = 'Gagal membuat sesi akun.';
-        return;
-      }
-
-      $('#le').textContent = '';
-      $('#pw').value = '';
-      await hydrateUser(sessionData.session.user);
-    } catch (error) {
-      console.error(error);
-      $('#le').textContent = 'Login tidak dapat diproses. Pastikan secure-login Edge Function sudah aktif.';
-    } finally {
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Masuk';
-      }
-    }
+      if(!payload.session?.access_token||!payload.session?.refresh_token)return $('#le').textContent='Sesi login tidak valid.';
+      const {data,error}=await sb.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});
+      if(error||!data.session?.user)return $('#le').textContent='Gagal membuat sesi akun.';
+      $('#le').textContent='';$('#pw').value='';
+      await hydrateUser(data.session.user);
+    }catch(error){console.error(error);$('#le').textContent='Login tidak dapat diproses. Periksa secure-login Edge Function.';}
+    finally{if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Masuk';}}
     return;
   }
 
-  // Form Proker
-  if (e.target.id === 'ff') { 
-    e.preventDefault(); 
-    const f = Object.fromEntries(new FormData(e.target)), kolab = f.pengajuan === 'kolaboratif', er = [];
-    if (!f.nama) er.push('Nama program kerja wajib diisi'); 
-    if (!f.mulai || !f.selesai) er.push('Tanggal mulai dan selesai wajib diisi'); 
-    if (f.selesai < f.mulai) er.push('Tanggal selesai tidak boleh sebelum tanggal mulai'); 
-    if (!f.tempat) er.push('Lokasi wajib diisi');
-    if (kolab && !document.querySelector('.peserta input').value) er.push('Tambahkan minimal satu organisasi peserta'); 
-    if (kolab && !hitung()) er.push('Total porsi peserta melebihi dana kampus proker');
-    
-    $('#fe').textContent = er.join('. '); 
-    if (er.length) return;
-    
-    if (sb) { 
-      const { error } = await sb.from('proker').insert({ organisasi_id:S.orgId, nama:f.nama, jenis:f.jenis, tanggal_mulai:f.mulai, tanggal_selesai:f.selesai, tempat:f.tempat, deskripsi:f.deskripsi, pengajuan:f.pengajuan }); 
-      if (error) return toast(error.message); 
-      await loadProker(); 
-    } else {
-      S.proker.unshift({ id:Date.now(), nama:f.nama, ketua:S.user.nama, jenis:f.pengajuan, mulai:f.mulai, ajuan:0, cair:0, status:'draft' });
-    }
-    toast('Draft proker tersimpan'); 
-    navigate('proker'); 
-  }
-
-  // Form Buat Akun Tunggal
-  if (e.target.id === 'form-akun') {
+  if(e.target.id==='ff'){
     e.preventDefault();
-    if (S.user.peran !== 'admin') return toast('Hanya administrator yang boleh membuat akun.');
-
-    const input = {
-      nama: $('#an-nama').value.trim(),
-      email: $('#an-email').value.trim().toLowerCase(),
-      nim: $('#an-nim').value.trim(),
-      peran: $('#an-peran').value,
-      organisasi: '',
-      jabatan: 'Anggota'
-    };
-
-    try {
-      const { data, error } = await sb.functions.invoke('admin-create-user', { body: input });
-      if (error || !data?.ok) return toast(data?.error || error?.message || 'Gagal membuat akun.');
-      toast('Akun dibuat. Password sementara: ' + data.temporary_password);
-      e.target.reset();
-    } catch (error) {
-      toast('Gagal membuat akun: ' + error.message);
+    const f=Object.fromEntries(new FormData(e.target)), kolab=f.pengajuan==='kolaboratif', errors=[];
+    const orgId=f.organisasi_id||S.orgId;
+    if(!orgId)errors.push('Pilih organisasi terlebih dahulu.');
+    if(!f.nama)errors.push('Nama program kerja wajib diisi.');
+    if(!f.mulai||!f.selesai)errors.push('Tanggal mulai dan selesai wajib diisi.');
+    if(f.selesai&&f.mulai&&f.selesai<f.mulai)errors.push('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+    if(!f.tempat)errors.push('Lokasi wajib diisi.');
+    if(kolab&&!(document.querySelector('.peserta input')?.value))errors.push('Tambahkan minimal satu organisasi peserta.');
+    if(kolab&&!hitung())errors.push('Total porsi peserta melebihi dana kampus proker.');
+    if(errors.length){$('#fe').textContent=errors.join(' ');return;}
+    const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id};
+    const {data,error}=await sb.from('proker').insert(payload).select('id').single();
+    if(error)return toast('Gagal menyimpan proker: '+error.message);
+    if(kolab&&data?.id){
+      const collabRows=[...document.querySelectorAll('.peserta')].map(row=>({proker_id:data.id,organisasi_id:row.querySelector('input')?.dataset?.orgId||null,porsi_plafon:Number(row.querySelector('input[type=number]')?.value||0),status:'diundang'})).filter(x=>x.organisasi_id);
+      if(collabRows.length){
+        const r=await sb.from('proker_kolaborator').insert(collabRows);
+        if(r.error)toast('Proker tersimpan, tetapi kolaborator gagal disimpan: '+r.error.message);
+      }
     }
-    return;
+    S.selectedProkerId=data.id;toast('Program kerja tersimpan.');return navigate('proker');
   }
 
-
-  // Form Profil
-  if (e.target.id === 'form-profile') {
-    return saveProfile(e);
-  }
-
-  // Form Ganti Sandi Wajib
-  if (e.target.id === 'form-ganti-pw') {
+  if(e.target.id==='form-akun'){
     e.preventDefault();
-    const pw = $('#pw-baru').value;
-    if (pw.length < 6) return toast('Minimal 6 karakter');
-    
-    const { error } = await sb.auth.updateUser({ password: pw });
-    if (error) return toast(error.message);
-    
-    await sb.from('profiles').update({ wajib_ganti_sandi: false }).eq('id', S.user.id);
-    S.user.wajib_ganti_sandi = false;
-    navigate('beranda', false);
-    toast('Kata sandi berhasil diperbarui');
+    if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
+    const input={nama:$('#an-nama').value.trim(),email:$('#an-email').value.trim().toLowerCase(),nim:$('#an-nim').value.trim(),peran:$('#an-peran').value,organisasi:$('#an-org').value,jabatan:$('#an-jabatan').value.trim()||'Anggota'};
+    try{
+      const {data,error}=await sb.functions.invoke('admin-create-user',{body:input});
+      if(error||!data?.ok)return toast(data?.error||error?.message||'Gagal membuat akun.');
+      toast('Akun dibuat. Password sementara: '+data.temporary_password);
+      e.target.reset();return render();
+    }catch(error){return toast('Gagal membuat akun: '+error.message);}
+  }
+
+  if(e.target.id==='form-rapat'){
+    e.preventDefault();
+    const payload={dokumen_id:$('#r-dokumen').value.trim(),nomor:Number($('#r-nomor').value||0)||null,tanggal:$('#r-tanggal').value||null,peserta:$('#r-peserta').value.trim(),notulen:$('#r-notulen').value.trim(),hasil:$('#r-hasil').value};
+    const {error}=await sb.from('rapat').insert(payload);
+    if(error)return toast('Gagal menyimpan rapat: '+error.message);
+    toast('Rapat tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-plafon'){
+    e.preventDefault();
+    const organisasi_id=$('#p-org').value,jumlah=Number($('#p-jumlah').value||0);
+    if(!organisasi_id||jumlah<0)return toast('Organisasi dan jumlah wajib valid.');
+    const {error}=await sb.from('plafon_anggaran').upsert({organisasi_id,jumlah,diinput_oleh:S.user.id,diinput_pada:new Date().toISOString()});
+    if(error)return toast('Gagal menyimpan plafon: '+error.message);
+    toast('Plafon tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-cair'){
+    e.preventDefault();
+    const proker_id=$('#c-proker').value,sumber_dana_id=$('#c-sumber').value,jumlah=Number($('#c-jumlah').value||0),tanggal=$('#c-tanggal').value||new Date().toISOString().slice(0,10),tahap=Number($('#c-tahap').value||1);
+    if(!proker_id||!sumber_dana_id||jumlah<=0)return toast('Lengkapi proker, sumber dana, dan jumlah.');
+    const {error}=await sb.from('pencairan_dana').insert({proker_id,sumber_dana_id,jumlah,tanggal,tahap,dicatat_oleh:S.user.id});
+    if(error)return toast('Gagal mencatat pencairan: '+error.message);
+    toast('Pencairan tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-periode'){
+    e.preventDefault();
+    const nama=$('#pe-nama').value.trim(),status=$('#pe-status').value,batas_lpj=$('#pe-batas').value||null;
+    if(!nama)return toast('Nama periode wajib diisi.');
+    const {error}=await sb.from('periode').insert({nama,status,batas_lpj});
+    if(error)return toast('Gagal membuat periode: '+error.message);
+    toast('Periode tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-profile')return saveProfile(e);
+
+  if(e.target.id==='form-ganti-pw'){
+    e.preventDefault();
+    const pw=$('#pw-baru').value;
+    if(pw.length<10)return toast('Password minimal 10 karakter.');
+    if(!/[A-Z]/.test(pw)||!/[a-z]/.test(pw)||!/[0-9]/.test(pw))return toast('Gunakan huruf besar, kecil, dan angka.');
+    const {error}=await sb.auth.updateUser({password:pw});
+    if(error)return toast(error.message);
+    const done=await sb.rpc('complete_password_change');
+    if(done.error)return toast('Password berubah, tetapi status wajib ganti gagal diperbarui: '+done.error.message);
+    S.user.wajib_ganti_sandi=false;
+    navigate('beranda',false);toast('Password berhasil diperbarui.');
   }
 });
-
 
 initAuth();
