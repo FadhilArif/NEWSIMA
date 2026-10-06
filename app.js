@@ -108,7 +108,7 @@ const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diaj
 const S = {
   user:{nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false},
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
-  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],pendingAvatarFile:null,
+  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
@@ -1010,19 +1010,60 @@ const V = {
       (S.reports.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Status</th><th>Tahap</th><th></th></tr></thead><tbody>'+S.reports.map(x=>'<tr><td><b>'+esc(x.proker?.nama||'-')+'</b></td><td>'+chip(x.status||'draft')+'</td><td>'+esc(x.tahap||'-')+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada laporan akhir.'));
   },
   struktur:function(){
-    const org=(S.organizations||[]).find(o=>o.id===S.orgId);
+    const isPrivileged=['admin','wakil_rektor'].includes(S.user.peran);
+    const selectedId=isPrivileged ? (S.structureOrgId||'') : (S.orgId||'');
+    const org=(S.organizations||[]).find(o=>o.id===selectedId);
     const type=org?.tipe;
-    const allowed=(S.positions||[]).filter(j=>!type || (Array.isArray(j.berlaku_tipe)&&j.berlaku_tipe.includes(type)));
-    const canClub=S.permissions?.has('club.member.manage')||['admin','wakil_rektor'].includes(S.user.peran);
-    const canUnit=S.permissions?.has('unit.manage')||['admin','wakil_rektor'].includes(S.user.peran);
+    const units=(S.units||[]).filter(x=>x.organisasi_id===selectedId);
     const parent=(S.organizations||[]).find(o=>o.id===org?.induk_organisasi_id);
-    const units=(S.units||[]).filter(x=>!S.orgId||x.organisasi_id===S.orgId);
-    return pageHeader(org?('Struktur '+org.nama):'Struktur organisasi',org?(type==='BEM'?'BEM membawahi kementerian.':type==='HMJ'?'HMJ memiliki BPH dan divisi.':type==='UKM'?'UKM memiliki BPH dan koordinator dari BEM.':'Club memiliki Ketua, Sekretaris, Bendahara, dan anggota tanpa akun.'):'Lihat struktur organisasi yang dipilih.')+
-      (org?( '<div class="card mb-4"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><small>Tipe organisasi</small><p class="font-bold mt-1">'+esc(type)+'</p></div><div><small>Induk</small><p class="font-bold mt-1">'+esc(parent?.nama||'Tidak ada')+'</p></div><div><small>Jabatan tersedia</small><p class="font-bold mt-1">'+allowed.length+'</p></div><div><small>Unit kerja</small><p class="font-bold mt-1">'+units.length+'</p></div></div></div>' ):'')+
-      '<div class="card mb-4"><div class="flex items-start justify-between gap-3 mb-4"><div><h3>Jabatan yang berlaku</h3><p class="sub mb-0">Hak akses berasal dari jabatan melalui katalog permission.</p></div></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+allowed.map(j=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><h4 class="font-bold">'+esc(j.nama)+'</h4><span class="chip bl">'+esc(j.unit_wajib?(j.unit_jenis_wajib||'unit'):'organisasi')+'</span></div><p class="text-xs text-slate-500 mt-2">'+esc(j.kode)+'</p></div>').join('')+'</div></div>'+
-      ((type==='BEM'||type==='HMJ')?'<div class="card mb-4"><div class="flex items-center justify-between gap-3 mb-3"><div><h3>Unit kerja</h3><p class="sub mb-0">'+(type==='BEM'?'BEM menggunakan Kementerian.':'HMJ menggunakan Divisi.')+'</p></div><span class="chip bl">'+units.length+' unit</span></div>'+(canUnit?'<form id="form-unit" class="rounded-2xl bg-slate-50 p-4 mb-4"><div class="f2"><div><label>Nama unit *</label><input id="u-nama" required placeholder="'+(type==='BEM'?'Contoh: KOMINFO':'Contoh: Divisi PSDM')+'"></div><div><label>Jenis</label><input id="u-jenis" value="'+(type==='BEM'?'kementerian':'divisi')+'" readonly></div></div><button class="btn mt-4">Tambah '+(type==='BEM'?'Kementerian':'Divisi')+'</button></form>':'')+(units.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><h4 class="font-bold">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+'</p></div>').join('')+'</div>':emptyCard('Belum ada unit.'))+'</div>':'')+
-      (S.structure.length?'<div class="card"><h3>Akun anggota</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+S.structure.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div><h4 class="font-bold">'+esc(x.user?.nama||'Pengguna')+'</h4><p class="sub mb-1">'+esc(x.jabatan||'-')+'</p><p class="text-sm">'+esc(x.unit?.nama||'BPH/Organisasi')+'</p></div>'+roleChip(x.user?.peran)+'</div></div>').join('')+'</div></div>':emptyCard('Belum ada akun anggota di organisasi ini.'))+
-      (type==='CLUB'?(canClub?'<form id="form-club-member" class="card mt-4"><h3>Tambah anggota Club tanpa akun</h3><div class="f2"><div><label>Nama *</label><input id="cm-nama" required></div><div><label>NIM *</label><input id="cm-nim" required></div></div><small>Anggota biasa tidak memiliki akun login.</small><button class="btn mt-4">Tambah anggota</button></form>':'')+'<div class="card mt-4"><h3>Anggota Club tanpa akun</h3>'+(S.clubMembers.length?'<div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>NIM</th></tr></thead><tbody>'+S.clubMembers.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.nim)+'</td></tr>').join('')+'</tbody></table></div>':'<p class="sub">Belum ada anggota non-akun.</p>')+'</div>':'');
+    const canUnit=isPrivileged || S.permissions?.has('unit.manage');
+    const targetOptions=(S.organizations||[])
+      .filter(o=>o.tipe==='BEM'||o.tipe==='HMJ')
+      .map(o=>'<option value="'+esc(o.id)+'" '+(String(o.id)===String(selectedId)?'selected':'')+'>'+esc(o.nama+' · '+o.tipe)+'</option>')
+      .join('');
+
+    let html=pageHeader(
+      org ? 'Struktur '+esc(org.nama) : 'Struktur organisasi',
+      org ? (type==='BEM' ? 'BEM menggunakan Kementerian.' : type==='HMJ' ? 'HMJ menggunakan Divisi.' : type==='UKM' ? 'UKM memiliki BPH dan koordinator.' : 'Club memiliki pengurus dan anggota.') : 'Pilih organisasi untuk mengelola struktur.'
+    );
+
+    if(isPrivileged){
+      html+='<div class="card mb-4"><h3>Pilih organisasi</h3><div class="f2"><div><label>Organisasi</label><select id="struktur-org"><option value="">Pilih BEM atau HMJ</option>'+targetOptions+'</select></div><div><label>Jenis unit</label><input readonly value="'+(type==='BEM'?'Kementerian':type==='HMJ'?'Divisi':'-')+'"><small>Jenis unit mengikuti tipe organisasi.</small></div></div></div>';
+    }
+
+    if(org){
+      html+='<div class="card mb-4"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3"><div><small>Tipe</small><p class="font-bold mt-1">'+esc(type)+'</p></div><div><small>Induk</small><p class="font-bold mt-1">'+esc(parent?.nama||'Tidak ada')+'</p></div><div><small>Unit kerja</small><p class="font-bold mt-1">'+units.length+'</p></div><div><small>Mode</small><p class="font-bold mt-1">'+(type==='BEM'?'Kementerian':type==='HMJ'?'Divisi':'Tanpa unit')+'</p></div></div></div>';
+
+      if((type==='BEM'||type==='HMJ')&&canUnit){
+        const label=type==='BEM'?'Kementerian':'Divisi';
+        const placeholder=type==='BEM'?'Contoh: KOMINFO':'Contoh: Divisi PSDM';
+        html+='<div class="card mb-4"><div class="flex items-center justify-between gap-3 mb-3"><div><h3>Kelola '+label+'</h3><p class="sub mb-0">Unit akan otomatis terhubung ke <b>'+esc(org.nama)+'</b>.</p></div><span class="chip bl">'+units.length+' unit</span></div><form id="form-unit" class="rounded-2xl bg-slate-50 p-4"><div class="f2"><div><label>Nama '+label+' *</label><input id="u-nama" required placeholder="'+placeholder+'"></div><div><label>Jenis unit</label><input id="u-jenis" readonly value="'+(type==='BEM'?'kementerian':'divisi')+'"></div></div><button class="btn mt-4">Simpan '+label+'</button></form></div>';
+      }
+
+      if(units.length){
+        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><h4 class="font-bold">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>').join('')+'</div></div>';
+      }else if(type==='BEM'||type==='HMJ'){
+        html+='<div class="card mb-4"><p class="sub">Belum ada '+(type==='BEM'?'Kementerian.':'Divisi.')+'</p></div>';
+      }
+
+      if(type==='BEM'){
+        html+='<div class="card mb-4"><h3>Badan Pengurus Harian BEM</h3><p class="sub">Presiden · Wakil Presiden · Sekretaris · Bendahara</p></div>';
+      }else if(type==='HMJ'){
+        html+='<div class="card mb-4"><h3>Struktur HMJ</h3><p class="sub">Ketua · Wakil Ketua · Sekretaris · Bendahara · Divisi · Ketua Divisi · Staff</p></div>';
+      }else if(type==='UKM'){
+        html+='<div class="card mb-4"><h3>Struktur UKM</h3><p class="sub">Ketua · Wakil Ketua · Sekretaris · Bendahara · Koordinator dari BEM</p></div>';
+      }else if(type==='CLUB'){
+        html+='<div class="card mb-4"><h3>Struktur Club</h3><p class="sub">Ketua · Sekretaris · Bendahara · anggota tanpa akun</p></div>';
+      }
+
+      if(S.structure.length){
+        html+='<div class="card"><h3>Akun anggota</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+S.structure.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><h4 class="font-bold">'+esc(x.user?.nama||'Pengguna')+'</h4><p class="sub mb-1">'+esc(x.jabatan||'-')+'</p><p class="text-sm">'+esc(x.unit?.nama||'BPH/Organisasi')+'</p></div>').join('')+'</div></div>';
+      }else{
+        html+='<div class="card"><p class="sub">Belum ada akun anggota pada organisasi ini.</p></div>';
+      }
+    }
+
+    return html;
   },
 
   rapat:function(){
