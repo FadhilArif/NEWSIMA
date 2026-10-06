@@ -707,6 +707,18 @@ function dateID(v) {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
 }
+const UNIT_TYPE_LABELS = {
+  presiden:'Presiden',
+  wakil_presiden:'Wakil Presiden',
+  sekretaris:'Sekretaris',
+  bendahara:'Bendahara',
+  ketua:'Ketua',
+  wakil_ketua:'Wakil Ketua',
+  kementerian:'Kementerian',
+  divisi:'Divisi'
+};
+function unitTypeLabel(type){ return UNIT_TYPE_LABELS[type] || type || '-'; }
+
 function roleChip(role) {
   const labels={admin:'Admin',wakil_rektor:'Wakil Rektor',pembimbing:'Pembimbing',staf_keuangan:'Keuangan',mahasiswa:'Mahasiswa'};
   return '<span class="chip bl">' + esc(labels[role] || role || '-') + '</span>';
@@ -816,10 +828,21 @@ const V = {
 
   unit_kerja:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
-    return pageHeader('Unit kerja','Kelola kementerian dan divisi di bawah organisasi.')+
-      (canWrite?'<form id="form-unit" class="card"><h3>Tambah unit kerja</h3><div class="f2"><div><label>Organisasi</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis</label><select id="u-jenis"><option value="kementerian">Kementerian</option><option value="divisi">Divisi</option></select></div></div><label>Nama unit</label><input id="u-nama" required><button class="btn mt-4">Simpan unit</button></form>':'')+
-      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.units.map(x=>'<div class="card"><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.jenis)+' · '+esc(x.organisasi?.nama||'-')+'</p></div>').join('')+'</div>':emptyCard('Belum ada unit kerja.'));
+    const options=[
+      ['presiden','Presiden'],
+      ['wakil_presiden','Wakil Presiden'],
+      ['sekretaris','Sekretaris'],
+      ['bendahara','Bendahara'],
+      ['ketua','Ketua'],
+      ['wakil_ketua','Wakil Ketua'],
+      ['kementerian','Kementerian'],
+      ['divisi','Divisi']
+    ];
+    return pageHeader('Unit kerja','Susun struktur pimpinan dan unit kerja di bawah organisasi.')+
+      (canWrite?'<form id="form-unit" class="card"><h3>Tambah struktur organisasi</h3><div class="f2"><div><label>Organisasi *</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis struktur *</label><select id="u-jenis" required>'+options.map(o=>'<option value="'+o[0]+'">'+o[1]+'</option>').join('')+'</select></div></div><label>Nama unit / struktur *</label><input id="u-nama" required placeholder="Contoh: Presiden BEM / Kementerian PSDM"><small>Posisi pimpinan dapat dipakai sebagai unit struktur dan kemudian dipilih saat menetapkan anggota organisasi.</small><button class="btn mt-4">Simpan struktur</button></form>':'')+
+      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+S.units.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'-')+'</p></div><span class="chip bl">'+esc(unitTypeLabel(x.jenis))+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada struktur/unit kerja.'));
   },
+
   periode:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
     return pageHeader('Periode','Tentukan siklus periode dan berapa hari batas LPJ setelah proker mulai berjalan.')+
@@ -1169,11 +1192,18 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-unit'){
     e.preventDefault();
-    const organisasi_id=$('#u-org').value,jenis=$('#u-jenis').value,nama=$('#u-nama').value.trim();
-    if(!organisasi_id||!nama)return toast('Organisasi dan nama unit wajib diisi.');
+    const organisasi_id=$('#u-org').value;
+    const jenis=$('#u-jenis').value;
+    const nama=$('#u-nama').value.trim();
+    const allowed=['presiden','wakil_presiden','sekretaris','bendahara','ketua','wakil_ketua','kementerian','divisi'];
+    if(!organisasi_id||!nama)return toast('Organisasi dan nama struktur wajib diisi.');
+    if(!allowed.includes(jenis))return toast('Jenis struktur tidak valid.');
     const {error}=await sb.from('unit_kerja').insert({organisasi_id,jenis,nama});
-    if(error)return toast('Gagal membuat unit kerja: '+error.message);
-    toast('Unit kerja tersimpan.');return render();
+    if(error){
+      if(error.code==='23505') return toast('Posisi inti tersebut sudah ada di organisasi ini.');
+      return toast('Gagal membuat struktur: '+error.message);
+    }
+    toast('Struktur organisasi tersimpan.');return render();
   }
 
   if(e.target.id==='form-periode'){
