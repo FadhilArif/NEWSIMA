@@ -226,8 +226,11 @@ async function hydrateUser(authUser) {
     wajib_ganti_sandi: !!profile.wajib_ganti_sandi
   };
   loadLocalProfile();
-  S.history = [];
-  S.ctx = 0; S.tab = 'semua'; S.q = '';
+  // Drop every account-scoped collection before loading the new identity.
+  // This prevents the previous account's data from flashing or remaining in memory.
+  S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
+  S.proker = [];
+  S.ctx = 0; S.tab = 'semua'; S.q = ''; S.orgId = null;
   $('#login').hidden = true;
   $('#app').hidden = false;
   if (S.user.wajib_ganti_sandi) {
@@ -366,6 +369,8 @@ function renderShell() {
     '<option value="' + i + '" ' + (i === S.ctx ? 'selected' : '') + '>' + esc(c.org + ' · ' + c.peran) + '</option>'
   ).join('');
 
+  $('#notifBtn').innerHTML = icon('bell');
+  $('#notifBtn').querySelector('svg')?.classList.add('w-5','h-5');
   const back = $('#backBtn');
   back.innerHTML = icon('back');
   back.className = 'h-10 w-10 shrink-0 rounded-xl bg-white border border-slate-200 shadow-sm grid place-items-center hover:bg-slate-50 transition';
