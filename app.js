@@ -616,6 +616,8 @@ function getTempSb() {
 
 // --- Fungsi Render ---
 function renderShell() {
+  if (!$('#app') || !$('#nav') || !$('#bn') || !$('#cx') || !$('#notifBtn') || !$('#backBtn')) return;
+
   if (S.user.wajib_ganti_sandi) {
     $('#nav').innerHTML = '';
     $('#bn').innerHTML = '';
@@ -630,20 +632,27 @@ function renderShell() {
           '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
         ).join('');
     }).join('');
-    $('#bn').innerHTML = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
-      .filter(([k]) => canAccessView(k))
-      .map(([k,t]) => '<button class="' + (k === 'form'
+
+    const mobile = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
+      .filter(([k]) => canAccessView(k));
+    $('#bn').innerHTML = mobile.map(([k,t]) =>
+      '<button class="' +
+      (k === 'form'
         ? 'fab bg-sima-600 text-white w-11 h-11 rounded-full text-xl -mt-5 shadow-lg'
         : 'px-2 py-2 text-[11px] ' + (S.view === k ? 'text-sima-600 font-bold' : 'text-slate-500')) +
-        '" data-go="' + esc(k) + '" aria-label="' + esc(t) + '">' + esc(t) + '</button>').join('');
+      '" data-go="' + esc(k) + '" aria-label="' + esc(t) + '">' + esc(t) + '</button>'
+    ).join('');
   }
 
-  $('#cx').innerHTML = S.ctxs.map((c, i) =>
-    '<option value="' + i + '" ' + (i === S.ctx ? 'selected' : '') + '>' + esc(c.org + ' · ' + c.peran) + '</option>'
+  $('#cx').innerHTML = (S.ctxs || []).map((ctx, i) =>
+    '<option value="' + i + '" ' + (i === S.ctx ? 'selected' : '') + '>' +
+      esc(ctx.org + ' · ' + ctx.peran) +
+    '</option>'
   ).join('');
 
   $('#notifBtn').innerHTML = icon('bell');
   $('#notifBtn').querySelector('svg')?.classList.add('w-5','h-5');
+
   const back = $('#backBtn');
   back.innerHTML = icon('back');
   back.className = 'h-10 w-10 shrink-0 rounded-xl bg-white border border-slate-200 shadow-sm grid place-items-center hover:bg-slate-50 transition';
@@ -651,7 +660,8 @@ function renderShell() {
   back.hidden = S.view === 'beranda' || S.view === 'ganti_sandi' || S.history.length === 0;
 
   const av = $('#av');
-  av.innerHTML = avatarMarkup(S.user);
+  if (av) av.innerHTML = avatarMarkup(S.user);
+
   renderNotificationPanel();
   renderProfileMenu();
 }
@@ -757,15 +767,28 @@ const V = {
 
 function stub(t) { return `<h1 class="t">${t}</h1><p class="sub">Halaman ini mengikuti pola yang sama dan tersambung ke tabel Supabase terkait.</p><div class="card">Belum ada data untuk ditampilkan.</div>`; }
 
-function render() { 
-  renderShell(); 
-  $('#v').innerHTML = (V[S.view] || (() => stub(S.view)))(); 
-  if (S.view === 'form') pesertaRow(true);
-  if (S.view === 'profil') {
-    loadMemberships().then(() => {
-      if (S.view === 'profil') $('#v').innerHTML = V.profil();
-    });
+async function render() {
+  const token = ++S.renderToken;
+  renderShell();
+  const root = $('#v');
+  if (!root) return;
+
+  root.innerHTML = '<div class="card"><div class="skeleton" style="height:18px;width:35%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:60%"></div><div class="skeleton" style="height:180px;margin-top:18px"></div></div>';
+
+  try {
+    await loadViewData(S.view);
+  } catch (error) {
+    console.error(error);
+    if (token !== S.renderToken) return;
+    root.innerHTML = '<div class="card"><h3>Gagal memuat halaman</h3><p class="sub">' + esc(error?.message || 'Terjadi kesalahan tak terduga.') + '</p></div>';
+    return;
   }
+
+  if (token !== S.renderToken) return;
+  const viewFn = V[S.view] || (() => stub(S.view));
+  root.innerHTML = viewFn();
+  if (S.view === 'form') pesertaRow(true);
+  renderShell();
 }
 
 function pesertaRow(reset) { 
