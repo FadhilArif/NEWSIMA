@@ -304,7 +304,7 @@ async function loadProkerDetail() {
   if (!sb || !S.selectedProkerId) return;
 
   const { data:proker, error } = await sb.from('proker')
-    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana')
+    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh')
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
@@ -1041,8 +1041,8 @@ const V = {
     const canEdit=S.permissions?.has('proker.edit');
     const canCreate=S.permissions?.has('proker.create');
     const canReview=S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review');
-    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReview;
-    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReview;
+    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReview&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReview&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
     if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=action('submit','Ajukan proposal');
