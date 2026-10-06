@@ -21,6 +21,7 @@ const ADMIN_VIEWS = new Set(['periode','organisasi','unit_kerja','akun','jabatan
 const VIEW_PERMISSION = {
   beranda:'beranda.view',
   proker:'proker.view',
+  review:'proker.view',
   form:'proker.create',
   undangan:'kolaborasi.view',
   galeri:'proker.view',
