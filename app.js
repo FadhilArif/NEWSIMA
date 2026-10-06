@@ -1174,7 +1174,7 @@ document.addEventListener('input', e => {
   if(e.target.closest('#kb'))hitung();
 });
 
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
   if(e.target.name==='pengajuan'){
     const kb=$('#kb'); if(kb)kb.hidden=e.target.value!=='kolaboratif';
     if(e.target.value==='kolaboratif'&&!document.querySelector('.peserta'))pesertaRow(true);
