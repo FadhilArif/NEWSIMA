@@ -1,5 +1,9 @@
-do $$
+do $
 begin
+  alter table public.unit_kerja
+    drop constraint if exists unit_kerja_jenis_check;
+
+
   alter table public.unit_kerja
     drop constraint if exists unit_kerja_jenis_allowed;
 
