@@ -988,9 +988,28 @@ const V = {
 
   unit_kerja:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran) || S.permissions?.has('unit.manage');
-    return pageHeader('Unit kerja','Kementerian dan divisi adalah ruang lingkup kerja. Jabatan dan hak akses ditetapkan di Akun & Penetapan.')+
-      (canWrite?'<form id="form-unit" class="card"><h3>Tambah unit kerja</h3><div class="f2"><div><label>Organisasi *</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis unit *</label><select id="u-jenis" required><option value="kementerian">Kementerian</option><option value="divisi">Divisi</option></select></div></div><label>Nama unit *</label><input id="u-nama" required placeholder="Contoh: Kementerian PSDM / Divisi Kreatif"><small>Presiden, Wakil Presiden, Sekretaris, Bendahara, Ketua Divisi, dan Staff Divisi bukan unit; semuanya adalah <b>jabatan</b> dengan hak akses masing-masing.</small><button class="btn mt-4">Simpan unit</button></form>':'')+
-      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+S.units.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'-')+'</p></div><span class="chip bl">'+esc(x.jenis)+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada unit kerja.'));
+    const positions=[
+      {kode:'presiden',nama:'Presiden',desc:'Pimpinan tertinggi organisasi'},
+      {kode:'wakil_presiden',nama:'Wakil Presiden',desc:'Mendampingi Presiden dan koordinasi organisasi'},
+      {kode:'sekretaris',nama:'Sekretaris',desc:'Administrasi, surat-menyurat, dan dokumen'},
+      {kode:'bendahara',nama:'Bendahara',desc:'Pengelolaan dan pencatatan keuangan'},
+      {kode:'ketua_divisi',nama:'Ketua Divisi',desc:'Memimpin satu divisi tertentu'},
+      {kode:'staff_divisi',nama:'Staff Divisi',desc:'Pelaksana pada divisi tertentu'}
+    ];
+    return pageHeader('Struktur organisasi','Kelola jabatan organisasi dan unit kerja dalam satu tempat.',
+      canWrite?'<button class="btn" data-go="jabatan">Atur hak akses jabatan</button>':'')+
+      '<div class="card mb-4"><div class="flex items-start justify-between gap-3 mb-4"><div><h3>Jabatan organisasi</h3><p class="sub mb-0">Jabatan menentukan hak akses. Ketua Divisi dan Staff Divisi wajib ditempatkan pada satu divisi.</p></div><span class="chip bl">'+positions.length+' jabatan</span></div>'+
+        '<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+
+          positions.map(p=>{
+            const catalog=(S.positions||[]).find(x=>x.kode===p.kode);
+            const perms=catalog?Array.from(S.permissionMatrix?.[catalog.id]||[]).length:0;
+            return '<div class="rounded-2xl border border-slate-200 p-4 bg-white"><div class="flex items-center justify-between gap-3"><h4 class="font-bold">'+esc(p.nama)+'</h4><span class="chip bl">'+(perms||0)+' hak</span></div><p class="text-sm text-slate-500 mt-2">'+esc(p.desc)+'</p><p class="text-xs text-slate-400 mt-3">'+(p.kode.includes('divisi')?'Wajib pilih divisi':'Berlaku di tingkat organisasi')+'</p></div>';
+          }).join('')+
+        '</div></div>'+
+      '<div class="card"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"><div><h3>Unit kerja</h3><p class="sub mb-0">Kementerian dan divisi adalah ruang lingkup kerja. Jabatan ditempelkan ke akun melalui menu Akun & Penetapan.</p></div><span class="chip bl">'+(S.units?.length||0)+' unit</span></div>'+
+        (canWrite?'<form id="form-unit" class="rounded-2xl bg-slate-50 p-4 mb-4"><h4 class="font-bold mb-3">Tambah unit kerja</h4><div class="f2"><div><label>Organisasi *</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis unit *</label><select id="u-jenis" required><option value="kementerian">Kementerian</option><option value="divisi">Divisi</option></select></div></div><label>Nama unit *</label><input id="u-nama" required placeholder="Contoh: Kementerian PSDM / Divisi Kreatif"><button class="btn mt-4">Simpan unit</button></form>':'')+
+        (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><h4 class="font-bold">'+esc(x.nama)+'</h4><span class="chip bl">'+esc(x.jenis)+'</span></div><p class="text-sm text-slate-500 mt-2">'+esc(x.organisasi?.nama||'-')+'</p></div>').join('')+'</div>':emptyCard('Belum ada unit kerja. Tambahkan kementerian atau divisi terlebih dahulu.'))+
+      '</div>';
   },
 
   periode:function(){
