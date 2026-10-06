@@ -106,7 +106,7 @@ async function loadContexts() {
 async function loadProker() {
   if (!sb) return;
   let q = sb.from('proker')
-    .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,organisasi(id,nama,tipe)')
+    .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,organisasi!proker_organisasi_id_fkey(id,nama,tipe)')
     .order('tanggal_mulai', { ascending:true });
   if (S.orgId) q = q.eq('organisasi_id', S.orgId);
   const { data, error } = await q;
