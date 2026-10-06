@@ -1645,14 +1645,21 @@ document.addEventListener('submit', async e => {
     if(!f.mulai||!f.selesai)errors.push('Tanggal mulai dan selesai wajib diisi.');
     if(f.selesai&&f.mulai&&f.selesai<f.mulai)errors.push('Tanggal selesai tidak boleh sebelum tanggal mulai.');
     if(!f.tempat)errors.push('Lokasi wajib diisi.');
-    if(kolab&&!(document.querySelector('.peserta input')?.value))errors.push('Tambahkan minimal satu organisasi peserta.');
+    const pesertaRows=[...document.querySelectorAll('.peserta')];
+    const validPeserta=pesertaRows.filter(row=>row.querySelector('select[data-org-id]')?.value);
+    if(kolab&&!validPeserta.length)errors.push('Tambahkan minimal satu organisasi peserta.');
     if(kolab&&!hitung())errors.push('Total porsi peserta melebihi dana kampus proker.');
     if(errors.length){$('#fe').textContent=errors.join(' ');return;}
     const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id};
     const {data,error}=await sb.from('proker').insert(payload).select('id').single();
     if(error)return toast('Gagal menyimpan proker: '+error.message);
     if(kolab&&data?.id){
-      const collabRows=[...document.querySelectorAll('.peserta')].map(row=>({proker_id:data.id,organisasi_id:row.querySelector('input')?.dataset?.orgId||null,porsi_plafon:Number(row.querySelector('input[type=number]')?.value||0),status:'diundang'})).filter(x=>x.organisasi_id);
+      const collabRows=[...document.querySelectorAll('.peserta')].map(row=>({
+        proker_id:data.id,
+        organisasi_id:row.querySelector('select[data-org-id]')?.value||null,
+        porsi_plafon:Number(row.querySelector('input[type=number]')?.value||0),
+        status:'diundang'
+      })).filter(x=>x.organisasi_id);
       if(collabRows.length){
         const r=await sb.from('proker_kolaborator').insert(collabRows);
         if(r.error)toast('Proker tersimpan, tetapi kolaborator gagal disimpan: '+r.error.message);
