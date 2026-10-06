@@ -33,13 +33,14 @@ Both limits must allow the request.
 
 The live SIMAWA schema uses:
 
+- `user`
 - `admin`
 - `wakil_rektor`
 - `pembimbing`
 - `staf_keuangan`
 - `mahasiswa`
 
-Frontend visibility is only convenience. Authorization is enforced with PostgreSQL RLS.
+Frontend visibility is only convenience. Authorization is enforced with PostgreSQL RLS. The `user` role is a restricted organization member; it cannot access review, finance, period, organization/unit administration, account management, or audit modules.
 
 ## Account creation
 
