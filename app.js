@@ -8,11 +8,11 @@ const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
 const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLocaleString('id-ID');
 
 const ROLE_ACCESS = {
-  admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','akun','audit','profil']),
+  admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','organisasi','unit_kerja','akun','audit','profil']),
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
   mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
-  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','audit','profil'])
+  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','organisasi','unit_kerja','audit','profil'])
 };
 
 const ROLE_LABEL = {
@@ -41,7 +41,7 @@ const S = {
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
   history:[],notifications:[],memberships:[],organizations:[],pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
-  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],
+  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
   proker:[],csvData:[],lastCredentials:[],tempSb:null,renderToken:0,searchTimer:null
 }
 
@@ -49,7 +49,7 @@ const MENU = [
   ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['struktur','Struktur dan anggota']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
   ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Pencairan dan verifikasi']]],
-  ['Admin',[['periode','Periode'],['akun','Akun dan penetapan'],['audit','Jejak audit']]]
+  ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Unit kerja'],['akun','Akun dan penetapan'],['audit','Jejak audit']]]
 ];
 
 // --- Fungsi Utilitas ---
@@ -292,6 +292,17 @@ async function loadPeriods() {
   S.periods=data||[];
 }
 
+async function loadUnits() {
+  S.units=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').order('nama');
+  if(error)return toast('Gagal memuat unit kerja: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.organisasi_id))];
+  const orgs=ids.length?((await sb.from('organisasi').select('id,nama,tipe').in('id',ids)).data||[]):[];
+  const om=Object.fromEntries(orgs.map(x=>[x.id,x]));
+  S.units=(data||[]).map(x=>({...x,organisasi:om[x.organisasi_id]}));
+}
+
 async function loadAudit() {
   S.audit=[];
   if(!sb)return;
@@ -332,6 +343,8 @@ async function loadViewData(view) {
     case 'plafon': return loadBudgets();
     case 'cair': return Promise.all([loadProker(),loadPayouts(),loadSources()]);
     case 'periode': return loadPeriods();
+    case 'organisasi': return Promise.all([loadOrganizations(),loadPeriods()]);
+    case 'unit_kerja': return Promise.all([loadOrganizations(),loadUnits()]);
     case 'audit': return loadAudit();
     case 'akun': return Promise.all([loadAccounts(),loadOrganizations()]);
     case 'profil': return loadMemberships();
@@ -768,6 +781,18 @@ const V = {
       (canWrite?'<form id="form-cair" class="card"><h3>Catat pencairan</h3><div class="f2"><div><label>Proker</label><select id="c-proker" required><option value="">Pilih proker</option>'+S.proker.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div><div><label>Sumber dana</label><select id="c-sumber" required><option value="">Pilih sumber dana</option>'+(S.sources||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.kode+' · '+x.nama)+'</option>').join('')+'</select></div><div><label>Jumlah</label><input id="c-jumlah" type="number" min="1" required></div><div><label>Tanggal</label><input id="c-tanggal" type="date"></div><div><label>Tahap</label><input id="c-tahap" type="number" min="1" value="1"></div></div><button class="btn mt-4">Simpan</button></form>':'')+
       (S.payouts.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Sumber</th><th>Jumlah</th><th>Tanggal</th><th>Tahap</th></tr></thead><tbody>'+S.payouts.map(x=>'<tr><td>'+esc(x.proker?.nama||'-')+'</td><td>'+esc(x.sumber?.nama||'-')+'</td><td>'+rp(x.jumlah)+'</td><td>'+dateID(x.tanggal)+'</td><td>'+esc(x.tahap||'-')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada pencairan.'));
   },
+  organisasi:function(){
+    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    return pageHeader('Organisasi','Kelola BEM, HMJ, UKM, dan Club.')+
+      (canWrite?'<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3><div class="f2"><div><label>Nama organisasi</label><input id="o-nama" required></div><div><label>Tipe</label><select id="o-tipe"><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div><div><label>Periode</label><select id="o-periode"><option value="">Tanpa periode</option>'+S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div></div><button class="btn mt-4">Simpan organisasi</button></form>':'')+
+      (S.organizations.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.organizations.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3><span class="chip bl">'+esc(x.tipe)+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada organisasi. Buat organisasi terlebih dahulu sebelum menetapkan anggota.'));
+  },
+  unit_kerja:function(){
+    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    return pageHeader('Unit kerja','Kelola kementerian dan divisi di bawah organisasi.')+
+      (canWrite?'<form id="form-unit" class="card"><h3>Tambah unit kerja</h3><div class="f2"><div><label>Organisasi</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis</label><select id="u-jenis"><option value="kementerian">Kementerian</option><option value="divisi">Divisi</option></select></div></div><label>Nama unit</label><input id="u-nama" required><button class="btn mt-4">Simpan unit</button></form>':'')+
+      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.units.map(x=>'<div class="card"><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.jenis)+' · '+esc(x.organisasi?.nama||'-')+'</p></div>').join('')+'</div>':emptyCard('Belum ada unit kerja.'));
+  },
   periode:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
     return pageHeader('Periode','Kelola siklus periode organisasi dan batas LPJ.')+
@@ -1098,6 +1123,24 @@ document.addEventListener('submit', async e => {
     const {error}=await sb.from('pencairan_dana').insert({proker_id,sumber_dana_id,jumlah,tanggal,tahap,dicatat_oleh:S.user.id});
     if(error)return toast('Gagal mencatat pencairan: '+error.message);
     toast('Pencairan tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-organisasi'){
+    e.preventDefault();
+    const nama=$('#o-nama').value.trim(),tipe=$('#o-tipe').value,periode_id=$('#o-periode').value||null;
+    if(!nama)return toast('Nama organisasi wajib diisi.');
+    const {error}=await sb.from('organisasi').insert({nama,tipe,periode_id});
+    if(error)return toast('Gagal membuat organisasi: '+error.message);
+    toast('Organisasi tersimpan.');return render();
+  }
+
+  if(e.target.id==='form-unit'){
+    e.preventDefault();
+    const organisasi_id=$('#u-org').value,jenis=$('#u-jenis').value,nama=$('#u-nama').value.trim();
+    if(!organisasi_id||!nama)return toast('Organisasi dan nama unit wajib diisi.');
+    const {error}=await sb.from('unit_kerja').insert({organisasi_id,jenis,nama});
+    if(error)return toast('Gagal membuat unit kerja: '+error.message);
+    toast('Unit kerja tersimpan.');return render();
   }
 
   if(e.target.id==='form-periode'){
