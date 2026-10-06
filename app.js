@@ -667,102 +667,138 @@ function renderShell() {
 }
 
 
+
+function pageHeader(title, desc, action) {
+  return '<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-5">' +
+    '<div><h1 class="t">' + esc(title) + '</h1><p class="sub">' + esc(desc) + '</p></div>' +
+    (action || '') + '</div>';
+}
+function emptyCard(message, action) {
+  return '<div class="card text-center py-10"><p class="sub">' + esc(message) + '</p>' + (action || '') + '</div>';
+}
+function dateID(v) {
+  if (!v) return '-';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+}
+function roleChip(role) {
+  const labels={admin:'Admin',wakil_rektor:'Wakil Rektor',pembimbing:'Pembimbing',staf_keuangan:'Keuangan',mahasiswa:'Mahasiswa'};
+  return '<span class="chip bl">' + esc(labels[role] || role || '-') + '</span>';
+}
+function orgOptions(selected) {
+  return (S.organizations||[]).map(o =>
+    '<option value="' + esc(o.id) + '" ' + (String(selected||'')===String(o.id)?'selected':'') + '>' +
+    esc(o.nama + ' · ' + o.tipe) + '</option>'
+  ).join('');
+}
+
+
 const V = {
-  beranda: () => `<h1 class="t">Beranda</h1><p class="sub">Ringkasan aktivitas dari semua konteks Anda.</p>
-  <div class="card"><h3>Perlu tindakan Anda</h3><div class="g3"><div class="k er"><b>3</b>Menunggu review</div><div class="k wa"><b>2</b>Perlu dilengkapi</div><div class="k bl"><b>1</b>Undangan kolaborasi</div></div></div>
-  <div class="row2"><div class="card"><h3>Ringkasan anggaran HIMIKA</h3><div class="bar"><i style="width:42%"></i></div><p class="sub">Plafon Rp75.000.000 · Diajukan Rp48.600.000 · Cair Rp31.200.000 · Sisa Rp43.800.000</p></div>
-  <div class="card"><h3>Batas LPJ terdekat</h3><p>Pelatihan Kader Dasar <span class="chip er">2 hari</span></p><p>Seminar Kesehatan Mental <span class="chip wa">5 hari</span></p></div></div>`,
-  
-  proker() {
-    const f = S.proker.filter(p => (S.tab === 'semua' || p.status === S.tab) && p.nama.toLowerCase().includes(S.q.toLowerCase()));
-    const tabs = [['semua','Semua'],['draft','Draft'],['proposal_diajukan','Menunggu review'],['revisi','Revisi'],['disetujui','Disetujui'],['berjalan','Berjalan']];
-    return `<h1 class="t">Daftar program kerja</h1><p class="sub">Kelola program kerja organisasi Anda.</p>
-    <div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="${S.q}"><button class="btn" data-go="form">+ Buat proker</button></div>
-    <div class="tabs">${tabs.map(([k, t]) => `<button class="${S.tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('')}</div>
-    <div class="card"><table><thead><tr><th>Nama program kerja</th><th>Jenis</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th></tr></thead><tbody>
-    ${f.map(p => `<tr data-id="${p.id}" data-go="review"><td><b>${p.nama}</b><br><small>Ketua: ${p.ketua || '-'}</small></td><td>${p.jenis === 'kolaboratif' ? '<span class="chip pu">Kolaboratif</span>' : '<span class="chip">Mandiri</span>'}</td><td>${p.mulai}</td><td>${rp(p.ajuan)}</td><td>${rp(p.cair)}</td><td>${chip(p.status)}</td></tr>`).join('') || '<tr><td colspan="6">Belum ada proker pada filter ini. Buat proker baru untuk memulai.</td></tr>'}</tbody></table></div>`;
+  beranda:function(){
+    const total=S.proker.length, waiting=S.proker.filter(x=>x.status==='proposal_diajukan').length;
+    const running=S.proker.filter(x=>x.status==='berjalan').length;
+    const unread=S.notifications.filter(x=>!x.read).length;
+    const proposed=S.proker.reduce((a,x)=>a+Number(x.ajuan||0),0);
+    const paid=S.proker.reduce((a,x)=>a+Number(x.cair||0),0);
+    const upcoming=S.proker.filter(x=>x.tanggal_mulai&&new Date(x.tanggal_mulai)>=new Date()).sort((a,b)=>new Date(a.tanggal_mulai)-new Date(b.tanggal_mulai)).slice(0,5);
+    return pageHeader('Beranda','Ringkasan aktivitas akun dan organisasi Anda.')+
+      '<div class="g3 mb-4"><div class="k bl"><b>'+total+'</b>Program kerja</div><div class="k er"><b>'+waiting+'</b>Menunggu review</div><div class="k wa"><b>'+unread+'</b>Notifikasi belum dibaca</div></div>'+
+      '<div class="row2"><div class="card"><h3>Ringkasan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div class="rounded-xl bg-slate-50 p-3"><div class="text-xs text-slate-500">Berjalan</div><div class="text-2xl font-bold">'+running+'</div></div><div class="rounded-xl bg-slate-50 p-3"><div class="text-xs text-slate-500">Diajukan</div><div class="text-2xl font-bold">'+rp(proposed)+'</div></div></div><p class="sub mt-3">Total pencairan: <b class="text-slate-900">'+rp(paid)+'</b></p></div>'+
+      '<div class="card"><h3>Agenda terdekat</h3>'+(upcoming.length?upcoming.map(x=>'<div class="py-3 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.nama)+'</p><p class="text-xs text-slate-500">'+dateID(x.tanggal_mulai)+' · '+esc(x.status)+'</p></div>').join(''):'<p class="sub">Belum ada agenda.</p>')+'</div></div>';
   },
-  
-  form: () => `<h1 class="t">Form proposal program kerja</h1><p class="sub">Lengkapi data kegiatan, anggaran, dan dokumen proposal.</p>
-  <div class="step"><span class="on">Data kegiatan</span><span>Anggaran</span><span>Dokumen</span><span>Pengajuan</span></div>
-  <form id="ff" class="card" novalidate><div class="f2"><div><label for="n">Nama program kerja *</label><input id="n" name="nama" placeholder="Contoh: Seminar Kesehatan Mental"></div>
-  <div><label for="j">Jenis kegiatan</label><select id="j" name="jenis"><option value="sekali">Sekali</option><option value="berulang">Berulang</option></select></div>
-  <div><label for="m">Tanggal mulai *</label><input id="m" name="mulai" type="date"></div><div><label for="e">Tanggal selesai *</label><input id="e" name="selesai" type="date"><small>Batas LPJ otomatis 7 hari setelahnya.</small></div></div>
-  <label for="t">Lokasi *</label><input id="t" name="tempat"><label for="d">Deskripsi kegiatan</label><textarea id="d" name="deskripsi" rows="3"></textarea>
-  <label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Diselenggarakan sendiri</label>
-  <label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif dengan organisasi lain</label>
-  <div id="kb" hidden><label for="dk">Dana kampus proker (Rp)</label><input id="dk" type="number" min="0" value="0"><div id="ps"></div>
-  <button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div><p class="err" id="fe"></p>
-  <div style="margin-top:16px;display:flex;gap:8px"><button class="btn s" type="button" data-go="proker">Batal</button><button class="btn">Simpan draft</button></div></form>`,
-  
-  review: () => `<h1 class="t">Review dokumen proposal</h1><p class="sub">Seminar Kesehatan Mental · HMJ Keperawatan <span class="chip pu">Kolaboratif</span></p>
-  <div class="row2"><div class="pdf"><div>PROPOSAL KEGIATAN<br>SEMINAR KESEHATAN MENTAL</div></div><div><div class="card"><h3>Ringkasan anggaran</h3><p>Total diajukan <b>Rp12.000.000</b></p><p>HMJ Keperawatan (40%): Rp4.800.000<br>UKM Psikomotif (60%): Rp7.200.000</p></div>
-  <div class="card"><h3>Komentar</h3><p><b>Andi Pratama</b><br>Mohon dicek kembali rincian transportasi.</p><label for="kk">Tulis komentar *</label><textarea id="kk" rows="3" placeholder="Berikan komentar atau catatan"></textarea><p class="err" id="ke"></p>
-  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn d" data-act="revisi">Minta revisi</button><button class="btn w" data-act="teruskan">Teruskan</button><button class="btn" data-act="setuju">Setujui</button></div></div></div></div>`,
+  proker:function(){
+    const f=S.proker.filter(p=>(S.tab==='semua'||p.status===S.tab)&&((p.nama||'').toLowerCase().includes(S.q.toLowerCase())||(p.ketua||'').toLowerCase().includes(S.q.toLowerCase())));
+    const tabs=[['semua','Semua'],['draft','Draft'],['proposal_diajukan','Menunggu review'],['revisi','Revisi'],['disetujui','Disetujui'],['berjalan','Berjalan'],['selesai','Selesai']];
+    return pageHeader('Daftar program kerja','Kelola program kerja Anda.',canAccessView('form')?'<button class="btn" data-go="form">+ Buat proker</button>':'')+
+      '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
+      '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
+      (f.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th></tr></thead><tbody>'+
+        f.map(p=>'<tr data-go="review" data-proker-id="'+esc(p.id)+'"><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td></tr>').join('')+
+        '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
 
-  profil: () => '<div class="max-w-5xl">' +
-    '<div class="mb-6"><p class="text-xs font-bold uppercase tracking-wider text-sima-600 mb-2">Akun saya</p><h1 class="t">Profil & organisasi</h1><p class="sub">Kelola identitas akun dan lihat seluruh organisasi serta jabatan Anda.</p></div>' +
-    '<div class="grid gap-4 lg:grid-cols-[1.05fr_.95fr]">' +
-      '<form id="form-profile" class="card !p-5 lg:!p-6">' +
-        '<div class="flex flex-col sm:flex-row sm:items-center gap-4 pb-5 border-b border-slate-100">' +
-          '<div id="profileAvatarPreview">' + avatarMarkup(S.user,'h-24 w-24') + '</div>' +
-          '<div><h3 class="!mb-1 text-base">Foto profil</h3><p class="sub !mb-3">Gunakan foto yang jelas. JPG/PNG disarankan.</p><label class="btn w-fit cursor-pointer inline-flex items-center gap-2">Ganti foto<input id="profileAvatar" type="file" accept="image/*" class="hidden"></label></div>' +
-        '</div>' +
-        '<div class="grid gap-4 sm:grid-cols-2 mt-5">' +
-          '<div><label for="profileName">Nama lengkap</label><input id="profileName" value="' + esc(S.user.nama) + '" required></div>' +
-          '<div><label for="profileNim">NIM</label><input id="profileNim" value="' + esc(S.user.nim || '') + '" placeholder="Masukkan NIM"></div>' +
-          '<div class="sm:col-span-2"><label>Email</label><input value="' + esc(S.user.email || '') + '" disabled class="!bg-slate-50 !text-slate-500"></div>' +
-        '</div>' +
-        '<div class="flex justify-end mt-5"><button class="btn inline-flex items-center gap-2">' + icon('check') + 'Simpan perubahan</button></div>' +
-      '</form>' +
-      '<div class="card !p-5 lg:!p-6">' +
-        '<h3>Organisasi & jabatan</h3><p class="sub">Keanggotaan yang terhubung ke akun ini.</p>' +
-        (S.memberships.length ? '<div class="space-y-3">' + S.memberships.map(m =>
-          '<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">' +
-            '<div class="flex items-start justify-between gap-3"><div><p class="font-bold">' + esc(m.organisasi) + '</p><p class="text-sm text-slate-500 mt-0.5">' + esc(m.jabatan) + '</p></div>' +
-            '<span class="chip ok">' + esc(m.status || 'Aktif') + '</span></div>' +
-          '</div>').join('') + '</div>'
-          : '<div class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">Belum ada data organisasi yang terhubung.</div>') +
-      '</div>' +
-    '</div>' +
-  '</div>',
-
-  akun: () => `<h1 class="t">Manajemen Akun</h1><p class="sub">Buat akun tunggal atau massal untuk calon pengguna SIMA.</p>
-  <div class="row2">
-    <div class="card">
-      <h3>Buat Akun Tunggal</h3>
-      <form id="form-akun">
-        <label>Nama Lengkap</label><input id="an-nama" required>
-        <label>Email</label><input type="email" id="an-email" required>
-        <label>NIM</label><input id="an-nim" required>
-        <label>Peran</label>
-        <select id="an-peran">
-          <option value="mahasiswa">Mahasiswa</option>
-          <option value="pembimbing">Pembimbing</option>
-          <option value="admin">Admin</option>
-          <option value="staf_keuangan">Staf Keuangan</option>
-        </select>
-        <button class="btn full" style="margin-top:16px">Buat Akun</button>
-      </form>
-    </div>
-    <div class="card">
-      <h3>Bulk Create via CSV</h3>
-      <p class="sub">Format: Nama,Email,NIM,Peran,Organisasi,Jabatan</p>
-      <input type="file" id="csv-file" accept=".csv" style="margin-bottom:12px">
-      <div id="csv-preview" class="sub" style="max-height:150px; overflow:auto; margin-bottom:12px"></div>
-      <button class="btn w" id="btn-csv" disabled>Proses Pembuatan Akun</button>
-    </div>
-  </div>
-  <div class="card">
-    <h3>Daftar Akun Terdaftar</h3>
-    <div id="list-akun" class="sub">Memuat data...</div>
-  </div>`,
-
-  ganti_sandi: () => `<h1 class="t">Ganti Kata Sandi</h1><p class="sub">Anda diwajibkan mengganti kata sandi bawaan untuk melanjutkan.</p>
-  <div class="card" style="max-width:400px"><form id="form-ganti-pw">
-    <label>Kata Sandi Baru</label><input type="password" id="pw-baru" required minlength="6">
-    <button class="btn full" style="margin-top:16px">Simpan Kata Sandi</button>
-  </form></div>`
+  },
+  form:function(){
+    const privileged=['admin','wakil_rektor'].includes(S.user.peran);
+    return pageHeader('Form proposal program kerja','Lengkapi data kegiatan sebelum menjadi draft.')+
+      '<form id="ff" class="card" novalidate>'+
+      (privileged?'<label for="f-org">Organisasi *</label><select id="f-org" name="organisasi_id" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select>':'')+
+      '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali">Sekali</option><option value="berulang">Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" required></div></div>'+
+      '<label>Lokasi *</label><input id="t" name="tempat" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3"></textarea>'+
+      '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label>'+
+      '<div id="kb" hidden><label>Dana kampus proker</label><input id="dk" type="number" min="0" value="0"><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>'+
+      '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="proker">Batal</button><button class="btn">Simpan draft</button></div></form>';
+  },
+  review:function(){
+    const d=S.detail;
+    if(!d?.proker)return emptyCard('Detail proker tidak ditemukan.','<button class="btn" data-go="proker">Kembali</button>');
+    const p=d.proker;
+    return pageHeader(p.nama,'Detail program kerja.',chip(p.status))+
+      '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
+      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div><button class="btn s" data-review-doc="'+esc(doc.id)+'">Buka</button></div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div></div>'+
+      '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div>'+
+      '<div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
+  },
+  undangan:function(){
+    return pageHeader('Undangan kolaborasi','Kelola undangan organisasi untuk program kerja.')+
+      (S.undangan.length?'<div class="grid gap-3">'+S.undangan.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Program kerja')+'</h3><p class="sub mb-1">'+dateID(x.proker?.tanggal_mulai)+'</p><p class="text-sm">Porsi: <b>'+rp(x.porsi_plafon)+'</b></p></div><div class="flex gap-2"><span class="chip '+(x.status==='bergabung'?'ok':x.status==='menolak'?'er':'wa')+'">'+esc(x.status)+'</span>'+(x.status==='diundang'?'<button class="btn w" data-collab-action="bergabung" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Terima</button><button class="btn d" data-collab-action="menolak" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Tolak</button>':'')+'</div></div></div>').join('')+'</div>':emptyCard('Belum ada undangan.'));
+  },
+  inbox:function(){
+    return pageHeader('Inbox review','Dokumen yang tersedia untuk ditinjau.')+
+      (S.inbox.length?'<div class="grid gap-3">'+S.inbox.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.jenis)+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></div></div>').join('')+'</div>':emptyCard('Inbox kosong.'));
+  },
+  galeri:function(){
+    return pageHeader('Galeri kegiatan','Dokumentasi kegiatan yang tercatat di SIMA.')+
+      (S.gallery.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.gallery.map(x=>'<div class="card !p-0 overflow-hidden"><div class="h-40 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan</div><div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(x.keterangan||'Tanpa keterangan')+'</p></div></div>').join('')+'</div>':emptyCard('Belum ada foto kegiatan.'));
+  },
+  laporan:function(){
+    return pageHeader('Laporan akhir','Pantau laporan akhir kegiatan.')+
+      (S.reports.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Status</th><th>Tahap</th><th></th></tr></thead><tbody>'+S.reports.map(x=>'<tr><td><b>'+esc(x.proker?.nama||'-')+'</b></td><td>'+chip(x.status||'draft')+'</td><td>'+esc(x.tahap||'-')+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada laporan akhir.'));
+  },
+  struktur:function(){
+    return pageHeader('Struktur dan anggota','Anggota, jabatan, organisasi, dan unit kerja.')+
+      (S.structure.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.structure.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.user?.nama||'Pengguna')+'</h3><p class="sub mb-1">'+esc(x.organisasi?.nama||'Organisasi')+'</p><p class="font-semibold">'+esc(x.jabatan||'Anggota')+'</p></div>'+roleChip(x.user?.peran)+'</div><p class="text-xs text-slate-500 mt-3">'+esc(x.unit?.nama||'Tanpa unit kerja')+' · '+esc(x.status||'-')+'</p></div>').join('')+'</div>':emptyCard('Belum ada data struktur.'));
+  },
+  rapat:function(){
+    const canWrite=['admin','wakil_rektor','pembimbing'].includes(S.user.peran);
+    return pageHeader('Rapat','Agenda dan hasil rapat.')+
+      (canWrite?'<form id="form-rapat" class="card"><h3>Catat rapat</h3><div class="f2"><div><label>Nomor</label><input id="r-nomor" type="number" min="1"></div><div><label>Tanggal</label><input id="r-tanggal" type="date"></div></div><label>Dokumen ID</label><input id="r-dokumen" required><label>Peserta</label><textarea id="r-peserta" rows="2"></textarea><label>Notulen</label><textarea id="r-notulen" rows="3"></textarea><label>Hasil</label><select id="r-hasil"><option value="lanjut">Lanjut</option><option value="revisi">Revisi</option></select><button class="btn mt-4">Simpan</button></form>':'')+
+      (S.meetings.length?'<div class="grid gap-3">'+S.meetings.map(x=>'<div class="card"><div class="flex justify-between gap-3"><div><h3>Rapat #'+esc(x.nomor||'-')+'</h3><p class="sub mb-1">'+dateID(x.tanggal)+' · '+esc(x.dokumen_id)+'</p></div>'+chip(x.hasil||'-')+'</div><p class="text-sm">'+esc(x.notulen||'Belum ada notulen.')+'</p></div>').join('')+'</div>':emptyCard('Belum ada rapat.'));
+  },
+  plafon:function(){
+    const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
+    return pageHeader('Plafon dan anggaran','Kelola plafon anggaran organisasi.')+
+      (canWrite?'<form id="form-plafon" class="card"><h3>Atur plafon</h3><div class="f2"><div><label>Organisasi</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jumlah</label><input id="p-jumlah" type="number" min="0" required></div></div><button class="btn mt-4">Simpan plafon</button></form>':'')+
+      (S.budgets.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Organisasi</th><th>Plafon</th><th>Terakhir diinput</th></tr></thead><tbody>'+S.budgets.map(x=>'<tr><td>'+esc(x.organisasi?.nama||'-')+'</td><td>'+rp(x.jumlah)+'</td><td>'+dateID(x.diinput_pada)+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada plafon.'));
+  },
+  cair:function(){
+    const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
+    return pageHeader('Pencairan dan verifikasi','Catat pencairan dana dan sumber pembiayaannya.')+
+      (canWrite?'<form id="form-cair" class="card"><h3>Catat pencairan</h3><div class="f2"><div><label>Proker</label><select id="c-proker" required><option value="">Pilih proker</option>'+S.proker.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div><div><label>Sumber dana</label><select id="c-sumber" required><option value="">Pilih sumber dana</option>'+(S.sources||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.kode+' · '+x.nama)+'</option>').join('')+'</select></div><div><label>Jumlah</label><input id="c-jumlah" type="number" min="1" required></div><div><label>Tanggal</label><input id="c-tanggal" type="date"></div><div><label>Tahap</label><input id="c-tahap" type="number" min="1" value="1"></div></div><button class="btn mt-4">Simpan</button></form>':'')+
+      (S.payouts.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Sumber</th><th>Jumlah</th><th>Tanggal</th><th>Tahap</th></tr></thead><tbody>'+S.payouts.map(x=>'<tr><td>'+esc(x.proker?.nama||'-')+'</td><td>'+esc(x.sumber?.nama||'-')+'</td><td>'+rp(x.jumlah)+'</td><td>'+dateID(x.tanggal)+'</td><td>'+esc(x.tahap||'-')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada pencairan.'));
+  },
+  periode:function(){
+    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    return pageHeader('Periode','Kelola siklus periode organisasi dan batas LPJ.')+
+      (canWrite?'<form id="form-periode" class="card"><h3>Buat periode</h3><div class="f2"><div><label>Nama periode</label><input id="pe-nama" required></div><div><label>Batas LPJ</label><input id="pe-batas" type="date"></div></div><label>Status</label><select id="pe-status"><option value="disiapkan">Disiapkan</option><option value="aktif">Aktif</option><option value="masa_lpj">Masa LPJ</option><option value="arsip">Arsip</option></select><button class="btn mt-4">Simpan</button></form>':'')+
+      (S.periods.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.periods.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3>'+chip(x.status)+'</div><p class="sub">Batas LPJ: '+dateID(x.batas_lpj)+'</p></div>').join('')+'</div>':emptyCard('Belum ada periode.'));
+  },
+  audit:function(){
+    return pageHeader('Jejak audit','Riwayat perubahan penting dalam sistem.')+
+      (S.audit.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Waktu</th><th>Akun</th><th>Aksi</th><th>Objek</th><th>ID</th></tr></thead><tbody>'+S.audit.map(x=>'<tr><td>'+dateID(x.waktu)+'</td><td>'+esc(x.akun?.nama||x.akun_id||'-')+'</td><td>'+esc(x.aksi||'-')+'</td><td>'+esc(x.objek||'-')+'</td><td class="text-xs">'+esc(x.objek_id||'-')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada jejak audit.'));
+  },
+  profil:function(){
+    return '<div class="max-w-5xl"><div class="mb-6"><h1 class="t">Profil & organisasi</h1><p class="sub">Kelola identitas akun dan organisasi Anda.</p></div><div class="grid gap-4 lg:grid-cols-[1.05fr_.95fr]"><form id="form-profile" class="card"><div class="flex gap-4 items-center pb-5 border-b border-slate-100"><div id="profileAvatarPreview">'+avatarMarkup(S.user,'h-24 w-24')+'</div><div><h3>Foto profil</h3><p class="sub mb-3">JPG/PNG disarankan.</p><label class="btn cursor-pointer">Ganti<input id="profileAvatar" type="file" accept="image/*" class="hidden"></label></div></div><div class="grid gap-4 sm:grid-cols-2 mt-5"><div><label>Nama lengkap</label><input id="profileName" value="'+esc(S.user.nama)+'" required></div><div><label>NIM</label><input id="profileNim" value="'+esc(S.user.nim||'')+'"></div><div class="sm:col-span-2"><label>Email</label><input value="'+esc(S.user.email)+'" disabled></div></div><button class="btn full mt-4">Simpan perubahan</button></form><div class="card"><h3>Organisasi & jabatan</h3><p class="sub">Keanggotaan akun.</p>'+((S.memberships||[]).length?S.memberships.map(m=>{const o=(S.organizations||[]).find(x=>x.id===m.organisasi_id);return '<div class="rounded-xl bg-slate-50 p-4 mb-3"><p class="font-bold">'+esc(o?.nama||'Organisasi')+'</p><p class="text-sm text-slate-500">'+esc(m.jabatan||'Anggota')+' · '+esc(m.status||'-')+'</p></div>';}).join(''):'<p class="sub">Belum ada organisasi.</p>')+'</div></div></div>';
+  },
+  akun:function(){
+    const opts=(S.organizations||[]).map(o=>'<option value="'+esc(o.nama)+'">'+esc(o.nama)+'</option>').join('');
+    return pageHeader('Manajemen akun','Buat akun dengan role terkontrol.')+
+      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap</label><input id="an-nama" required><label>Email</label><input id="an-email" type="email" required><label>NIM</label><input id="an-nim" required><label>Peran</label><select id="an-peran"><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi</label><select id="an-org"><option value="">Tanpa organisasi</option>'+opts+'</select><label>Jabatan</label><input id="an-jabatan" value="Anggota"><button class="btn full mt-4">Buat akun</button></form></div><div class="card"><h3>Bulk CSV</h3><p class="sub">Nama,Email,NIM,Peran,Organisasi,Jabatan</p><input type="file" id="csv-file" accept=".csv"><div id="csv-preview" class="sub mt-3"></div><button class="btn w mt-3" id="btn-csv" disabled>Proses CSV</button></div></div>'+
+      (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>NIM</th><th>Role</th><th>Status</th></tr></thead><tbody>'+S.accounts.map(x=>'<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+esc(x.nim||'-')+'</td><td>'+roleChip(x.peran)+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'));
+  },
+  ganti_sandi:function(){
+    return pageHeader('Ganti kata sandi','Password sementara wajib diganti sebelum melanjutkan.')+
+      '<form id="form-ganti-pw" class="card" style="max-width:430px"><label>Password baru</label><input type="password" id="pw-baru" minlength="10" required><p class="sub">Minimal 10 karakter.</p><button class="btn full">Simpan password</button></form>';
+  }
 };
 
 function stub(t) { return `<h1 class="t">${t}</h1><p class="sub">Halaman ini mengikuti pola yang sama dan tersambung ke tabel Supabase terkait.</p><div class="card">Belum ada data untuk ditampilkan.</div>`; }
