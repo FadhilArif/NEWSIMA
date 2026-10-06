@@ -132,7 +132,7 @@ create or replace function private.guard_profile_insert()
 returns trigger
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, public
 as $
 begin
   -- Direct/self-service signups can never select a privileged role.
@@ -142,7 +142,7 @@ begin
   end if;
 
   if new.peran is null
-     or new.peran not in ('admin','pembimbing','staf_keuangan','mahasiswa') then
+     or new.peran not in ('admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa') then
     raise exception 'INVALID_ROLE';
   end if;
 
