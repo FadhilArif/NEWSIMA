@@ -8,6 +8,7 @@ const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
 const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLocaleString('id-ID');
 
 const ROLE_ACCESS = {
+  user: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
   admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','organisasi','unit_kerja','akun','audit','profil']),
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
@@ -16,6 +17,7 @@ const ROLE_ACCESS = {
 };
 
 const ROLE_LABEL = {
+  user: 'User',
   admin: 'Administrator',
   pembimbing: 'Pembimbing',
   staf_keuangan: 'Staf Keuangan',
@@ -810,7 +812,7 @@ const V = {
   akun:function(){
     const opts=(S.organizations||[]).map(o=>'<option value="'+esc(o.nama)+'">'+esc(o.nama)+'</option>').join('');
     return pageHeader('Manajemen akun','Buat akun dengan role terkontrol.')+
-      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap</label><input id="an-nama" required><label>Email</label><input id="an-email" type="email" required><label>NIM</label><input id="an-nim" required><label>Peran</label><select id="an-peran"><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi</label><select id="an-org"><option value="">Tanpa organisasi</option>'+opts+'</select><label>Jabatan</label><input id="an-jabatan" value="Anggota"><button class="btn full mt-4">Buat akun</button></form></div><div class="card"><h3>Bulk CSV</h3><p class="sub">Nama,Email,NIM,Peran,Organisasi,Jabatan</p><input type="file" id="csv-file" accept=".csv"><div id="csv-preview" class="sub mt-3"></div><button class="btn w mt-3" id="btn-csv" disabled>Proses CSV</button></div></div>'+
+      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap</label><input id="an-nama" required><label>Email</label><input id="an-email" type="email" required><label>NIM</label><input id="an-nim" required><label>Peran</label><select id="an-peran"><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi</label><select id="an-org"><option value="">Tanpa organisasi</option>'+opts+'</select><label>Jabatan</label><input id="an-jabatan" value="Anggota"><button class="btn full mt-4">Buat akun</button></form></div><div class="card"><h3>Bulk CSV</h3><p class="sub">Nama,Email,NIM,Peran,Organisasi,Jabatan</p><input type="file" id="csv-file" accept=".csv"><div id="csv-preview" class="sub mt-3"></div><button class="btn w mt-3" id="btn-csv" disabled>Proses CSV</button></div></div>'+
       (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>NIM</th><th>Role</th><th>Status</th></tr></thead><tbody>'+S.accounts.map(x=>'<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+esc(x.nim||'-')+'</td><td>'+roleChip(x.peran)+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Data ini hanya disimpan di memori halaman. Simpan dengan aman lalu logout/refresh agar tidak tersisa.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password sementara</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
