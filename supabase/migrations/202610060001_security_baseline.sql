@@ -16,22 +16,18 @@ create schema if not exists private;
 -- ------------------------------------------------------------
 
 create or replace function private.current_role()
-returns text
+returns public.peran_akun
 language sql
 stable
 security definer
-set search_path = ''
-as $$
-  select coalesce(
-    (
-      select p.peran
-      from public.profiles p
-      where p.id = (select auth.uid())
-      limit 1
-    ),
-    ''
-  );
-$$;
+set search_path = pg_catalog, public
+as $
+  select p.peran
+  from public.profiles p
+  where p.id = (select auth.uid())
+    and p.aktif = true
+  limit 1;
+$;
 
 create or replace function private.is_admin()
 returns boolean
@@ -40,7 +36,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select (select private.current_role()) = 'admin';
+  select (select private.current_role()) in ('admin'::public.peran_akun,'wakil_rektor'::public.peran_akun);
 $$;
 
 create or replace function private.is_finance()
@@ -60,7 +56,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select (select private.current_role()) in ('admin','pembimbing');
+  select (select private.current_role()) in ('admin'::public.peran_akun,'wakil_rektor'::public.peran_akun,'pembimbing'::public.peran_akun);
 $$;
 
 revoke all on function private.current_role() from public, anon;
@@ -88,7 +84,7 @@ begin
   ) then
     alter table public.profiles
       add constraint profiles_peran_allowed
-      check (peran in ('admin','pembimbing','staf_keuangan','mahasiswa'))
+      check (peran in ('admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa'))
       not valid;
   end if;
 end $$;
@@ -117,7 +113,7 @@ begin
   end if;
 
   if new.peran is null
-     or new.peran not in ('admin','pembimbing','staf_keuangan','mahasiswa') then
+     or new.peran not in ('admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa') then
     raise exception 'INVALID_ROLE';
   end if;
 
@@ -264,7 +260,7 @@ begin
   end if;
 
   update public.login_rate_limits
-  set attempts = attempts + 1,
+  set attempts = public.login_rate_limits.attempts + 1,
       last_attempt_at = v_now
   where key_hash = p_key_hash
   returning public.login_rate_limits.attempts into v_row.attempts;
@@ -293,69 +289,8 @@ revoke all on function public.reset_login_rate_limit(text,text) from public, ano
 grant execute on function public.consume_login_attempt(text,text,integer,integer) to service_role;
 grant execute on function public.reset_login_rate_limit(text,text) to service_role;
 
--- ------------------------------------------------------------
--- Notifications
--- ------------------------------------------------------------
-
-create table if not exists public.notifications (
-  id bigint generated always as identity primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  title text not null,
-  message text not null default '',
-  type text not null default 'info',
-  read boolean not null default false,
-  view text,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_notifications_user_created
-  on public.notifications(user_id, created_at desc);
-
-alter table public.notifications enable row level security;
-revoke all on table public.notifications from anon;
-grant select, update on table public.notifications to authenticated;
-
-drop policy if exists notifications_select_own on public.notifications;
-create policy notifications_select_own
-on public.notifications
-for select
-to authenticated
-using ((select auth.uid()) = user_id);
-
-drop policy if exists notifications_mark_read on public.notifications;
-create policy notifications_mark_read
-on public.notifications
-for update
-to authenticated
-using ((select auth.uid()) = user_id)
-with check ((select auth.uid()) = user_id);
-
-create or replace function private.guard_notification_update()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if new.user_id is distinct from old.user_id
-     or new.title is distinct from old.title
-     or new.message is distinct from old.message
-     or new.type is distinct from old.type
-     or new.created_at is distinct from old.created_at
-     or new.view is distinct from old.view then
-    raise exception 'NOTIFICATION_CONTENT_IMMUTABLE';
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_guard_notification_update on public.notifications;
-create trigger trg_guard_notification_update
-before update on public.notifications
-for each row execute function private.guard_notification_update();
-
-revoke all on function private.guard_notification_update() from public, anon, authenticated;
+-- The live application uses public.notifikasi. Authentication notifications are
+-- protected by later policies/triggers and are not duplicated into a second table here.
 
 -- ------------------------------------------------------------
 -- Profiles RLS
