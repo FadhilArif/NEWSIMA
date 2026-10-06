@@ -504,8 +504,14 @@ async function loadOrganizationRelations() {
 async function loadCoordinatorAssignments() {
   S.coordinatorAssignments=[];
   if(!sb)return;
+  let ukmIds=[];
+  const current=(S.organizations||[]).find(o=>o.id===S.orgId);
+  if(current?.tipe==='UKM') ukmIds=[current.id];
+  else if(current?.tipe==='BEM') ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===current.id).map(o=>o.id);
+  else if(S.orgId) ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===S.orgId).map(o=>o.id);
   let q=sb.from('penugasan_koordinator').select('id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada').eq('status','aktif');
-  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
+  if(ukmIds.length) q=q.in('organisasi_id',ukmIds);
+  else if(S.orgId && current?.tipe!=='BEM') q=q.eq('organisasi_id',S.orgId);
   const {data,error}=await q;
   if(error)return toast('Gagal memuat koordinator UKM: '+error.message);
   const ids=[...new Set((data||[]).map(x=>x.akun_id))];
