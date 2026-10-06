@@ -21,13 +21,13 @@ language sql
 stable
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
   select p.peran
   from public.profiles p
   where p.id = (select auth.uid())
     and p.aktif = true
   limit 1;
-$;
+$$;
 
 create or replace function private.is_admin()
 returns boolean
@@ -133,7 +133,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public
-as $
+as $$
 begin
   -- Direct/self-service signups can never select a privileged role.
   -- Trusted server-side account creation uses service_role.
@@ -148,7 +148,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 
 drop trigger if exists trg_guard_profile_insert on public.profiles;
 create trigger trg_guard_profile_insert
