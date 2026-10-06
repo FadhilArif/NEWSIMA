@@ -827,9 +827,11 @@ async function render() {
   renderShell();
 }
 
-function pesertaRow(reset) { 
-  const box = $('#ps'); if (!box) return; if (reset) box.innerHTML = '';
-  box.insertAdjacentHTML('beforeend', `<div class="peserta"><input placeholder="Organisasi peserta" aria-label="Organisasi peserta"><input type="number" min="0" placeholder="Porsi Rp" aria-label="Porsi plafon"><button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button></div>`); 
+function pesertaRow(reset) {
+  const box=$('#ps'); if(!box)return;
+  if(reset)box.innerHTML='';
+  const options=(S.organizations||[]).filter(o=>String(o.id)!==String(S.orgId)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('');
+  box.insertAdjacentHTML('beforeend','<div class="peserta"><select aria-label="Organisasi peserta" data-org-id><option value="">Pilih organisasi peserta</option>'+options+'</select><input type="number" min="0" placeholder="Porsi Rp" aria-label="Porsi plafon"><button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button></div>');
 }
 
 function totalPorsi() { return [...document.querySelectorAll('.peserta input[type=number]')].reduce((a, i) => a + (+i.value || 0), 0); }
