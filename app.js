@@ -121,7 +121,7 @@ const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diaj
 const S = {
   user:{nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false},
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
-  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,pendingAvatarFile:null,
+  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
@@ -136,6 +136,42 @@ const MENU = [
 
 // --- Fungsi Utilitas ---
 function toast(t) { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.append(e); setTimeout(() => e.remove(), 2600); }
+
+async function loadStorageStatus(incomingBytes=0) {
+  S.storageStatus=null;
+  if(!sb)return null;
+  const {data,error}=await sb.rpc('get_storage_usage_status',{p_incoming_bytes:Math.max(0,Number(incomingBytes)||0)});
+  if(error){
+    console.error('Storage quota check failed:',error);
+    return null;
+  }
+  S.storageStatus=Array.isArray(data)?(data[0]||null):(data||null);
+  return S.storageStatus;
+}
+
+function formatStorageBytes(bytes) {
+  const n=Math.max(0,Number(bytes)||0);
+  if(n < 1024*1024) return (n/1024).toFixed(1)+' KB';
+  return (n/(1024*1024)).toFixed(1)+' MB';
+}
+
+function storageAdminBanner() {
+  if(S.user?.peran!=='admin' || !S.storageStatus)return '';
+  const s=S.storageStatus;
+  const used=Number(s.used_bytes||0);
+  const projected=Number(s.projected_bytes||used);
+  const warning=!!s.warning;
+  const hard=Number(s.hard_limit_bytes||0);
+  const percent=Math.min(100,Number(s.percent_used||0));
+  const critical=used>=hard;
+  if(critical){
+    return '<div class="card mb-4 border border-red-200 bg-red-50"><div class="flex items-start justify-between gap-3"><div><h3 class="!text-red-800">Penyimpanan hampir penuh</h3><p class="sub !text-red-700">Upload baru dihentikan. Penggunaan saat ini <b>'+formatStorageBytes(used)+'</b> dari batas aman <b>'+formatStorageBytes(hard)+'</b>.</p></div><span class="chip er">STOP UPLOAD</span></div><div class="mt-3 h-2 rounded-full bg-red-100 overflow-hidden"><div class="h-full bg-red-500" style="width:'+percent+'%"></div></div></div>';
+  }
+  if(warning){
+    return '<div class="card mb-4 border border-amber-200 bg-amber-50"><div class="flex items-start justify-between gap-3"><div><h3 class="!text-amber-900">Peringatan penyimpanan</h3><p class="sub !text-amber-800">Storage SIMA sudah mencapai <b>'+formatStorageBytes(used)+'</b>. Peringatan dimulai pada 900 MB. Batas aman internal '+formatStorageBytes(hard)+'.</p></div><span class="chip wa">'+percent+'%</span></div><div class="mt-3 h-2 rounded-full bg-amber-100 overflow-hidden"><div class="h-full bg-amber-500" style="width:'+percent+'%"></div></div></div>';
+  }
+  return '<div class="card mb-4 border border-slate-200 bg-slate-50"><div class="flex items-center justify-between gap-3"><div><h3>Storage SIMA</h3><p class="sub">Terpakai <b>'+formatStorageBytes(used)+'</b> · batas aman '+formatStorageBytes(hard)+'</p></div><span class="chip bl">'+percent+'%</span></div><div class="mt-3 h-2 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-blue-600" style="width:'+percent+'%"></div></div></div>';
+}
 
 
 async function loadOrganizations() {
@@ -666,7 +702,7 @@ function goBack() {
 
 function resetClientState() {
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
-  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;
+  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
@@ -777,6 +813,7 @@ async function hydrateUser(authUser) {
   // Build the new account-scoped organization context after the old identity
   // has been completely cleared.
   await loadContexts();
+  if(S.user.peran==='admin') await loadStorageStatus();
 
   $('#login').hidden = true;
   $('#app').hidden = false;
@@ -833,6 +870,11 @@ async function saveProfile(e) {
     const file = S.pendingAvatarFile;
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
     const path = S.user.id + '/' + Date.now() + '.' + ext;
+    const quota=await loadStorageStatus(file.size);
+    if(quota && !quota.can_upload){
+      S.pendingAvatarFile=null;
+      return toast('Penyimpanan SIMA penuh. Upload foto dihentikan agar tidak melewati batas aman.');
+    }
     const up = await sb.storage.from('avatars').upload(path, file, { upsert:true, contentType:file.type || 'image/jpeg' });
     if (!up.error) {
       const pub = sb.storage.from('avatars').getPublicUrl(path);
@@ -846,8 +888,10 @@ async function saveProfile(e) {
   }
   S.pendingAvatarFile = null;
   await loadMemberships();
+  await loadStorageStatus();
   render();
-  toast('Profil berhasil diperbarui.');
+  if(S.storageStatus?.warning) toast('Peringatan: storage SIMA sudah mencapai 900 MB atau lebih.');
+  else toast('Profil berhasil diperbarui.');
 }
 
 function previewAvatar(file) {
@@ -1299,7 +1343,7 @@ async function render() {
 
   if (token !== S.renderToken) return;
   const viewFn = V[S.view] || (() => emptyCard('Modul tidak tersedia.'));
-  root.innerHTML = viewFn();
+  root.innerHTML = storageAdminBanner() + viewFn();
   if (S.view === 'form') pesertaRow(true);
   renderShell();
 
