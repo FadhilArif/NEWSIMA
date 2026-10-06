@@ -925,20 +925,10 @@ const V = {
   },
 
   unit_kerja:function(){
-    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
-    const options=[
-      ['presiden','Presiden'],
-      ['wakil_presiden','Wakil Presiden'],
-      ['sekretaris','Sekretaris'],
-      ['bendahara','Bendahara'],
-      ['ketua','Ketua'],
-      ['wakil_ketua','Wakil Ketua'],
-      ['kementerian','Kementerian'],
-      ['divisi','Divisi']
-    ];
-    return pageHeader('Unit kerja','Susun struktur pimpinan dan unit kerja di bawah organisasi.')+
-      (canWrite?'<form id="form-unit" class="card"><h3>Tambah struktur organisasi</h3><div class="f2"><div><label>Organisasi *</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis struktur *</label><select id="u-jenis" required>'+options.map(o=>'<option value="'+o[0]+'">'+o[1]+'</option>').join('')+'</select></div></div><label>Nama unit / struktur *</label><input id="u-nama" required placeholder="Contoh: Presiden BEM / Kementerian PSDM"><small>Posisi pimpinan dapat dipakai sebagai unit struktur dan kemudian dipilih saat menetapkan anggota organisasi.</small><button class="btn mt-4">Simpan struktur</button></form>':'')+
-      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+S.units.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'-')+'</p></div><span class="chip bl">'+esc(unitTypeLabel(x.jenis))+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada struktur/unit kerja.'));
+    const canWrite=['admin','wakil_rektor'].includes(S.user.peran) || S.permissions?.has('unit.manage');
+    return pageHeader('Unit kerja','Kementerian dan divisi adalah ruang lingkup kerja. Jabatan dan hak akses ditetapkan di Akun & Penetapan.')+
+      (canWrite?'<form id="form-unit" class="card"><h3>Tambah unit kerja</h3><div class="f2"><div><label>Organisasi *</label><select id="u-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jenis unit *</label><select id="u-jenis" required><option value="kementerian">Kementerian</option><option value="divisi">Divisi</option></select></div></div><label>Nama unit *</label><input id="u-nama" required placeholder="Contoh: Kementerian PSDM / Divisi Kreatif"><small>Presiden, Wakil Presiden, Sekretaris, Bendahara, Ketua Divisi, dan Staff Divisi bukan unit; semuanya adalah <b>jabatan</b> dengan hak akses masing-masing.</small><button class="btn mt-4">Simpan unit</button></form>':'')+
+      (S.units?.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+S.units.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'-')+'</p></div><span class="chip bl">'+esc(x.jenis)+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada unit kerja.'));
   },
 
   periode:function(){
@@ -955,12 +945,15 @@ const V = {
     return '<div class="max-w-5xl"><div class="mb-6"><h1 class="t">Profil & organisasi</h1><p class="sub">Kelola identitas akun dan organisasi Anda.</p></div><div class="grid gap-4 lg:grid-cols-[1.05fr_.95fr]"><form id="form-profile" class="card"><div class="flex gap-4 items-center pb-5 border-b border-slate-100"><div id="profileAvatarPreview">'+avatarMarkup(S.user,'h-24 w-24')+'</div><div><h3>Foto profil</h3><p class="sub mb-3">JPG/PNG disarankan.</p><label class="btn cursor-pointer">Ganti<input id="profileAvatar" type="file" accept="image/*" class="hidden"></label></div></div><div class="grid gap-4 sm:grid-cols-2 mt-5"><div><label>Nama lengkap</label><input id="profileName" value="'+esc(S.user.nama)+'" required></div><div><label>NIM</label><input id="profileNim" value="'+esc(S.user.nim||'')+'"></div><div class="sm:col-span-2"><label>Email</label><input value="'+esc(S.user.email)+'" disabled></div></div><button class="btn full mt-4">Simpan perubahan</button></form><div class="card"><h3>Organisasi & jabatan</h3><p class="sub">Keanggotaan akun.</p>'+((S.memberships||[]).length?S.memberships.map(m=>{const o=(S.organizations||[]).find(x=>x.id===m.organisasi_id);return '<div class="rounded-xl bg-slate-50 p-4 mb-3"><p class="font-bold">'+esc(o?.nama||'Organisasi')+'</p><p class="text-sm text-slate-500">'+esc(m.jabatan||'Anggota')+' · '+esc(m.status||'-')+'</p></div>';}).join(''):'<p class="sub">Belum ada organisasi.</p>')+'</div></div></div>';
   },
   akun:function(){
-    const opts=(S.organizations||[]).map(o=>'<option value="'+esc(o.nama)+'">'+esc(o.nama)+'</option>').join('');
-    return pageHeader('Manajemen akun','Buat akun dengan role terkontrol.')+
-      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap</label><input id="an-nama" required><label>Email</label><input id="an-email" type="email" required><label>NIM</label><input id="an-nim" required><label>Peran</label><select id="an-peran"><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi</label><select id="an-org"><option value="">Tanpa organisasi</option>'+opts+'</select><label>Jabatan</label><input id="an-jabatan" value="Anggota"><button class="btn full mt-4">Buat akun</button></form></div><div class="card"><h3>Bulk CSV</h3><p class="sub">Nama,Email,NIM,Peran,Organisasi,Jabatan</p><input type="file" id="csv-file" accept=".csv"><div id="csv-preview" class="sub mt-3"></div><button class="btn w mt-3" id="btn-csv" disabled>Proses CSV</button></div></div>'+
+    const orgOpts=(S.organizations||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+'</option>').join('');
+    const jabatanOpts=(S.positions||[]).map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+(j.unit_wajib?' · wajib pilih divisi':'')+'</option>').join('');
+    const unitOpts=(S.units||[]).filter(x=>x.jenis==='divisi').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
+    return pageHeader('Akun dan penetapan','Satu akun bisa memiliki role aplikasi dan jabatan organisasi. Hak akses utama berasal dari jabatan di organisasi.')+
+      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label>NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi</label><select id="an-org"><option value="">Tanpa organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Tanpa jabatan</option>'+jabatanOpts+'</select><label>Divisi (wajib untuk Ketua/Staff Divisi)</label><select id="an-unit"><option value="">Pilih divisi</option>'+unitOpts+'</select><small>Role aplikasi menentukan identitas sistem. Jabatan organisasi menentukan hak akses di organisasi yang dipilih.</small><button class="btn full mt-4">Buat akun</button></form></div><div class="card"><h3>Bulk CSV</h3><p class="sub">Format: Nama,Email,NIM,Peran,OrganisasiId,JabatanKode,UnitId</p><input type="file" id="csv-file" accept=".csv"><div id="csv-preview" class="sub mt-3"></div><button class="btn w mt-3" id="btn-csv" disabled>Proses CSV</button></div></div>'+
       (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>NIM</th><th>Role</th><th>Status</th></tr></thead><tbody>'+S.accounts.map(x=>'<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+esc(x.nim||'-')+'</td><td>'+roleChip(x.peran)+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Data ini hanya disimpan di memori halaman. Simpan dengan aman lalu logout/refresh agar tidak tersisa.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password sementara</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
+
   ganti_sandi:function(){
     return pageHeader('Ganti kata sandi','Password sementara wajib diganti sebelum melanjutkan.')+
       '<form id="form-ganti-pw" class="card" style="max-width:430px"><label>Password baru</label><input type="password" id="pw-baru" minlength="10" required><p class="sub">Minimal 10 karakter.</p><button class="btn full">Simpan password</button></form>';
@@ -1042,10 +1035,10 @@ async function prosesBulkCSV() {
   if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
   let sukses=0,gagal=0;const credentials=[];
   for(const row of S.csvData){
-    const [nama,email,nim,peran,orgNama,jabatan]=row;
+    const [nama,email,nim,peran,organisasi_id,jabatan_kode,unit_id]=row;
     if(!email||!nama||!nim){gagal++;continue;}
     try{
-      const {data,error}=await sb.functions.invoke('admin-create-user',{body:{nama,email:email.trim().toLowerCase(),nim,peran:peran||'mahasiswa',organisasi:orgNama||'',jabatan:jabatan||'Anggota'}});
+      const {data,error}=await sb.functions.invoke('admin-create-user',{body:{nama,email:email.trim().toLowerCase(),nim,peran:peran||'user',organisasi_id:organisasi_id||null,jabatan_kode:jabatan_kode||null,unit_id:unit_id||null}});
       if(error||!data?.ok){console.error(error||data);gagal++;continue;}
       credentials.push({nama,email,temporary_password:data.temporary_password});sukses++;
     }catch(error){console.error(error);gagal++;}
@@ -1243,7 +1236,7 @@ document.addEventListener('submit', async e => {
   if(e.target.id==='form-akun'){
     e.preventDefault();
     if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
-    const input={nama:$('#an-nama').value.trim(),email:$('#an-email').value.trim().toLowerCase(),nim:$('#an-nim').value.trim(),peran:$('#an-peran').value,organisasi:$('#an-org').value,jabatan:$('#an-jabatan').value.trim()||'Anggota'};
+    const input={nama:$('#an-nama').value.trim(),email:$('#an-email').value.trim().toLowerCase(),nim:$('#an-nim').value.trim(),peran:$('#an-peran').value,organisasi_id:$('#an-org').value||null,jabatan_kode:$('#an-jabatan').value||null,unit_id:$('#an-unit').value||null};
     try{
       const {data,error}=await sb.functions.invoke('admin-create-user',{body:input});
       if(error||!data?.ok)return toast(data?.error||error?.message||'Gagal membuat akun.');
@@ -1293,15 +1286,11 @@ document.addEventListener('submit', async e => {
     const organisasi_id=$('#u-org').value;
     const jenis=$('#u-jenis').value;
     const nama=$('#u-nama').value.trim();
-    const allowed=['presiden','wakil_presiden','sekretaris','bendahara','ketua','wakil_ketua','kementerian','divisi'];
-    if(!organisasi_id||!nama)return toast('Organisasi dan nama struktur wajib diisi.');
-    if(!allowed.includes(jenis))return toast('Jenis struktur tidak valid.');
+    if(!organisasi_id||!nama)return toast('Organisasi dan nama unit wajib diisi.');
+    if(!['kementerian','divisi'].includes(jenis))return toast('Jenis unit tidak valid.');
     const {error}=await sb.from('unit_kerja').insert({organisasi_id,jenis,nama});
-    if(error){
-      if(error.code==='23505') return toast('Posisi inti tersebut sudah ada di organisasi ini.');
-      return toast('Gagal membuat struktur: '+error.message);
-    }
-    toast('Struktur organisasi tersimpan.');return render();
+    if(error)return toast('Gagal membuat unit kerja: '+error.message);
+    toast('Unit kerja tersimpan.');return render();
   }
 
   if(e.target.id==='form-periode'){
