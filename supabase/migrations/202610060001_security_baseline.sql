@@ -177,19 +177,26 @@ begin
     raise exception 'INVALID_RATE_LIMIT_SCOPE';
   end if;
 
+  insert into public.login_rate_limits(
+    key_hash, scope, attempts, window_started_at, blocked_until, last_attempt_at
+  )
+  values (
+    p_key_hash, p_scope, 0, v_now, null, v_now
+  )
+  on conflict (key_hash) do nothing;
+
   select *
   into v_row
   from public.login_rate_limits
   where key_hash = p_key_hash
   for update;
 
-  if not found then
-    insert into public.login_rate_limits(
-      key_hash, scope, attempts, window_started_at, blocked_until, last_attempt_at
-    )
-    values (
-      p_key_hash, p_scope, 1, v_now, null, v_now
-    );
+  if v_row.attempts = 0
+     and v_row.window_started_at = v_now then
+    update public.login_rate_limits
+    set attempts = 1,
+        last_attempt_at = v_now
+    where key_hash = p_key_hash;
 
     return query select true, 0, 1;
     return;
