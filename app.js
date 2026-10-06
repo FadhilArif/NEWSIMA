@@ -39,8 +39,11 @@ const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], rev
 const S = { 
   user:{ nama:'Fadhli Arif', email:'fadhli@stikesmhk.ac.id', nim:'', avatar_url:'', wajib_ganti_sandi: false }, 
   ctx:0, view:'beranda', tab:'semua', q:'', orgId:null,
-  history:[], notifications:[], memberships:[], pendingAvatarFile:null,
-  ctxs:[{ org:'HIMIKA', peran:'Ketua · 2026/2027', review:false }, { org:'Koordinator RACANA', peran:'Review', review:true }],
+  history:[], notifications:[], memberships:[], organizations:[], pendingAvatarFile:null,
+  ctxs:[], selectedProkerId:null, detail:null,
+  undangan:[], inbox:[], gallery:[], reports:[], structure:[], meetings:[], budgets:[], payouts:[], periods:[], audit:[], accounts:[], sources:[],
+  renderToken:0,
+  ctxs:[],
   proker:[
     { id:1, nama:'Pelatihan Kader Dasar', ketua:'Andi Pratama', jenis:'mandiri', mulai:'2026-10-12', ajuan:8500000, cair:5000000, status:'berjalan' },
     { id:2, nama:'Seminar Kesehatan Mental', ketua:'Siti Rahma', jenis:'kolaboratif', mulai:'2026-10-16', ajuan:12000000, cair:6000000, status:'proposal_diajukan' },
@@ -62,17 +65,290 @@ const MENU = [
 // --- Fungsi Utilitas ---
 function toast(t) { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.append(e); setTimeout(() => e.remove(), 2600); }
 
+
+async function loadOrganizations() {
+  if (!sb) return;
+  const { data, error } = await sb.from('organisasi').select('id,nama,tipe,periode_id').order('nama');
+  if (!error && Array.isArray(data)) S.organizations = data;
+}
+
+async function loadMemberships() {
+  S.memberships = [];
+  if (!sb || !S.user.id) return;
+  const { data, error } = await sb.from('keanggotaan')
+    .select('id,akun_id,organisasi_id,unit_id,jabatan,status')
+    .eq('akun_id', S.user.id)
+    .order('status');
+  if (!error && Array.isArray(data)) S.memberships = data;
+}
+
+async function loadContexts() {
+  await Promise.all([loadOrganizations(), loadMemberships()]);
+  const privileged = ['admin','wakil_rektor'].includes(S.user.peran);
+  if (privileged) {
+    const orgContexts = (S.organizations || []).map(o => ({
+      orgId:o.id, org:o.nama, peran:roleLabel(S.user.peran), global:false
+    }));
+    S.ctxs = [{ orgId:null, org:'Semua organisasi', peran:roleLabel(S.user.peran), global:true }, ...orgContexts];
+  } else {
+    const memberships = S.memberships || [];
+    S.ctxs = memberships.map(m => {
+      const org = (S.organizations || []).find(o => o.id === m.organisasi_id);
+      return {
+        orgId:m.organisasi_id,
+        org:org?.nama || 'Organisasi',
+        peran:m.jabatan || roleLabel(S.user.peran),
+        global:false
+      };
+    });
+    if (!S.ctxs.length) {
+      S.ctxs = [{ orgId:null, org:'Belum ada organisasi', peran:roleLabel(S.user.peran), global:true }];
+    }
+  }
+  const idx = S.ctxs.findIndex(x => x.orgId === S.orgId);
+  S.ctx = idx >= 0 ? idx : 0;
+  S.orgId = S.ctxs[S.ctx]?.orgId || null;
+}
+
 async function loadProker() {
   if (!sb) return;
-  const { data, error } = await sb.from('proker').select('id,nama,ketua_pelaksana,pengajuan,tanggal_mulai,status,item_anggaran(subtotal),pencairan_dana(jumlah)').order('tanggal_mulai');
+  let q = sb.from('proker')
+    .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,organisasi(id,nama,tipe)')
+    .order('tanggal_mulai', { ascending:true });
+  if (S.orgId) q = q.eq('organisasi_id', S.orgId);
+  const { data, error } = await q;
   if (error) return toast('Gagal memuat proker: ' + error.message);
-  S.proker = data.map(p => ({ 
-    id:p.id, nama:p.nama, ketua:p.ketua_pelaksana, jenis:p.pengajuan, mulai:p.tanggal_mulai, 
-    status:p.status === 'proposal_diajukan' ? p.status : p.status,
-    ajuan:p.item_anggaran.reduce((a, i) => a + i.subtotal, 0), 
-    cair:p.pencairan_dana.reduce((a, i) => a + i.jumlah, 0) 
+
+  const rows = Array.isArray(data) ? data : [];
+  const ids = rows.map(x => x.id);
+  const totals = Object.fromEntries(ids.map(id => [id, {ajuan:0,cair:0}]));
+  if (ids.length) {
+    const [budgetRes, payoutRes] = await Promise.all([
+      sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id', ids),
+      sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id', ids)
+    ]);
+    (budgetRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].ajuan += Number(x.subtotal || 0); });
+    (payoutRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].cair += Number(x.jumlah || 0); });
+  }
+
+  S.proker = rows.map(p => ({
+    ...p,
+    ketua:p.ketua_pelaksana || '-',
+    mulai:p.tanggal_mulai || '-',
+    ajuan:totals[p.id]?.ajuan || 0,
+    cair:totals[p.id]?.cair || 0
   }));
 }
+
+async function loadNotifications() {
+  S.notifications = [];
+  if (!sb || !S.user.id) return;
+  const { data, error } = await sb.from('notifikasi')
+    .select('id,akun_id,organisasi_id,pesan,tautan,dibaca,dibuat')
+    .eq('akun_id', S.user.id)
+    .order('dibuat', { ascending:false })
+    .limit(50);
+  if (!error && Array.isArray(data)) {
+    S.notifications = data.map(n => ({
+      id:n.id, title:'Notifikasi', message:n.pesan || '',
+      type:'info', read:!!n.dibaca, created_at:n.dibuat, view:n.tautan || ''
+    }));
+  }
+}
+
+async function loadProkerDetail() {
+  S.detail = null;
+  if (!sb || !S.selectedProkerId) return;
+  const { data:proker, error } = await sb.from('proker')
+    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,organisasi(id,nama,tipe)')
+    .eq('id', S.selectedProkerId).single();
+  if (error) return toast('Gagal memuat detail proker: ' + error.message);
+  const [docs, kolab, decisions] = await Promise.all([
+    sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap').eq('proker_id',S.selectedProkerId).order('jenis'),
+    sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
+    sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',
+      (await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId)).data?.map(x=>x.id) || []).order('waktu',{ascending:false})
+  ]);
+  S.detail = { proker, docs:docs.data || [], kolaborator:kolab.data || [], keputusan:decisions.data || [] };
+}
+
+async function loadUndangan() {
+  S.undangan = [];
+  if (!sb) return;
+  let q=sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').order('status');
+  if(S.orgId) q=q.eq('organisasi_id',S.orgId);
+  const {data,error}=await q;
+  if(error)return toast('Gagal memuat undangan: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.proker_id))];
+  const orgIds=[...new Set((data||[]).map(x=>x.organisasi_id))];
+  const [p,o]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,tanggal_mulai,organisasi_id').in('id',ids):{data:[]},
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):{data:[]}
+  ]);
+  const pm=Object.fromEntries((p.data||[]).map(x=>[x.id,x]));
+  const om=Object.fromEntries((o.data||[]).map(x=>[x.id,x]));
+  S.undangan=(data||[]).map(x=>({...x,proker:pm[x.proker_id],organisasi:om[x.organisasi_id]}));
+}
+
+async function loadInbox() {
+  S.inbox=[];
+  if(!sb)return;
+  let q=sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').order('id',{ascending:false});
+  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
+  const {data,error}=await q;
+  if(error)return toast('Gagal memuat inbox: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.proker_id).filter(Boolean))];
+  const pm=ids.length?(await sb.from('proker').select('id,nama,status').in('id',ids)).data||[]:[];
+  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
+  S.inbox=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
+}
+
+async function loadGallery() {
+  S.gallery=[];
+  if(!sb)return;
+  let q=sb.from('foto_kegiatan').select('id,proker_id,dokumen_id,drive_file_id,thumb_path,ukuran_byte,urutan,keterangan,diunggah_oleh').order('urutan');
+  const {data,error}=await q;
+  if(error)return toast('Gagal memuat galeri: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.proker_id).filter(Boolean))];
+  const pm=ids.length?(await sb.from('proker').select('id,nama,organisasi_id').in('id',ids)).data||[]:[];
+  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
+  S.gallery=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
+}
+
+async function loadReports() {
+  S.reports=[];
+  if(!sb)return;
+  let q=sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('jenis','laporan_akhir').order('id',{ascending:false});
+  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
+  const {data,error}=await q;
+  if(error)return toast('Gagal memuat laporan: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.proker_id).filter(Boolean))];
+  const pm=ids.length?(await sb.from('proker').select('id,nama,status').in('id',ids)).data||[]:[];
+  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
+  S.reports=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
+}
+
+async function loadStructure() {
+  S.structure=[];
+  if(!sb)return;
+  let memberships=[];
+  if(['admin','wakil_rektor'].includes(S.user.peran)){
+    const r=await sb.from('keanggotaan').select('id,akun_id,organisasi_id,unit_id,jabatan,status').order('jabatan');
+    memberships=r.data||[];
+    if(r.error)return toast('Gagal memuat struktur: '+r.error.message);
+  }else{
+    let q=sb.from('keanggotaan').select('id,akun_id,organisasi_id,unit_id,jabatan,status');
+    if(S.orgId)q=q.eq('organisasi_id',S.orgId);
+    const r=await q;
+    memberships=r.data||[];
+  }
+  const userIds=[...new Set(memberships.map(x=>x.akun_id))];
+  const orgIds=[...new Set(memberships.map(x=>x.organisasi_id))];
+  const unitIds=[...new Set(memberships.map(x=>x.unit_id).filter(Boolean))];
+  const [profiles,orgs,units]=await Promise.all([
+    userIds.length?sb.from('profiles').select('id,nama,email,nim,peran').in('id',userIds):{data:[]},
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):{data:[]},
+    unitIds.length?sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').in('id',unitIds):{data:[]}
+  ]);
+  const pmap=Object.fromEntries((profiles.data||[]).map(x=>[x.id,x]));
+  const omap=Object.fromEntries((orgs.data||[]).map(x=>[x.id,x]));
+  const umap=Object.fromEntries((units.data||[]).map(x=>[x.id,x]));
+  S.structure=memberships.map(x=>({...x,user:pmap[x.akun_id],organisasi:omap[x.organisasi_id],unit:umap[x.unit_id]}));
+}
+
+async function loadMeetings() {
+  S.meetings=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('rapat').select('id,dokumen_id,nomor,tanggal,peserta,notulen,hasil').order('tanggal',{ascending:false});
+  if(error)return toast('Gagal memuat rapat: '+error.message);
+  S.meetings=data||[];
+}
+
+async function loadBudgets() {
+  S.budgets=[];
+  if(!sb)return;
+  let q=sb.from('plafon_anggaran').select('organisasi_id,jumlah,diinput_oleh,diinput_pada').order('diinput_pada',{ascending:false});
+  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
+  const {data,error}=await q;
+  if(error)return toast('Gagal memuat plafon: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.organisasi_id))];
+  const orgs=ids.length?(await sb.from('organisasi').select('id,nama,tipe').in('id',ids)).data||[]:[];
+  const omap=Object.fromEntries(orgs.map(x=>[x.id,x]));
+  S.budgets=(data||[]).map(x=>({...x,organisasi:omap[x.organisasi_id]}));
+}
+
+async function loadPayouts() {
+  S.payouts=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('pencairan_dana').select('id,proker_id,sumber_dana_id,jumlah,tanggal,tahap,dicatat_oleh').order('tanggal',{ascending:false});
+  if(error)return toast('Gagal memuat pencairan: '+error.message);
+  const pids=[...new Set((data||[]).map(x=>x.proker_id))];
+  const sids=[...new Set((data||[]).map(x=>x.sumber_dana_id))];
+  const [prokers,sources]=await Promise.all([
+    pids.length?sb.from('proker').select('id,nama,organisasi_id').in('id',pids):{data:[]},
+    sids.length?sb.from('sumber_dana').select('id,kode,nama').in('id',sids):{data:[]}
+  ]);
+  const pm=Object.fromEntries((prokers.data||[]).map(x=>[x.id,x]));
+  const sm=Object.fromEntries((sources.data||[]).map(x=>[x.id,x]));
+  S.payouts=(data||[]).map(x=>({...x,proker:pm[x.proker_id],sumber:sm[x.sumber_dana_id]}));
+}
+
+async function loadPeriods() {
+  S.periods=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('periode').select('id,nama,status,batas_lpj').order('batas_lpj');
+  if(error)return toast('Gagal memuat periode: '+error.message);
+  S.periods=data||[];
+}
+
+async function loadAudit() {
+  S.audit=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('jejak_audit').select('id,akun_id,aksi,objek,objek_id,lama,baru,waktu').order('waktu',{ascending:false}).limit(100);
+  if(error)return toast('Gagal memuat jejak audit: '+error.message);
+  const ids=[...new Set((data||[]).map(x=>x.akun_id).filter(Boolean))];
+  const profiles=ids.length?(await sb.from('profiles').select('id,nama,email').in('id',ids)).data||[]:[];
+  const pm=Object.fromEntries(profiles.map(x=>[x.id,x]));
+  S.audit=(data||[]).map(x=>({...x,akun:pm[x.akun_id]}));
+}
+
+async function loadAccounts() {
+  S.accounts=[];
+  if(!sb || S.user.peran!=='admin')return;
+  const {data,error}=await sb.from('profiles').select('id,nama,email,nim,peran,aktif,wajib_ganti_sandi').order('nama');
+  if(error)return toast('Gagal memuat akun: '+error.message);
+  S.accounts=data||[];
+}
+
+async function loadSources() {
+  S.sources=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('sumber_dana').select('id,kode,nama,wajib_rincian,perlu_pencairan,hitung_plafon').order('kode');
+  if(!error)S.sources=data||[];
+}
+
+async function loadViewData(view) {
+  switch(view){
+    case 'beranda': return Promise.all([loadProker(),loadNotifications(),loadBudgets()]);
+    case 'proker': return loadProker();
+    case 'review': return loadProkerDetail();
+    case 'undangan': return loadUndangan();
+    case 'inbox': return loadInbox();
+    case 'galeri': return loadGallery();
+    case 'laporan': return loadReports();
+    case 'struktur': return loadStructure();
+    case 'rapat': return loadMeetings();
+    case 'plafon': return loadBudgets();
+    case 'cair': return Promise.all([loadPayouts(),loadSources()]);
+    case 'periode': return loadPeriods();
+    case 'audit': return loadAudit();
+    case 'akun': return Promise.all([loadAccounts(),loadOrganizations()]);
+    case 'profil': return loadMemberships();
+    default: return null;
+  }
+}
+
+
 
 const chip = s => { const [t, c] = ST[s] || [s, '']; return `<span class="chip ${c}">${t}</span>`; };
 
