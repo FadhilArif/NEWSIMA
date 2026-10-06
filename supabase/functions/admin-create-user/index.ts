@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     return json({ error: "INVALID_INPUT" }, 400);
   }
 
-  if (!["admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor"].includes(peran)) {
+  if (!["user","admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor"].includes(peran)) {
     return json({ error: "INVALID_ROLE" }, 400);
   }
 
