@@ -378,29 +378,24 @@ async function loadReports() {
 async function loadStructure() {
   S.structure=[];
   if(!sb)return;
-  let memberships=[];
-  if(['admin','wakil_rektor'].includes(S.user.peran)){
-    const r=await sb.from('keanggotaan').select('id,akun_id,organisasi_id,unit_id,jabatan,status').order('jabatan');
-    memberships=r.data||[];
-    if(r.error)return toast('Gagal memuat struktur: '+r.error.message);
-  }else{
-    let q=sb.from('keanggotaan').select('id,akun_id,organisasi_id,unit_id,jabatan,status');
-    if(S.orgId)q=q.eq('organisasi_id',S.orgId);
-    const r=await q;
-    memberships=r.data||[];
-  }
-  const userIds=[...new Set(memberships.map(x=>x.akun_id))];
-  const orgIds=[...new Set(memberships.map(x=>x.organisasi_id))];
-  const unitIds=[...new Set(memberships.map(x=>x.unit_id).filter(Boolean))];
-  const [profiles,orgs,units]=await Promise.all([
+  const targetOrgId=['admin','wakil_rektor'].includes(S.user.peran) ? (S.structureOrgId||S.orgId) : S.orgId;
+  if(!targetOrgId)return;
+  const {data:memberships,error}=await sb.from('keanggotaan')
+    .select('id,akun_id,organisasi_id,unit_id,jabatan_id,jabatan,status')
+    .eq('organisasi_id',targetOrgId)
+    .order('jabatan');
+  if(error)return toast('Gagal memuat struktur: '+error.message);
+  const rows=memberships||[];
+  const userIds=[...new Set(rows.map(x=>x.akun_id).filter(Boolean))];
+  const unitIds=[...new Set(rows.map(x=>x.unit_id).filter(Boolean))];
+  const [profiles,units]=await Promise.all([
     userIds.length?sb.from('profiles').select('id,nama,email,nim,peran').in('id',userIds):{data:[]},
-    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):{data:[]},
     unitIds.length?sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').in('id',unitIds):{data:[]}
   ]);
   const pmap=Object.fromEntries((profiles.data||[]).map(x=>[x.id,x]));
-  const omap=Object.fromEntries((orgs.data||[]).map(x=>[x.id,x]));
   const umap=Object.fromEntries((units.data||[]).map(x=>[x.id,x]));
-  S.structure=memberships.map(x=>({...x,user:pmap[x.akun_id],organisasi:omap[x.organisasi_id],unit:umap[x.unit_id]}));
+  const org=(S.organizations||[]).find(o=>o.id===targetOrgId);
+  S.structure=rows.map(x=>({...x,user:pmap[x.akun_id],organisasi:org||null,unit:umap[x.unit_id]}));
 }
 
 async function loadMeetings() {
@@ -451,7 +446,10 @@ async function loadPeriods() {
 async function loadUnits() {
   S.units=[];
   if(!sb)return;
-  const {data,error}=await sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').order('nama');
+  let q=sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').order('nama');
+  const targetOrgId=['admin','wakil_rektor'].includes(S.user.peran) ? (S.structureOrgId||S.orgId) : S.orgId;
+  if(targetOrgId)q=q.eq('organisasi_id',targetOrgId);
+  const {data,error}=await q;
   if(error)return toast('Gagal memuat unit kerja: '+error.message);
   const ids=[...new Set((data||[]).map(x=>x.organisasi_id))];
   const orgs=ids.length?((await sb.from('organisasi').select('id,nama,tipe').in('id',ids)).data||[]):[];
@@ -463,11 +461,11 @@ async function loadJabatanAndUnits() {
   if (!sb) return;
   const [{data:positions,error:positionError},{data:units,error:unitError},{data:access,error:accessError}] = await Promise.all([
     sb.from('jabatan_organisasi').select('id,kode,nama,tingkat,cakupan,unit_wajib,unit_jenis_wajib,berlaku_tipe,aktif').eq('aktif',true).order('tingkat',{ascending:false}),
-    sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').eq('jenis','divisi').order('nama'),
+    sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').order('nama'),
     sb.from('hak_akses_jabatan').select('jabatan_id,kode')
   ]);
   if (positionError) return toast('Gagal memuat jabatan: '+positionError.message);
-  if (unitError) return toast('Gagal memuat divisi: '+unitError.message);
+  if (unitError) return toast('Gagal memuat unit kerja: '+unitError.message);
   if (accessError) return toast('Gagal memuat hak akses jabatan: '+accessError.message);
   S.positions = positions || [];
   S.units = units || [];
@@ -477,7 +475,6 @@ async function loadJabatanAndUnits() {
     S.permissionMatrix[x.jabatan_id].add(x.kode);
   });
 }
-
 
 async function loadAudit() {
   S.audit=[];
@@ -655,7 +652,7 @@ function goBack() {
 
 function resetClientState() {
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
-  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];
+  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
@@ -1181,7 +1178,7 @@ const V = {
   akun:function(){
     const orgOpts=(S.organizations||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('');
     const jabatanOpts=(S.positions||[]).map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
-    const unitOpts=(S.units||[]).filter(x=>x.jenis==='divisi').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
+    const unitOpts=(S.units||[]).map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama+' · '+u.jenis)+'</option>').join('');
     return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Setiap organisasi mempunyai jabatan dan ruang lingkupnya sendiri.')+
       '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label>NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Tanpa organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option>'+jabatanOpts+'</select><label>Unit kerja</label><select id="an-unit"><option value="">Tidak ada</option>'+unitOpts+'</select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
       '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option>'+jabatanOpts+'</select><label>Unit kerja</label><select id="p-unit"><option value="">Tidak ada</option>'+unitOpts+'</select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
@@ -1423,6 +1420,12 @@ document.addEventListener('change', async e => {
     }
   }
 
+  if(e.target.id==='struktur-org'){
+    S.structureOrgId=e.target.value||null;
+    await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits()]);
+    return render();
+  }
+
   if(e.target.id==='cx'){
     S.ctx=Number(e.target.value);
     S.orgId=S.ctxs[S.ctx]?.orgId||null;
@@ -1593,16 +1596,19 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-unit'){
     e.preventDefault();
-    const organisasi_id=S.orgId;
+    const organisasi_id=['admin','wakil_rektor'].includes(S.user.peran) ? (S.structureOrgId||S.orgId) : S.orgId;
     const org=(S.organizations||[]).find(o=>o.id===organisasi_id);
-    const jenis=org?.tipe==='BEM'?'kementerian':'divisi';
+    const jenis=org?.tipe==='BEM'?'kementerian':org?.tipe==='HMJ'?'divisi':null;
     const nama=$('#u-nama').value.trim();
-    if(!organisasi_id||!nama)return toast('Pilih organisasi pada konteks dan isi nama unit.');
-    if(!['BEM','HMJ'].includes(org?.tipe))return toast('Unit kerja hanya tersedia untuk BEM dan HMJ.');
+    if(!organisasi_id||!nama)return toast('Pilih organisasi dan isi nama unit.');
+    if(!jenis)return toast('Unit kerja hanya tersedia untuk BEM dan HMJ.');
     const {error}=await sb.from('unit_kerja').insert({organisasi_id,jenis,nama});
     if(error)return toast('Gagal membuat unit kerja: '+error.message);
-    toast('Unit kerja tersimpan.');return render();
+    toast((jenis==='kementerian'?'Kementerian':'Divisi')+' berhasil dibuat.');
+    await Promise.all([loadUnits(),loadJabatanAndUnits()]);
+    return render();
   }
+
 
   if(e.target.id==='form-periode'){
     e.preventDefault();
