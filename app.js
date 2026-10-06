@@ -52,6 +52,7 @@ const S = {
     { id:5, nama:'Webinar Karir Kesehatan', ketua:'Rizky Maulana', jenis:'kolaboratif', mulai:'2026-11-12', ajuan:6000000, cair:3000000, status:'disetujui' }
   ],
   csvData: [],
+  lastCredentials:[],
   tempSb: null // Instance Supabase terpisah untuk bulk create
 };
 
@@ -412,21 +413,20 @@ function goBack() {
 }
 
 function resetClientState() {
-  S.user = { nama:'', email:'', nim:'', avatar_url:'', wajib_ganti_sandi:false };
-  S.ctx = 0; S.view = 'beranda'; S.tab = 'semua'; S.q = ''; S.orgId = null;
-  S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
-  S.proker = [];
-  S.csvData = [];
-  S.tempSb = null;
+  S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
+  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;
+  S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
+  S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
+  S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];
+  S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
   $('#fl')?.reset();
-  $('#v').innerHTML = '';
-  $('#nav').innerHTML = '';
-  $('#bn').innerHTML = '';
-  $('#notifPanel').hidden = true;
-  $('#profileMenu').hidden = true;
-  $('#notifBadge').textContent = '0';
+  $('#v')?.replaceChildren();
+  $('#nav')?.replaceChildren();
+  $('#bn')?.replaceChildren();
+  if($('#notifPanel'))$('#notifPanel').hidden=true;
+  if($('#profileMenu'))$('#profileMenu').hidden=true;
+  if($('#notifBadge')){ $('#notifBadge').textContent='0'; $('#notifBadge').hidden=true; }
 }
-
 
 function renderNotificationPanel() {
   const panel = $('#notifPanel'), badge = $('#notifBadge');
