@@ -1046,15 +1046,55 @@ const V = {
   organisasi:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
     const hasPeriods=Array.isArray(S.periods)&&S.periods.length>0;
-    const bems=(S.organizations||[]).filter(o=>o.tipe==='BEM');
     const currentOrg=(S.organizations||[]).find(o=>o.id===S.orgId);
+    const bems=(S.organizations||[]).filter(o=>o.tipe==='BEM');
     const related=(S.organizationRelations||[]).filter(r=>r.organisasi_id===S.orgId||r.terhubung_dengan_id===S.orgId);
+
+    const connectionCard=currentOrg?.tipe==='CLUB' && (S.permissions?.has('organisasi.relation.manage')||canWrite)
+      ? '<div class="card mt-4"><h3>Koneksi Club</h3><p class="sub">Club dapat terhubung ke BEM, HMJ, UKM, atau Club lain.</p>'+
+        '<form id="form-club-relasi"><select id="cr-org" required><option value="">Pilih organisasi terhubung</option>'+
+        (S.organizations||[]).filter(o=>o.id!==currentOrg.id).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('')+
+        '</select><button class="btn mt-3">Tambah koneksi</button></form>'+
+        (related.length?'<div class="grid sm:grid-cols-2 gap-2 mt-4">'+related.map(r=>{
+          const partner=r.organisasi_id===currentOrg.id?r.terhubung:r.organisasi;
+          return '<div class="rounded-xl bg-slate-50 p-3 text-sm">'+esc(partner?.nama||'-')+' · '+esc(partner?.tipe||'-')+'</div>';
+        }).join('')+'</div>':'<p class="sub mt-3">Belum ada koneksi.</p>')+
+        '</div>'
+      : '';
+
+    const createForm=!hasPeriods
+      ? '<div class="card border border-amber-200 bg-amber-50"><h3 class="!text-amber-900">Belum ada periode</h3><p class="sub !text-amber-800">Buat periode terlebih dahulu.</p></div>'
+      : (canWrite
+        ? '<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3>'+
+          '<div class="f2"><div><label>Nama *</label><input id="o-nama" required></div>'+
+          '<div><label>Tipe *</label><select id="o-tipe" required><option value="">Pilih tipe</option><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div>'+
+          '<div><label>Periode *</label><select id="o-periode" required><option value="">Pilih periode</option>'+
+          S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama+' · '+x.status)+'</option>').join('')+
+          '</select></div></div>'+
+          '<div id="o-parent-wrap" hidden><label>Naungan BEM *</label><select id="o-parent"><option value="">Pilih BEM</option>'+
+          bems.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+
+          '</select></div>'+
+          '<div id="o-relasi-wrap" hidden><label>Koneksi Club</label><select id="o-relasi" multiple class="min-h-32">'+
+          (S.organizations||[]).filter(o=>['BEM','HMJ','UKM','CLUB'].includes(o.tipe)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('')+
+          '</select><small>Club dapat terhubung ke satu atau banyak organisasi.</small></div>'+
+          '<button class="btn mt-4">Simpan organisasi</button></form>'
+        : '');
+
+    const orgList=S.organizations.length
+      ? '<div class="grid gap-3 mt-4">'+S.organizations.map(x=>{
+          const parent=(S.organizations||[]).find(o=>o.id===x.induk_organisasi_id);
+          return '<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3>'+
+            '<p class="sub mb-1">'+esc(x.tipe)+'</p>'+
+            '<p class="text-xs text-slate-500">'+(parent?'Di bawah '+esc(parent.nama):(x.tipe==='CLUB'?'Club multi-koneksi':'Organisasi utama'))+'</p></div>'+
+            '<span class="chip bl">'+esc(x.tipe)+'</span></div></div>';
+        }).join('')+'</div>'
+      : emptyCard('Belum ada organisasi.');
+
     return pageHeader('Organisasi','Buat dan kelola BEM, HMJ, UKM, serta Club.',
-      canWrite&&currentOrg?.tipe==='CLUB'?'<button class="btn" data-go="struktur">Kelola anggota Club</button>': '')+
-      (!hasPeriods?'<div class="card border border-amber-200 bg-amber-50"><h3 class="!text-amber-900">Belum ada periode</h3><p class="sub !text-amber-800">Buat periode terlebih dahulu.</p></div>':
-      (canWrite?'<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3><div class="f2"><div><label>Nama *</label><input id="o-nama" required></div><div><label>Tipe *</label><select id="o-tipe" required><option value="">Pilih tipe</option><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div><div><label>Periode *</label><select id="o-periode" required><option value="">Pilih periode</option>'+S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.status)+'</option>').join('')+'</select></div></div><div id="o-parent-wrap" hidden><label>Naungan BEM *</label><select id="o-parent"><option value="">Pilih BEM</option>'+bems.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div><div id="o-relasi-wrap" hidden><label>Koneksi Club</label><select id="o-relasi" multiple class="min-h-32">'+(S.organizations||[]).filter(o=>['BEM','HMJ','UKM','CLUB'].includes(o.tipe)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('')+'</select><small>Club dapat terhubung ke satu atau banyak organisasi.</small></div><button class="btn mt-4">Simpan organisasi</button></form>':'') )+
-      (S.organizations.length?'<div class="grid gap-3 mt-4">'+S.organizations.map(x=>'<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3><p class="sub mb-1">'+esc(x.tipe)+'</p><p class="text-xs text-slate-500">'+(x.induk_organisasi_id?'Di bawah '+esc((S.organizations||[]).find(o=>o.id===x.induk_organisasi_id)?.nama||'-'):(x.tipe==='CLUB'?'Club multi-koneksi':'Organisasi utama'))+'</p></div><span class="chip bl">'+esc(x.tipe)+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada organisasi.'));
+      currentOrg?.tipe==='CLUB'?'<button class="btn" data-go="struktur">Kelola struktur Club</button>':'')+
+      createForm+connectionCard+orgList;
   },
+
   unit_kerja:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran) || S.permissions?.has('unit.manage');
     const positions=[
@@ -1354,6 +1394,15 @@ document.addEventListener('change', async e => {
     const kb=$('#kb'); if(kb)kb.hidden=e.target.value!=='kolaboratif';
     if(e.target.value==='kolaboratif'&&!document.querySelector('.peserta'))pesertaRow(true);
   }
+  if(e.target.id==='o-periode'){
+    const selectedPeriod=e.target.value;
+    const parent=$('#o-parent');
+    if(parent){
+      const bems=(S.organizations||[]).filter(o=>o.tipe==='BEM' && (!selectedPeriod || String(o.periode_id)===String(selectedPeriod)));
+      parent.innerHTML='<option value="">Pilih BEM</option>'+bems.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+'</option>').join('');
+    }
+  }
+
   if(e.target.id==='cx'){
     S.ctx=Number(e.target.value);
     S.orgId=S.ctxs[S.ctx]?.orgId||null;
@@ -1504,6 +1553,22 @@ document.addEventListener('submit', async e => {
       if(r.error)return toast('Organisasi dibuat, tetapi koneksi Club gagal: '+r.error.message);
     }
     toast('Organisasi berhasil ditambahkan.');return render();
+  }
+
+  if(e.target.id==='form-club-relasi'){
+    e.preventDefault();
+    if(!S.orgId)return toast('Pilih Club terlebih dahulu.');
+    const target=$('#cr-org').value;
+    if(!target)return toast('Pilih organisasi yang akan dihubungkan.');
+    const {error}=await sb.from('organisasi_relasi').insert({
+      organisasi_id:S.orgId,
+      terhubung_dengan_id:target,
+      hubungan:'terhubung',
+      dibuat_oleh:S.user.id
+    });
+    if(error)return toast(error.code==='23505'?'Koneksi tersebut sudah ada.':'Gagal menambah koneksi: '+error.message);
+    toast('Koneksi organisasi ditambahkan.');
+    return render();
   }
 
   if(e.target.id==='form-unit'){
