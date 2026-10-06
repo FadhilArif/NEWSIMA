@@ -160,6 +160,7 @@ async function loadProkerDetail() {
       (await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId)).data?.map(x=>x.id) || []).order('waktu',{ascending:false})
   ]);
   S.detail = { proker, docs:docs.data || [], kolaborator:kolab.data || [], keputusan:decisions.data || [] };
+  S.reviewDocId = S.detail.docs.find(x=>x.jenis==='proposal')?.id || null;
 }
 
 async function loadUndangan() {
@@ -720,10 +721,12 @@ const V = {
   review:function(){
     const d=S.detail;
     if(!d?.proker)return emptyCard('Detail proker tidak ditemukan.','<button class="btn" data-go="proker">Kembali</button>');
-    const p=d.proker;
+    const p=d.proker, proposal=d.docs.find(x=>x.jenis==='proposal');
+    const reviewer=['admin','wakil_rektor','pembimbing'].includes(S.user.peran);
     return pageHeader(p.nama,'Detail program kerja.',chip(p.status))+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
-      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div><button class="btn s" data-review-doc="'+esc(doc.id)+'">Buka</button></div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div></div>'+
+      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div>'+(doc.id===proposal?.id?'<span class="chip bl">Proposal utama</span>':'')+'</div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div></div>'+
+      (reviewer&&proposal?'<div class="card"><h3>Tindakan review</h3><p class="sub">Berikan komentar dan pilih keputusan untuk proposal.</p><label>Komentar</label><textarea id="kk" rows="3" placeholder="Masukkan catatan review"></textarea><p class="err" id="ke"></p><div class="flex flex-wrap gap-2 mt-3"><button class="btn d" data-act="revisi">Minta revisi</button><button class="btn w" data-act="teruskan">Teruskan</button><button class="btn" data-act="setuju">Setujui</button></div></div>':'')+
       '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div>'+
       '<div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
