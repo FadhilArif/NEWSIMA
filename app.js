@@ -352,7 +352,7 @@ async function loadProkerDetail() {
     proker.organisasi_id
       ? sb.from('organisasi').select('id,nama,tipe').eq('id',proker.organisasi_id).maybeSingle()
       : Promise.resolve({data:null}),
-    sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap').eq('proker_id',S.selectedProkerId).order('jenis'),
+    sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at').eq('proker_id',S.selectedProkerId).order('jenis'),
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
     docIds.length
       ? sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',docIds).order('waktu',{ascending:false})
@@ -1090,11 +1090,11 @@ const V = {
     const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReview&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
-    if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=action('submit','Ajukan proposal');
-    else if(p.status==='revisi'&&(canCreate||canEdit)) actions=action('resubmit','Ajukan ulang');
+    if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
+    else if(p.status==='revisi'&&(canCreate||canEdit)) actions=proposal?.file_path ? action('resubmit','Ajukan ulang') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
     else if(p.status==='disetujui'&&canEdit) actions=action('start','Mulai pelaksanaan');
     else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
-    else if(p.status==='selesai'&&canEdit) actions=action('submit_lpj','Ajukan LPJ');
+    else if(p.status==='selesai'&&canEdit) actions=lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
     else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label><textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
 
@@ -1112,7 +1112,15 @@ const V = {
       '<div class="card mb-4"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+(actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+'</div></div>'+
-      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div>'+(doc.id===proposal?.id?'<span class="chip bl">Proposal</span>':doc.id===lpj?.id?'<span class="chip bl">LPJ</span>':'')+'</div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div>'+
+      '<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>Dokumen</h3><p class="sub mb-0">File proposal dan LPJ disimpan di Supabase Storage dan wajib ada sebelum pengajuan.</p></div></div>'+
+      ((p.status==='direncanakan'||p.status==='revisi')&&(canCreate||canEdit)
+        ? '<div class="mt-4 rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">Proposal</p><p class="text-xs text-slate-500">'+(proposal?.file_name?'Sudah diunggah: '+esc(proposal.file_name):'Belum ada file proposal.')+'</p></div><span class="chip '+(proposal?.file_path?'ok':'wa')+'">'+(proposal?.file_path?'Siap diajukan':'Wajib upload')+'</span></div><div class="flex flex-col sm:flex-row gap-2 mt-3"><input id="workflow-file" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="flex-1"><button class="btn" data-doc-upload="proposal" data-proker-id="'+esc(p.id)+'">Upload proposal</button>'+(proposal?.file_path?'<button class="btn" data-doc-download="'+esc(proposal.file_path)+'">Lihat file</button>':'')+'</div></div>'
+        : '')+
+      ((p.status==='selesai'||p.status==='lpj_diajukan'||p.status==='lpj_disetujui')&&(canEdit||canReview)
+        ? '<div class="mt-4 rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">Laporan akhir / LPJ</p><p class="text-xs text-slate-500">'+(lpj?.file_name?'Sudah diunggah: '+esc(lpj.file_name):'Belum ada file LPJ.')+'</p></div><span class="chip '+(lpj?.file_path?'ok':'wa')+'">'+(lpj?.file_path?'Tersedia':'Wajib upload sebelum pengajuan')+'</span></div><div class="flex flex-col sm:flex-row gap-2 mt-3"><input id="workflow-file-lpj" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="flex-1"><button class="btn" data-doc-upload="laporan_akhir" data-proker-id="'+esc(p.id)+'">Upload LPJ</button>'+(lpj?.file_path?'<button class="btn" data-doc-download="'+esc(lpj.file_path)+'">Lihat file</button>':'')+'</div></div>'
+        : '')+
+      (d.docs.length?'<div class="mt-4">'+d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+(doc.file_name?' · '+esc(doc.file_name):'')+'</p></div>'+(doc.file_path?'<button class="btn s" data-doc-download="'+esc(doc.file_path)+'">Buka</button>':'<span class="chip wa">Belum ada file</span>')+'</div></div>').join('')+'</div>':'<p class="sub mt-4">Belum ada dokumen.</p>')+
+      '</div>'+
       '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div><div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
@@ -1571,6 +1579,86 @@ document.addEventListener('click', async e => {
   if(e.target.id==='tp'){pesertaRow();return hitung();}
   if(e.target.closest('[data-del]')){e.target.closest('.peserta')?.remove();return hitung();}
   if(e.target.id==='btn-csv')return prosesBulkCSV();
+
+  const docUpload=e.target.closest('[data-doc-upload]');
+  if(docUpload){
+    if(!sb)return toast('Supabase belum tersedia.');
+    const prokerId=docUpload.dataset.prokerId;
+    const kind=docUpload.dataset.docUpload;
+    const input=kind==='laporan_akhir'?$('#workflow-file-lpj'):$('#workflow-file');
+    const file=input?.files?.[0];
+    if(!file)return toast('Pilih file terlebih dahulu.');
+
+    const allowed=[
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    const ext=(file.name.split('.').pop()||'').toLowerCase();
+    if(!allowed.includes(file.type)&&!['pdf','doc','docx'].includes(ext)){
+      return toast('Format file harus PDF, DOC, atau DOCX.');
+    }
+    if(file.size>15*1024*1024)return toast('Ukuran file maksimal 15 MB.');
+
+    const proker=S.detail?.proker;
+    if(!proker?.organisasi_id)return toast('Organisasi proker tidak ditemukan.');
+
+    const quota=await loadStorageStatus(file.size);
+    if(quota && !quota.can_upload){
+      return toast('Penyimpanan SIMA tidak cukup untuk file ini. Upload dihentikan.');
+    }
+
+    const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path=proker.organisasi_id+'/'+prokerId+'/'+kind+'/'+Date.now()+'_'+safeName;
+    const bucket=sb.storage.from('documents');
+    const up=await bucket.upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
+    if(up.error)return toast('Upload dokumen gagal: '+up.error.message);
+
+    const existing=S.detail.docs.find(x=>x.jenis===kind);
+    let dbResult;
+    const payload={
+      organisasi_id:proker.organisasi_id,
+      proker_id:prokerId,
+      jenis:kind,
+      status:'draft',
+      tahap:null,
+      file_path:path,
+      file_name:file.name,
+      mime_type:file.type||null,
+      file_size:file.size,
+      uploaded_by:S.user.id,
+      uploaded_at:new Date().toISOString()
+    };
+    if(existing){
+      dbResult=await sb.from('dokumen').update(payload).eq('id',existing.id);
+      if(dbResult.error){
+        await bucket.remove([path]);
+        return toast('Metadata dokumen gagal disimpan: '+dbResult.error.message);
+      }
+      if(existing.file_path&&existing.file_path!==path)await bucket.remove([existing.file_path]);
+    }else{
+      dbResult=await sb.from('dokumen').insert(payload);
+      if(dbResult.error){
+        await bucket.remove([path]);
+        return toast('Metadata dokumen gagal disimpan: '+dbResult.error.message);
+      }
+    }
+
+    await loadStorageStatus();
+    await loadProkerDetail();
+    toast(kind==='proposal'?'Proposal berhasil diunggah.':'LPJ berhasil diunggah.');
+    return render();
+  }
+
+  const docDownload=e.target.closest('[data-doc-download]');
+  if(docDownload){
+    const path=docDownload.dataset.docDownload;
+    if(!path)return;
+    const {data,error}=await sb.storage.from('documents').createSignedUrl(path,600);
+    if(error||!data?.signedUrl)return toast('Gagal membuat link dokumen: '+(error?.message||'Tidak dapat mengakses file.'));
+    window.open(data.signedUrl,'_blank','noopener,noreferrer');
+    return;
+  }
 
   const workflow=e.target.closest('[data-proker-action]');
   if(workflow){
