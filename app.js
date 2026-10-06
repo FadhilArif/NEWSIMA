@@ -1000,6 +1000,13 @@ document.addEventListener('click', async e => {
       const payload={dokumen_id:docId,tahap:'koordinator',keputusan:act.dataset.act,komentar:k,oleh:S.user.id,sebagai:S.user.peran};
       const {error}=await sb.from('persetujuan').insert(payload);
       if(error)return toast(error.message);
+
+      const nextDocStatus=act.dataset.act==='setuju'?'disetujui':act.dataset.act==='revisi'?'revisi':'diteruskan';
+      await sb.from('dokumen').update({status:nextDocStatus}).eq('id',docId);
+      if(S.selectedProkerId){
+        const nextProkerStatus=act.dataset.act==='setuju'?'disetujui':act.dataset.act==='revisi'?'revisi':'proposal_diajukan';
+        await sb.from('proker').update({status:nextProkerStatus}).eq('id',S.selectedProkerId);
+      }
     }
     toast({revisi:'Dokumen dikembalikan untuk revisi',teruskan:'Diteruskan ke tahap berikutnya',setuju:'Dokumen disetujui'}[act.dataset.act]||'Tindakan tersimpan');
     return render();
