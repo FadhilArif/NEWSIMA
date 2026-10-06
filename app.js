@@ -106,26 +106,31 @@ async function loadContexts() {
 async function loadProker() {
   if (!sb) return;
   let q = sb.from('proker')
-    .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,organisasi!proker_organisasi_id_fkey(id,nama,tipe)')
+    .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh')
     .order('tanggal_mulai', { ascending:true });
   if (S.orgId) q = q.eq('organisasi_id', S.orgId);
+
   const { data, error } = await q;
   if (error) return toast('Gagal memuat proker: ' + error.message);
 
   const rows = Array.isArray(data) ? data : [];
   const ids = rows.map(x => x.id);
+  const orgIds = [...new Set(rows.map(x => x.organisasi_id).filter(Boolean))];
   const totals = Object.fromEntries(ids.map(id => [id, {ajuan:0,cair:0}]));
-  if (ids.length) {
-    const [budgetRes, payoutRes] = await Promise.all([
-      sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id', ids),
-      sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id', ids)
-    ]);
-    (budgetRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].ajuan += Number(x.subtotal || 0); });
-    (payoutRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].cair += Number(x.jumlah || 0); });
-  }
+
+  const [orgRes, budgetRes, payoutRes] = await Promise.all([
+    orgIds.length ? sb.from('organisasi').select('id,nama,tipe').in('id', orgIds) : Promise.resolve({data:[]}),
+    ids.length ? sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id', ids) : Promise.resolve({data:[]}),
+    ids.length ? sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id', ids) : Promise.resolve({data:[]})
+  ]);
+
+  const orgMap = Object.fromEntries((orgRes.data || []).map(o => [o.id, o]));
+  (budgetRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].ajuan += Number(x.subtotal || 0); });
+  (payoutRes.data || []).forEach(x => { if (totals[x.proker_id]) totals[x.proker_id].cair += Number(x.jumlah || 0); });
 
   S.proker = rows.map(p => ({
     ...p,
+    organisasi:orgMap[p.organisasi_id] || null,
     ketua:p.ketua_pelaksana || '-',
     mulai:p.tanggal_mulai || '-',
     ajuan:totals[p.id]?.ajuan || 0,
@@ -152,17 +157,32 @@ async function loadNotifications() {
 async function loadProkerDetail() {
   S.detail = null;
   if (!sb || !S.selectedProkerId) return;
+
   const { data:proker, error } = await sb.from('proker')
-    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,organisasi(id,nama,tipe)')
+    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana')
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
-  const [docs, kolab, decisions] = await Promise.all([
+
+  const docIdsResult = await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId);
+  const docIds = (docIdsResult.data || []).map(x => x.id);
+
+  const [orgRes, docs, kolab, decisions] = await Promise.all([
+    proker.organisasi_id
+      ? sb.from('organisasi').select('id,nama,tipe').eq('id',proker.organisasi_id).maybeSingle()
+      : Promise.resolve({data:null}),
     sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap').eq('proker_id',S.selectedProkerId).order('jenis'),
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
-    sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',
-      (await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId)).data?.map(x=>x.id) || []).order('waktu',{ascending:false})
+    docIds.length
+      ? sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',docIds).order('waktu',{ascending:false})
+      : Promise.resolve({data:[]})
   ]);
-  S.detail = { proker, docs:docs.data || [], kolaborator:kolab.data || [], keputusan:decisions.data || [] };
+
+  S.detail = {
+    proker:{...proker,organisasi:orgRes.data || null},
+    docs:docs.data || [],
+    kolaborator:kolab.data || [],
+    keputusan:decisions.data || []
+  };
   S.reviewDocId = S.detail.docs.find(x=>x.jenis==='proposal')?.id || null;
 }
 
@@ -786,10 +806,14 @@ const V = {
   },
   organisasi:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
-    return pageHeader('Organisasi','Kelola BEM, HMJ, UKM, dan Club.')+
-      (canWrite?'<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3><div class="f2"><div><label>Nama organisasi</label><input id="o-nama" required></div><div><label>Tipe</label><select id="o-tipe"><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div><div><label>Periode</label><select id="o-periode"><option value="">Tanpa periode</option>'+S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div></div><button class="btn mt-4">Simpan organisasi</button></form>':'')+
-      (S.organizations.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.organizations.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3><span class="chip bl">'+esc(x.tipe)+'</span></div></div>').join('')+'</div>':emptyCard('Belum ada organisasi. Buat organisasi terlebih dahulu sebelum menetapkan anggota.'));
+    const hasPeriods=Array.isArray(S.periods) && S.periods.length>0;
+    return pageHeader('Organisasi','Kelola BEM, HMJ, UKM, dan Club.',
+      canWrite && !hasPeriods ? '<button class="btn" data-go="periode">Buat periode dulu</button>' : '')+
+      (!hasPeriods ? '<div class="card border border-amber-200 bg-amber-50"><h3 class="!text-amber-900">Belum ada periode</h3><p class="sub !text-amber-800">Database mewajibkan setiap organisasi terhubung ke satu periode. Buat periode terlebih dahulu, lalu kembali ke sini.</p></div>' :
+      (canWrite ? '<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3><div class="f2"><div><label>Nama organisasi *</label><input id="o-nama" required></div><div><label>Tipe *</label><select id="o-tipe" required><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div><div><label>Periode *</label><select id="o-periode" required><option value="">Pilih periode</option>'+S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.status)+'</option>').join('')+'</select></div></div><button class="btn mt-4">Simpan organisasi</button></form>' : ''))+
+      (S.organizations.length ? '<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+S.organizations.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3><span class="chip bl">'+esc(x.tipe)+'</span></div></div>').join('')+'</div>' : emptyCard('Belum ada organisasi.'));
   },
+
   unit_kerja:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
     return pageHeader('Unit kerja','Kelola kementerian dan divisi di bawah organisasi.')+
@@ -1135,11 +1159,12 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-organisasi'){
     e.preventDefault();
-    const nama=$('#o-nama').value.trim(),tipe=$('#o-tipe').value,periode_id=$('#o-periode').value||null;
+    const nama=$('#o-nama').value.trim(),tipe=$('#o-tipe').value,periode_id=$('#o-periode').value;
     if(!nama)return toast('Nama organisasi wajib diisi.');
+    if(!periode_id)return toast('Pilih periode terlebih dahulu.');
     const {error}=await sb.from('organisasi').insert({nama,tipe,periode_id});
     if(error)return toast('Gagal membuat organisasi: '+error.message);
-    toast('Organisasi tersimpan.');return render();
+    toast('Organisasi berhasil ditambahkan.');return render();
   }
 
   if(e.target.id==='form-unit'){
