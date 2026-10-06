@@ -1,4 +1,4 @@
-// Isi dari Supabase: Project Settings > API. Kosong = mode demo.
+// Public Supabase configuration. Login is fail-closed when configuration is missing.
 const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
 const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
 const SECURE_LOGIN_FUNCTION = 'secure-login';
