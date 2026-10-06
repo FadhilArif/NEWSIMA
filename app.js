@@ -43,7 +43,7 @@ async function loadProker() {
   }));
 }
 
-const chip = s => { const [t, c] = ST[s] || [s, '']; return \`<span class="chip \${c}">\${t}</span>\`; };
+const chip = s => { const [t, c] = ST[s] || [s, '']; return `<span class="chip ${c}">${t}</span>`; };
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const ICON = {
