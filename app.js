@@ -16,6 +16,8 @@ const ROLE_ACCESS = {
   wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','profil'])
 }
 
+const ADMIN_VIEWS = new Set(['periode','organisasi','unit_kerja','akun','jabatan','audit']);
+
 const VIEW_PERMISSION = {
   beranda:'beranda.view',
   proker:'proker.view',
@@ -80,7 +82,9 @@ const POSITION_LABELS = {
   ketua_divisi:'Ketua Divisi',
   staff_divisi:'Staff Divisi',
   menteri:'Menteri',
-  staff_kementerian:'Staff Kementerian'
+  staff_kementerian:'Staff Kementerian',
+  ketua:'Ketua',
+  wakil_ketua:'Wakil Ketua'
 };
 
 function positionLabel(code) {
