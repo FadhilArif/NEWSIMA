@@ -36,25 +36,14 @@ function roleLabel(role) {
 const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
 
 // State Global
-const S = { 
-  user:{ nama:'Fadhli Arif', email:'fadhli@stikesmhk.ac.id', nim:'', avatar_url:'', wajib_ganti_sandi: false }, 
-  ctx:0, view:'beranda', tab:'semua', q:'', orgId:null,
-  history:[], notifications:[], memberships:[], organizations:[], pendingAvatarFile:null,
-  ctxs:[], selectedProkerId:null, detail:null,
-  undangan:[], inbox:[], gallery:[], reports:[], structure:[], meetings:[], budgets:[], payouts:[], periods:[], audit:[], accounts:[], sources:[],
-  renderToken:0,
-  ctxs:[],
-  proker:[
-    { id:1, nama:'Pelatihan Kader Dasar', ketua:'Andi Pratama', jenis:'mandiri', mulai:'2026-10-12', ajuan:8500000, cair:5000000, status:'berjalan' },
-    { id:2, nama:'Seminar Kesehatan Mental', ketua:'Siti Rahma', jenis:'kolaboratif', mulai:'2026-10-16', ajuan:12000000, cair:6000000, status:'proposal_diajukan' },
-    { id:3, nama:'Bakti Sosial Desa Sehat', ketua:'Dimas Arif', jenis:'mandiri', mulai:'2026-10-25', ajuan:7500000, cair:0, status:'draft' },
-    { id:4, nama:'Lomba Inovasi Kesehatan', ketua:'Nadia Putri', jenis:'mandiri', mulai:'2026-11-05', ajuan:10000000, cair:0, status:'revisi' },
-    { id:5, nama:'Webinar Karir Kesehatan', ketua:'Rizky Maulana', jenis:'kolaboratif', mulai:'2026-11-12', ajuan:6000000, cair:3000000, status:'disetujui' }
-  ],
-  csvData: [],
-  lastCredentials:[],
-  tempSb: null // Instance Supabase terpisah untuk bulk create
-};
+const S = {
+  user:{nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false},
+  ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
+  history:[],notifications:[],memberships:[],organizations:[],pendingAvatarFile:null,
+  selectedProkerId:null,detail:null,reviewDocId:null,
+  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],
+  proker:[],csvData:[],lastCredentials:[],tempSb:null,renderToken:0,searchTimer:null
+}
 
 const MENU = [
   ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['struktur','Struktur dan anggota']]],
