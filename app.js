@@ -571,7 +571,7 @@ async function loadViewData(view) {
     case 'inbox': return loadInbox();
     case 'galeri': return loadGallery();
     case 'laporan': return loadReports();
-    case 'struktur': return Promise.all([loadStructure(),loadClubMembers()]);
+    case 'struktur': return Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
     case 'rapat': return loadMeetings();
     case 'plafon': return loadBudgets();
     case 'cair': return Promise.all([loadProker(),loadPayouts(),loadSources()]);
