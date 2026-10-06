@@ -108,7 +108,7 @@ const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diaj
 const S = {
   user:{nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false},
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
-  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],pendingAvatarFile:null,
+  history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
@@ -652,7 +652,7 @@ function goBack() {
 
 function resetClientState() {
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
-  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];
+  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
@@ -1182,7 +1182,15 @@ const V = {
     return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Setiap organisasi mempunyai jabatan dan ruang lingkupnya sendiri.')+
       '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label>NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option></select><label id="an-unit-label">Unit kerja</label><select id="an-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
       '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option></select><label id="p-unit-label">Unit kerja</label><select id="p-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
-      (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Penetapan organisasi</th><th>Status</th></tr></thead><tbody>'+S.accounts.map(x=>'<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):'Belum ditetapkan')+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
+      (S.revealedCredential?'<div class="card border border-amber-200 bg-amber-50 mb-4"><div class="flex items-start justify-between gap-3"><div><h3>Password sementara</h3><p class="sub !text-amber-900">Password lama tidak bisa dibaca kembali. Ini adalah password sementara baru yang baru saja direset dan wajib diganti saat login.</p><p class="font-bold">'+esc(S.revealedCredential.nama||S.revealedCredential.email||'Akun')+'</p></div><button class="text-sm underline" data-account-action="close-credential">Tutup</button></div><div class="flex gap-2 mt-3"><input readonly value="'+esc(S.revealedCredential.password)+'" id="revealed-password" class="font-mono flex-1"><button class="btn" data-account-action="copy-credential">Salin</button></div></div>':'')+
+      (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Penetapan organisasi</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>'+S.accounts.map(x=>{
+        const actionButtons='<div class="flex flex-wrap gap-2 min-w-[260px]">'+
+          '<button class="btn" data-account-action="reset-password" data-account-id="'+esc(x.id)+'">Reset & lihat password</button>'+
+          (x.aktif?'<button class="btn" data-account-action="deactivate" data-account-id="'+esc(x.id)+'">Nonaktifkan</button>':'<button class="btn" data-account-action="activate" data-account-id="'+esc(x.id)+'">Aktifkan</button>')+
+          '<button class="btn" data-account-action="delete" data-account-id="'+esc(x.id)+'">Hapus akun</button>'+
+          '</div>';
+        return '<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):'Belum ditetapkan')+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td><td>'+actionButtons+'</td></tr>';
+      }).join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Disimpan hanya di memori halaman.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
   ganti_sandi:function(){
@@ -1339,6 +1347,71 @@ document.addEventListener('click', async e => {
     if($('#profileMenu'))$('#profileMenu').hidden=true;
     if(profileAction.dataset.profileAction==='profile')return navigate('profil');
     if(profileAction.dataset.profileAction==='logout')return logout();
+  }
+
+  const accountAction=e.target.closest('[data-account-action]');
+  if(accountAction){
+    const action=accountAction.dataset.accountAction;
+
+    if(action==='close-credential'){
+      S.revealedCredential=null;
+      return render();
+    }
+
+    if(action==='copy-credential'){
+      const value=S.revealedCredential?.password||'';
+      if(!value)return;
+      try{
+        await navigator.clipboard.writeText(value);
+        toast('Password sementara disalin.');
+      }catch(_){
+        toast('Gagal menyalin. Silakan salin manual.');
+      }
+      return;
+    }
+
+    if(!sb||!accountAction.dataset.accountId)return;
+    const targetId=accountAction.dataset.accountId;
+    const target=S.accounts.find(x=>String(x.id)===String(targetId));
+    if(!target)return toast('Akun tidak ditemukan.');
+
+    if(action==='delete'){
+      const ok=window.confirm('Hapus akun '+(target.nama||target.email)+' secara permanen? Login akan dihapus dan akses organisasi akun ini dicabut. Data histori yang masih dibutuhkan akan dipertahankan tanpa identitas akun.');
+      if(!ok)return;
+    }
+
+    if(action==='deactivate'){
+      const ok=window.confirm('Nonaktifkan akun '+(target.nama||target.email)+'? Pengguna tidak dapat login sampai akun diaktifkan kembali.');
+      if(!ok)return;
+    }
+
+    try{
+      const {data,error}=await sb.functions.invoke('admin-account-actions',{
+        body:{action:action==='reset-password'?'reset_password':action,target_user_id:targetId}
+      });
+
+      if(error||!data?.ok){
+        return toast(data?.error||error?.message||'Tindakan akun gagal.');
+      }
+
+      if(action==='reset-password'){
+        S.revealedCredential={id:targetId,nama:target.nama,email:target.email,password:data.temporary_password};
+        toast('Password sementara baru berhasil dibuat.');
+      }else if(action==='delete'){
+        S.revealedCredential=null;
+        toast('Akun dihapus.');
+      }else if(action==='deactivate'){
+        S.revealedCredential=null;
+        toast('Akun dinonaktifkan.');
+      }else if(action==='activate'){
+        toast('Akun diaktifkan kembali.');
+      }
+
+      await loadAccounts();
+      return render();
+    }catch(error){
+      return toast('Tindakan akun gagal: '+(error?.message||'Terjadi kesalahan.'));
+    }
   }
 
   const collab=e.target.closest('[data-collab-action]');
