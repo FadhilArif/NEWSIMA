@@ -820,8 +820,6 @@ const V = {
   }
 };
 
-function stub(t) { return `<h1 class="t">${t}</h1><p class="sub">Halaman ini mengikuti pola yang sama dan tersambung ke tabel Supabase terkait.</p><div class="card">Belum ada data untuk ditampilkan.</div>`; }
-
 async function render() {
   const token = ++S.renderToken;
   renderShell();
@@ -840,7 +838,7 @@ async function render() {
   }
 
   if (token !== S.renderToken) return;
-  const viewFn = V[S.view] || (() => stub(S.view));
+  const viewFn = V[S.view] || (() => emptyCard('Modul tidak tersedia.'));
   root.innerHTML = viewFn();
   if (S.view === 'form') pesertaRow(true);
   renderShell();
