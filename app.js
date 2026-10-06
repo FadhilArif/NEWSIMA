@@ -6,8 +6,9 @@ const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], rev
 
 // State Global
 const S = { 
-  user:{ nama:'Fadhli Arif', email:'fadhli@stikesmhk.ac.id', wajib_ganti_sandi: false }, 
+  user:{ nama:'Fadhli Arif', email:'fadhli@stikesmhk.ac.id', nim:'', avatar_url:'', wajib_ganti_sandi: false }, 
   ctx:0, view:'beranda', tab:'semua', q:'', orgId:null,
+  history:[], notifications:[], memberships:[], pendingAvatarFile:null,
   ctxs:[{ org:'HIMIKA', peran:'Ketua · 2026/2027', review:false }, { org:'Koordinator RACANA', peran:'Review', review:true }],
   proker:[
     { id:1, nama:'Pelatihan Kader Dasar', ketua:'Andi Pratama', jenis:'mandiri', mulai:'2026-10-12', ajuan:8500000, cair:5000000, status:'berjalan' },
@@ -42,7 +43,294 @@ async function loadProker() {
   }));
 }
 
-const chip = s => { const [t, c] = ST[s] || [s, '']; return `<span class="chip ${c}">${t}</span>`; };
+const chip = s => { const [t, c] = ST[s] || [s, '']; return \`<span class="chip \${c}">\${t}</span>\`; };
+
+const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const ICON = {
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m15 18-6-6 6-6"/><path d="M9 12h9"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.2 3.3-5 7-5s6.1 1.8 7 5"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-5"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m14.5 6.5 3 3"/><path d="M4 20l4.3-.9L19 8.4a2.1 2.1 0 0 0 0-3l-.4-.4a2.1 2.1 0 0 0-3 0L4.9 15.7 4 20Z"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg>'
+};
+const icon = name => ICON[name] || '';
+
+function avatarMarkup(u, cls='h-10 w-10') {
+  const url = u?.avatar_url || '';
+  const initials = esc((u?.nama || 'A').split(/\s+/).filter(Boolean).slice(0,2).map(x => x[0]).join('').toUpperCase());
+  return url
+    ? '<img src="' + esc(url) + '" alt="Foto profil" class="' + cls + ' rounded-full object-cover border border-slate-200">'
+    : '<span class="' + cls + ' rounded-full bg-sima-600 text-white font-bold grid place-items-center">' + initials + '</span>';
+}
+
+function profileKey() {
+  return 'sima:profile:' + String(S.user.email || 'demo').toLowerCase();
+}
+
+function loadLocalProfile() {
+  if (sb) return;
+  try {
+    const raw = localStorage.getItem(profileKey());
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    S.user = { ...S.user, ...p };
+  } catch (_) {}
+}
+
+function saveLocalProfile() {
+  if (sb) return;
+  try {
+    localStorage.setItem(profileKey(), JSON.stringify({
+      nama:S.user.nama, nim:S.user.nim || '', avatar_url:S.user.avatar_url || ''
+    }));
+  } catch (_) {}
+}
+
+function navigate(view, push=true) {
+  if (!view || view === S.view) return render();
+  if (push) S.history.push(S.view);
+  S.view = view;
+  render();
+}
+
+function goBack() {
+  const previous = S.history.pop();
+  S.view = previous || 'beranda';
+  render();
+}
+
+function resetClientState() {
+  S.user = { nama:'', email:'', nim:'', avatar_url:'', wajib_ganti_sandi:false };
+  S.ctx = 0; S.view = 'beranda'; S.tab = 'semua'; S.q = ''; S.orgId = null;
+  S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
+  S.proker = [];
+  S.csvData = [];
+  S.tempSb = null;
+  $('#fl')?.reset();
+  $('#v').innerHTML = '';
+  $('#nav').innerHTML = '';
+  $('#bn').innerHTML = '';
+  $('#notifPanel').hidden = true;
+  $('#profileMenu').hidden = true;
+  $('#notifBadge').textContent = '0';
+}
+
+async function loadNotifications() {
+  S.notifications = [];
+  if (sb && S.user.id) {
+    try {
+      const { data, error } = await sb.from('notifications')
+        .select('id,title,message,type,read,created_at,view')
+        .eq('user_id', S.user.id)
+        .order('created_at', { ascending:false })
+        .limit(30);
+      if (!error && Array.isArray(data)) {
+        S.notifications = data.map(n => ({
+          id:n.id, title:n.title || 'Notifikasi', message:n.message || '',
+          type:n.type || 'info', read:!!n.read, created_at:n.created_at, view:n.view || ''
+        }));
+      }
+    } catch (_) {}
+  }
+
+  if (!S.notifications.length) {
+    const pending = S.proker.filter(p => p.status === 'proposal_diajukan');
+    S.notifications = [
+      ...pending.slice(0,2).map(p => ({
+        id:'demo-proker-'+p.id, title:'Pengajuan proker baru',
+        message:'"' + p.nama + '" menunggu tindakan Anda.', type:'proker',
+        read:false, created_at:new Date().toISOString(), view:'proker'
+      })),
+      { id:'demo-collab-1', title:'Undangan kolaborasi',
+        message:'Ada konteks kolaborasi baru yang perlu Anda cek.', type:'collaboration',
+        read:false, created_at:new Date().toISOString(), view:'undangan' }
+    ];
+  }
+}
+
+function renderNotificationPanel() {
+  const panel = $('#notifPanel'), badge = $('#notifBadge');
+  if (!panel || !badge) return;
+  const unread = S.notifications.filter(n => !n.read).length;
+  badge.textContent = unread > 99 ? '99+' : String(unread);
+  badge.hidden = unread === 0;
+  panel.innerHTML = '<div class="p-4 border-b border-slate-100 flex items-center justify-between gap-3">' +
+    '<div><p class="font-bold text-sm">Notifikasi</p><p class="text-xs text-slate-500">' +
+    (unread ? unread + ' belum dibaca' : 'Semua sudah dibaca') + '</p></div>' +
+    '<button data-notif="read-all" class="text-xs font-semibold text-sima-600 hover:underline">Tandai semua</button></div>' +
+    (S.notifications.length ? '<div class="max-h-80 overflow-y-auto">' + S.notifications.map(n =>
+      '<button data-notif="open" data-id="' + esc(n.id) + '" class="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 flex gap-3 ' + (n.read ? '' : 'bg-sima-50/50') + '">' +
+      '<span class="mt-1 h-2.5 w-2.5 rounded-full shrink-0 ' + (n.read ? 'bg-slate-200' : 'bg-red-500') + '"></span>' +
+      '<span class="min-w-0"><span class="block text-sm font-semibold truncate">' + esc(n.title) + '</span>' +
+      '<span class="block text-xs text-slate-500 mt-0.5">' + esc(n.message) + '</span></span></button>'
+    ).join('') + '</div>' : '<div class="p-8 text-center text-sm text-slate-500">Belum ada notifikasi.</div>');
+}
+
+function renderProfileMenu() {
+  const m = $('#profileMenu');
+  if (!m) return;
+  m.innerHTML =
+    '<div class="p-4 flex items-center gap-3 border-b border-slate-100">' +
+      avatarMarkup(S.user,'h-11 w-11') +
+      '<div class="min-w-0"><p class="font-bold text-sm truncate">' + esc(S.user.nama || 'Pengguna') + '</p>' +
+      '<p class="text-xs text-slate-500 truncate">' + esc(S.user.email || '') + '</p></div>' +
+    '</div>' +
+    '<div class="p-2">' +
+      '<button data-profile-action="profile" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-semibold">' + icon('user') + '<span>Profil & organisasi</span></button>' +
+      '<button data-profile-action="logout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 text-red-600 text-sm font-semibold">' + icon('logout') + '<span>Keluar dari akun</span></button>' +
+    '</div>';
+  m.querySelectorAll('svg').forEach(x => x.classList.add('w-5','h-5','shrink-0'));
+}
+
+async function loadMemberships() {
+  if (!sb || !S.user.id) {
+    S.memberships = S.ctxs.map(c => ({ organisasi:c.org, jabatan:c.peran, status:'Aktif' }));
+    return;
+  }
+  try {
+    const { data, error } = await sb.from('keanggotaan')
+      .select('id,organisasi_id,jabatan,status')
+      .eq('akun_id', S.user.id);
+    if (error || !data) return;
+    const ids = [...new Set(data.map(x => x.organisasi_id).filter(Boolean))];
+    let orgs = [];
+    if (ids.length) {
+      const r = await sb.from('organisasi').select('id,nama').in('id', ids);
+      if (!r.error) orgs = r.data || [];
+    }
+    const lookup = Object.fromEntries(orgs.map(o => [o.id, o.nama]));
+    S.memberships = data.map(x => ({
+      organisasi:lookup[x.organisasi_id] || 'Organisasi',
+      jabatan:x.jabatan || 'Anggota',
+      status:x.status || 'Aktif'
+    }));
+  } catch (_) {
+    S.memberships = [];
+  }
+}
+
+async function hydrateUser(authUser) {
+  let profile = {};
+  if (sb) {
+    const { data } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
+    profile = data || {};
+  }
+  S.user = {
+    id: authUser.id,
+    nama: profile.nama || authUser.user_metadata?.nama || authUser.email?.split('@')[0] || 'Pengguna',
+    email: profile.email || authUser.email || '',
+    nim: profile.nim || authUser.user_metadata?.nim || '',
+    peran: profile.peran || authUser.user_metadata?.peran || 'mahasiswa',
+    avatar_url: profile.avatar_url || authUser.user_metadata?.avatar_url || '',
+    wajib_ganti_sandi: !!profile.wajib_ganti_sandi
+  };
+  loadLocalProfile();
+  S.history = [];
+  S.ctx = 0; S.tab = 'semua'; S.q = '';
+  $('#login').hidden = true;
+  $('#app').hidden = false;
+  if (S.user.wajib_ganti_sandi) {
+    S.view = 'ganti_sandi';
+  } else {
+    S.view = 'beranda';
+  }
+  if (sb) await loadProker();
+  else if (!S.proker.length) {
+    S.proker = [
+      { id:1, nama:'Pelatihan Kader Dasar', ketua:'Andi Pratama', jenis:'mandiri', mulai:'2026-10-12', ajuan:8500000, cair:5000000, status:'berjalan' },
+      { id:2, nama:'Seminar Kesehatan Mental', ketua:'Siti Rahma', jenis:'kolaboratif', mulai:'2026-10-16', ajuan:12000000, cair:6000000, status:'proposal_diajukan' }
+    ];
+  }
+  await loadNotifications();
+  render();
+}
+
+async function logout() {
+  if (sb) {
+    const { error } = await sb.auth.signOut();
+    if (error) return toast('Gagal keluar: ' + error.message);
+  }
+  resetClientState();
+  $('#app').hidden = true;
+  $('#login').hidden = false;
+  $('#le').textContent = '';
+  toast('Anda telah keluar dari akun.');
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  const nama = $('#profileName').value.trim();
+  const nim = $('#profileNim').value.trim();
+  if (!nama) return toast('Nama wajib diisi.');
+  S.user.nama = nama; S.user.nim = nim;
+
+  if (!sb) {
+    if (S.pendingAvatarFile) {
+      const reader = new FileReader();
+      reader.onload = () => { S.user.avatar_url = reader.result; saveLocalProfile(); render(); toast('Profil berhasil diperbarui.'); };
+      reader.readAsDataURL(S.pendingAvatarFile);
+    } else {
+      saveLocalProfile(); render(); toast('Profil berhasil diperbarui.');
+    }
+    return;
+  }
+
+  const profilePayload = { nama, nim };
+  const p = await sb.from('profiles').update(profilePayload).eq('id', S.user.id);
+  if (p.error) {
+    const meta = await sb.auth.updateUser({ data:{ ...(S.user.id ? {} : {}), nama, nim } });
+    if (meta.error) return toast('Nama/NIM gagal disimpan: ' + p.error.message);
+  }
+
+  if (S.pendingAvatarFile) {
+    const file = S.pendingAvatarFile;
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = 'profiles/' + S.user.id + '-' + Date.now() + '.' + ext;
+    const up = await sb.storage.from('avatars').upload(path, file, { upsert:true, contentType:file.type || 'image/jpeg' });
+    if (!up.error) {
+      const pub = sb.storage.from('avatars').getPublicUrl(path);
+      const avatarUrl = pub.data?.publicUrl || '';
+      S.user.avatar_url = avatarUrl;
+      const av = await sb.from('profiles').update({ avatar_url:avatarUrl }).eq('id', S.user.id);
+      if (av.error) await sb.auth.updateUser({ data:{ avatar_url:avatarUrl } });
+    } else {
+      toast('Nama/NIM tersimpan, tetapi foto gagal diunggah. Pastikan bucket Storage "avatars" tersedia.');
+    }
+  }
+  S.pendingAvatarFile = null;
+  await loadMemberships();
+  render();
+  toast('Profil berhasil diperbarui.');
+}
+
+function previewAvatar(file) {
+  S.pendingAvatarFile = file || null;
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = $('#profileAvatarPreview');
+    if (img) img.innerHTML = '<img src="' + e.target.result + '" alt="Pratinjau foto" class="h-24 w-24 rounded-3xl object-cover border border-slate-200">';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function initAuth() {
+  if (!sb) {
+    loadLocalProfile();
+    render();
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  if (data?.session?.user) await hydrateUser(data.session.user);
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') {
+      resetClientState();
+      $('#app').hidden = true;
+      $('#login').hidden = false;
+    }
+  });
+}
 
 function getTempSb() {
   if (!S.tempSb) {
@@ -55,18 +343,41 @@ function getTempSb() {
 
 // --- Fungsi Render ---
 function renderShell() {
-  // Jika user wajib ganti sandi, sembunyikan navigasi
   if (S.user.wajib_ganti_sandi) {
     $('#nav').innerHTML = '';
     $('#bn').innerHTML = '';
-    return;
+  } else {
+    $('#nav').innerHTML = MENU.map(([g, it]) =>
+      '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
+      it.map(([k, t]) =>
+        '<button class="nav flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm transition ' +
+        (S.view === k ? 'bg-sima-50 text-sima-600 font-bold' : 'text-slate-600 hover:bg-slate-50') +
+        '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
+      ).join('')
+    ).join('');
+    $('#bn').innerHTML = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
+      .map(([k,t]) => '<button class="' + (k === 'form'
+        ? 'fab bg-sima-600 text-white w-11 h-11 rounded-full text-xl -mt-5 shadow-lg'
+        : 'px-2 py-2 text-[11px] ' + (S.view === k ? 'text-sima-600 font-bold' : 'text-slate-500')) +
+        '" data-go="' + esc(k) + '" aria-label="' + esc(t) + '">' + esc(t) + '</button>').join('');
   }
 
-  $('#nav').innerHTML = MENU.map(([g, it]) => `<div class="grp">${g}</div>` + it.map(([k, t]) => `<button class="nav ${S.view === k ? 'on' : ''}" data-go="${k}">${t}</button>`).join('')).join('');
-  $('#bn').innerHTML = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']].map(([k, t]) => `<button class="${k === 'form' ? 'fab' : S.view === k ? 'on' : ''}" data-go="${k}" aria-label="${t}">${t}</button>`).join('');
-  $('#cx').innerHTML = S.ctxs.map((c, i) => `<option value="${i}" ${i === S.ctx ? 'selected' : ''}>${c.org} · ${c.peran}</option>`).join('');
-  $('#av').textContent = S.user.nama.split(' ').map(w => w[0]).join('');
+  $('#cx').innerHTML = S.ctxs.map((c, i) =>
+    '<option value="' + i + '" ' + (i === S.ctx ? 'selected' : '') + '>' + esc(c.org + ' · ' + c.peran) + '</option>'
+  ).join('');
+
+  const back = $('#backBtn');
+  back.innerHTML = icon('back');
+  back.className = 'h-10 w-10 shrink-0 rounded-xl bg-white border border-slate-200 shadow-sm grid place-items-center hover:bg-slate-50 transition';
+  back.querySelector('svg')?.classList.add('w-5','h-5');
+  back.hidden = S.view === 'beranda' || S.view === 'ganti_sandi' || S.history.length === 0;
+
+  const av = $('#av');
+  av.innerHTML = avatarMarkup(S.user);
+  renderNotificationPanel();
+  renderProfileMenu();
 }
+
 
 const V = {
   beranda: () => `<h1 class="t">Beranda</h1><p class="sub">Ringkasan aktivitas dari semua konteks Anda.</p>
@@ -101,7 +412,34 @@ const V = {
   <div class="card"><h3>Komentar</h3><p><b>Andi Pratama</b><br>Mohon dicek kembali rincian transportasi.</p><label for="kk">Tulis komentar *</label><textarea id="kk" rows="3" placeholder="Berikan komentar atau catatan"></textarea><p class="err" id="ke"></p>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn d" data-act="revisi">Minta revisi</button><button class="btn w" data-act="teruskan">Teruskan</button><button class="btn" data-act="setuju">Setujui</button></div></div></div></div>`,
 
-  akun: () => `<h1 class="t">Manajemen Akun</h1><p class="sub">Buat akun tunggal atau massal untuk calon pengguna SIMA.</p>
+  profil: () => '<div class="max-w-5xl">' +
+    '<div class="mb-6"><p class="text-xs font-bold uppercase tracking-wider text-sima-600 mb-2">Akun saya</p><h1 class="t">Profil & organisasi</h1><p class="sub">Kelola identitas akun dan lihat seluruh organisasi serta jabatan Anda.</p></div>' +
+    '<div class="grid gap-4 lg:grid-cols-[1.05fr_.95fr]">' +
+      '<form id="form-profile" class="card !p-5 lg:!p-6">' +
+        '<div class="flex flex-col sm:flex-row sm:items-center gap-4 pb-5 border-b border-slate-100">' +
+          '<div id="profileAvatarPreview">' + avatarMarkup(S.user,'h-24 w-24') + '</div>' +
+          '<div><h3 class="!mb-1 text-base">Foto profil</h3><p class="sub !mb-3">Gunakan foto yang jelas. JPG/PNG disarankan.</p><label class="btn w-fit cursor-pointer inline-flex items-center gap-2">Ganti foto<input id="profileAvatar" type="file" accept="image/*" class="hidden"></label></div>' +
+        '</div>' +
+        '<div class="grid gap-4 sm:grid-cols-2 mt-5">' +
+          '<div><label for="profileName">Nama lengkap</label><input id="profileName" value="' + esc(S.user.nama) + '" required></div>' +
+          '<div><label for="profileNim">NIM</label><input id="profileNim" value="' + esc(S.user.nim || '') + '" placeholder="Masukkan NIM"></div>' +
+          '<div class="sm:col-span-2"><label>Email</label><input value="' + esc(S.user.email || '') + '" disabled class="!bg-slate-50 !text-slate-500"></div>' +
+        '</div>' +
+        '<div class="flex justify-end mt-5"><button class="btn inline-flex items-center gap-2">' + icon('check') + 'Simpan perubahan</button></div>' +
+      '</form>' +
+      '<div class="card !p-5 lg:!p-6">' +
+        '<h3>Organisasi & jabatan</h3><p class="sub">Keanggotaan yang terhubung ke akun ini.</p>' +
+        (S.memberships.length ? '<div class="space-y-3">' + S.memberships.map(m =>
+          '<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">' +
+            '<div class="flex items-start justify-between gap-3"><div><p class="font-bold">' + esc(m.organisasi) + '</p><p class="text-sm text-slate-500 mt-0.5">' + esc(m.jabatan) + '</p></div>' +
+            '<span class="chip ok">' + esc(m.status || 'Aktif') + '</span></div>' +
+          '</div>').join('') + '</div>'
+          : '<div class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">Belum ada data organisasi yang terhubung.</div>') +
+      '</div>' +
+    '</div>' +
+  '</div>',
+
+  akun: () => `<h1 class="t">Manajemen Akun</h1>`<p class="sub">Buat akun tunggal atau massal untuk calon pengguna SIMA.</p>
   <div class="row2">
     <div class="card">
       <h3>Buat Akun Tunggal</h3>
@@ -144,7 +482,12 @@ function stub(t) { return `<h1 class="t">${t}</h1><p class="sub">Halaman ini men
 function render() { 
   renderShell(); 
   $('#v').innerHTML = (V[S.view] || (() => stub(S.view)))(); 
-  if (S.view === 'form') pesertaRow(true); 
+  if (S.view === 'form') pesertaRow(true);
+  if (S.view === 'profil') {
+    loadMemberships().then(() => {
+      if (S.view === 'profil') $('#v').innerHTML = V.profil();
+    });
+  }
 }
 
 function pesertaRow(reset) { 
@@ -215,8 +558,54 @@ async function prosesBulkCSV() {
 
 // --- Event Listeners ---
 document.addEventListener('click', async e => {
+  if (e.target.closest('#backBtn')) return goBack();
+
+  if (e.target.closest('#notifBtn')) {
+    $('#notifPanel').hidden = !$('#notifPanel').hidden;
+    $('#profileMenu').hidden = true;
+    return;
+  }
+
+  if (e.target.closest('#profileBtn')) {
+    $('#profileMenu').hidden = !$('#profileMenu').hidden;
+    $('#notifPanel').hidden = true;
+    return;
+  }
+
+  const notif = e.target.closest('[data-notif]');
+  if (notif) {
+    if (notif.dataset.notif === 'read-all') {
+      S.notifications.forEach(n => n.read = true);
+      if (sb && S.user.id) {
+        try { await sb.from('notifications').update({ read:true }).eq('user_id', S.user.id); } catch (_) {}
+      }
+      renderNotificationPanel();
+      return;
+    }
+    if (notif.dataset.notif === 'open') {
+      const n = S.notifications.find(x => String(x.id) === String(notif.dataset.id));
+      if (n) {
+        n.read = true;
+        if (sb && typeof n.id === 'number') {
+          try { await sb.from('notifications').update({ read:true }).eq('id', n.id); } catch (_) {}
+        }
+        $('#notifPanel').hidden = true;
+        if (n.view) navigate(n.view);
+        else renderNotificationPanel();
+      }
+      return;
+    }
+  }
+
+  const profileAction = e.target.closest('[data-profile-action]');
+  if (profileAction) {
+    $('#profileMenu').hidden = true;
+    if (profileAction.dataset.profileAction === 'profile') return navigate('profil');
+    if (profileAction.dataset.profileAction === 'logout') return logout();
+  }
+
   const go = e.target.closest('[data-go]'); 
-  if (go) { S.view = go.dataset.go; return render(); }
+  if (go) { return navigate(go.dataset.go); }
   
   const tab = e.target.closest('[data-tab]'); 
   if (tab) { S.tab = tab.dataset.tab; return render(); }
@@ -235,7 +624,7 @@ document.addEventListener('click', async e => {
       if (error) return toast(error.message); 
     }
     toast({ revisi:'Dokumen dikembalikan untuk revisi', teruskan:'Diteruskan ke tahap berikutnya', setuju:'Dokumen disetujui' }[act.dataset.act]); 
-    S.view = 'inbox'; render();
+    navigate('inbox');
   }
 });
 
@@ -248,6 +637,12 @@ document.addEventListener('change', e => {
   if (e.target.name === 'pengajuan') $('#kb').hidden = e.target.value !== 'kolaboratif'; 
   if (e.target.id === 'cx') { S.ctx = +e.target.value; render(); } 
   if (e.target.id === 'csv-file') { bacaCSV(e.target.files[0]); }
+  if (e.target.id === 'profileAvatar') previewAvatar(e.target.files[0]);
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#notifWrap')) $('#notifPanel').hidden = true;
+  if (!e.target.closest('#profileWrap')) $('#profileMenu').hidden = true;
 });
 
 document.addEventListener('submit', async e => {
@@ -255,27 +650,17 @@ document.addEventListener('submit', async e => {
   if (e.target.id === 'fl') { 
     e.preventDefault();
     if (sb) { 
-      const { data: authData, error: authError } = await sb.auth.signInWithPassword({ email:$('#em').value, password:$('#pw').value }); 
-      if (authError) return $('#le').textContent = 'Email atau kata sandi salah.'; 
-      
-      const { data: profile, error: profError } = await sb.from('profiles').select('*').eq('id', authData.user.id).single();
-      if (profError) return toast('Gagal memuat profil: ' + profError.message);
-      
-      S.user = { id: profile.id, nama: profile.nama, email: profile.email, peran: profile.peran, wajib_ganti_sandi: profile.wajib_ganti_sandi };
-      await loadProker();
+      const { data: authData, error: authError } = await sb.auth.signInWithPassword({ email:$('#em').value.trim(), password:$('#pw').value }); 
+      if (authError) return $('#le').textContent = 'Email atau kata sandi salah.';
+      await hydrateUser(authData.user);
+      return;
     }
-    $('#login').hidden = true; 
-    $('#app').hidden = false; 
-    
-    // Cek apakah wajib ganti sandi
-    if (S.user.wajib_ganti_sandi) {
-      S.view = 'ganti_sandi';
-    } else {
-      S.view = 'beranda';
-    }
-    render(); 
+    S.user = { ...S.user, email:$('#em').value.trim(), nama:$('#em').value.trim().split('@')[0] || 'Pengguna' };
+    loadLocalProfile();
+    await hydrateUser({ id:'demo-' + S.user.email, email:S.user.email, user_metadata:{} });
+    return;
   }
-  
+
   // Form Proker
   if (e.target.id === 'ff') { 
     e.preventDefault(); 
@@ -298,8 +683,7 @@ document.addEventListener('submit', async e => {
       S.proker.unshift({ id:Date.now(), nama:f.nama, ketua:S.user.nama, jenis:f.pengajuan, mulai:f.mulai, ajuan:0, cair:0, status:'draft' });
     }
     toast('Draft proker tersimpan'); 
-    S.view = 'proker'; 
-    render(); 
+    navigate('proker'); 
   }
 
   // Form Buat Akun Tunggal
@@ -318,6 +702,11 @@ document.addEventListener('submit', async e => {
     });
   }
 
+  // Form Profil
+  if (e.target.id === 'form-profile') {
+    return saveProfile(e);
+  }
+
   // Form Ganti Sandi Wajib
   if (e.target.id === 'form-ganti-pw') {
     e.preventDefault();
@@ -329,8 +718,10 @@ document.addEventListener('submit', async e => {
     
     await sb.from('profiles').update({ wajib_ganti_sandi: false }).eq('id', S.user.id);
     S.user.wajib_ganti_sandi = false;
-    S.view = 'beranda';
-    render();
+    navigate('beranda', false);
     toast('Kata sandi berhasil diperbarui');
   }
 });
+
+
+initAuth();
