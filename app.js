@@ -427,38 +427,6 @@ function resetClientState() {
   $('#notifBadge').textContent = '0';
 }
 
-async function loadNotifications() {
-  S.notifications = [];
-  if (sb && S.user.id) {
-    try {
-      const { data, error } = await sb.from('notifikasi')
-        .select('id,pesan,tautan,dibaca,dibuat')
-        .eq('akun_id', S.user.id)
-        .order('dibuat', { ascending:false })
-        .limit(30);
-      if (!error && Array.isArray(data)) {
-        S.notifications = data.map(n => ({
-          id:n.id, title:'Notifikasi', message:n.pesan || '',
-          type:'info', read:!!n.dibaca, created_at:n.dibuat, view:n.tautan || ''
-        }));
-      }
-    } catch (_) {}
-  }
-
-  if (!S.notifications.length) {
-    const pending = S.proker.filter(p => p.status === 'proposal_diajukan');
-    S.notifications = [
-      ...pending.slice(0,2).map(p => ({
-        id:'demo-proker-'+p.id, title:'Pengajuan proker baru',
-        message:'"' + p.nama + '" menunggu tindakan Anda.', type:'proker',
-        read:false, created_at:new Date().toISOString(), view:'proker'
-      })),
-      { id:'demo-collab-1', title:'Undangan kolaborasi',
-        message:'Ada konteks kolaborasi baru yang perlu Anda cek.', type:'collaboration',
-        read:false, created_at:new Date().toISOString(), view:'undangan' }
-    ];
-  }
-}
 
 function renderNotificationPanel() {
   const panel = $('#notifPanel'), badge = $('#notifBadge');
@@ -494,32 +462,6 @@ function renderProfileMenu() {
   m.querySelectorAll('svg').forEach(x => x.classList.add('w-5','h-5','shrink-0'));
 }
 
-async function loadMemberships() {
-  if (!sb || !S.user.id) {
-    S.memberships = S.ctxs.map(c => ({ organisasi:c.org, jabatan:c.peran, status:'Aktif' }));
-    return;
-  }
-  try {
-    const { data, error } = await sb.from('keanggotaan')
-      .select('id,organisasi_id,jabatan,status')
-      .eq('akun_id', S.user.id);
-    if (error || !data) return;
-    const ids = [...new Set(data.map(x => x.organisasi_id).filter(Boolean))];
-    let orgs = [];
-    if (ids.length) {
-      const r = await sb.from('organisasi').select('id,nama').in('id', ids);
-      if (!r.error) orgs = r.data || [];
-    }
-    const lookup = Object.fromEntries(orgs.map(o => [o.id, o.nama]));
-    S.memberships = data.map(x => ({
-      organisasi:lookup[x.organisasi_id] || 'Organisasi',
-      jabatan:x.jabatan || 'Anggota',
-      status:x.status || 'Aktif'
-    }));
-  } catch (_) {
-    S.memberships = [];
-  }
-}
 
 async function hydrateUser(authUser) {
   let profile = {};
@@ -556,6 +498,8 @@ async function hydrateUser(authUser) {
     wajib_ganti_sandi: !!profile.wajib_ganti_sandi
   };
   if (!sb) loadLocalProfile();
+  // Build account-scoped organization context before loading any module data.
+  await loadContexts();
   // Drop every account-scoped collection before loading the new identity.
   // This prevents the previous account's data from flashing or remaining in memory.
   S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
