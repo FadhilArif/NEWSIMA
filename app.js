@@ -310,7 +310,7 @@ async function loadPayouts() {
 async function loadPeriods() {
   S.periods=[];
   if(!sb)return;
-  const {data,error}=await sb.from('periode').select('id,nama,status,batas_lpj').order('batas_lpj');
+  const {data,error}=await sb.from('periode').select('id,nama,status,batas_lpj_hari').order('nama');
   if(error)return toast('Gagal memuat periode: '+error.message);
   S.periods=data||[];
 }
@@ -822,9 +822,9 @@ const V = {
   },
   periode:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
-    return pageHeader('Periode','Kelola siklus periode organisasi dan batas LPJ.')+
-      (canWrite?'<form id="form-periode" class="card"><h3>Buat periode</h3><div class="f2"><div><label>Nama periode</label><input id="pe-nama" required></div><div><label>Batas LPJ</label><input id="pe-batas" type="date"></div></div><label>Status</label><select id="pe-status"><option value="disiapkan">Disiapkan</option><option value="aktif">Aktif</option><option value="masa_lpj">Masa LPJ</option><option value="arsip">Arsip</option></select><button class="btn mt-4">Simpan</button></form>':'')+
-      (S.periods.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.periods.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3>'+chip(x.status)+'</div><p class="sub">Batas LPJ: '+dateID(x.batas_lpj)+'</p></div>').join('')+'</div>':emptyCard('Belum ada periode.'));
+    return pageHeader('Periode','Tentukan siklus periode dan berapa hari batas LPJ setelah proker mulai berjalan.')+
+      (canWrite?'<form id="form-periode" class="card"><h3>Buat periode</h3><div class="f2"><div><label>Nama periode *</label><input id="pe-nama" required></div><div><label>Batas LPJ (hari) *</label><input id="pe-batas-hari" type="number" min="1" max="365" value="7" required><small>Deadline LPJ dihitung otomatis saat status proker berubah menjadi <b>Berjalan</b>.</small></div></div><label>Status periode</label><select id="pe-status"><option value="disiapkan">Disiapkan</option><option value="aktif">Aktif</option><option value="masa_lpj">Masa LPJ</option><option value="arsip">Arsip</option></select><button class="btn mt-4">Simpan periode</button></form>':'')+
+      (S.periods.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.periods.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3>'+chip(x.status)+'</div><p class="sub">Batas LPJ: <b>'+esc(x.batas_lpj_hari ?? '-')+' hari</b> setelah proker mulai berjalan.</p></div>').join('')+'</div>':emptyCard('Belum ada periode.'));
   },
   audit:function(){
     return pageHeader('Jejak audit','Riwayat perubahan penting dalam sistem.')+
@@ -1178,11 +1178,14 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-periode'){
     e.preventDefault();
-    const nama=$('#pe-nama').value.trim(),status=$('#pe-status').value,batas_lpj=$('#pe-batas').value||null;
+    const nama=$('#pe-nama').value.trim();
+    const status=$('#pe-status').value;
+    const batas_lpj_hari=Number($('#pe-batas-hari').value||0);
     if(!nama)return toast('Nama periode wajib diisi.');
-    const {error}=await sb.from('periode').insert({nama,status,batas_lpj});
+    if(!Number.isInteger(batas_lpj_hari)||batas_lpj_hari<1||batas_lpj_hari>365)return toast('Batas LPJ harus 1 sampai 365 hari.');
+    const {error}=await sb.from('periode').insert({nama,status,batas_lpj_hari});
     if(error)return toast('Gagal membuat periode: '+error.message);
-    toast('Periode tersimpan.');return render();
+    toast('Periode tersimpan. Deadline LPJ akan dihitung otomatis saat proker mulai berjalan.');return render();
   }
 
   if(e.target.id==='form-profile')return saveProfile(e);
