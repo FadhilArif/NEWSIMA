@@ -1,0 +1,16 @@
+drop policy if exists baca_dokumen on public.dokumen;
+drop policy if exists tulis_dokumen on public.dokumen;
+drop policy if exists admin_all_keanggotaan on public.keanggotaan;
+drop policy if exists baca_notif on public.notifikasi;
+drop policy if exists admin_all_organisasi on public.organisasi;
+drop policy if exists baca_org on public.organisasi;
+drop policy if exists baca_periode on public.periode;
+drop policy if exists baca_plafon on public.plafon_anggaran;
+drop policy if exists tulis_plafon on public.plafon_anggaran;
+drop policy if exists admin_all_profiles on public.profiles;
+drop policy if exists baca_profil on public.profiles;
+drop policy if exists baca_proker on public.proker;
+drop policy if exists tulis_proker on public.proker;
+drop policy if exists baca_kolab on public.proker_kolaborator;
+drop policy if exists jawab_kolab on public.proker_kolaborator;
+drop policy if exists baca_ref on public.sumber_dana;
