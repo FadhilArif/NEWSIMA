@@ -1126,7 +1126,7 @@ document.addEventListener('submit', async e => {
     if(!/[A-Z]/.test(pw)||!/[a-z]/.test(pw)||!/[0-9]/.test(pw))return toast('Gunakan huruf besar, kecil, dan angka.');
     const {error}=await sb.auth.updateUser({password:pw});
     if(error)return toast(error.message);
-    const done=await sb.rpc('complete_password_change');
+    const done=await sb.functions.invoke('complete-password-change');
     if(done.error)return toast('Password berubah, tetapi status wajib ganti gagal diperbarui: '+done.error.message);
     S.user.wajib_ganti_sandi=false;
     navigate('beranda',false);toast('Password berhasil diperbarui.');
