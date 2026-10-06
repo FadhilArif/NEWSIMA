@@ -30,3 +30,16 @@ table,thead,tbody,tr,td{display:block}thead{display:none}tr{border-bottom:1px so
 #csv-preview div { padding: 4px 0; border-bottom: 1px solid var(--ln); font-size: 12px; }
 #csv-preview div:last-child { border-bottom: 0; }
 input[type="file"] { padding: 8px; background: var(--bg); border: 1px dashed var(--ln); }
+
+/* App visibility + Tailwind compatibility */
+[hidden],
+#login[hidden],
+#app[hidden]{display:none !important}
+
+body{min-height:100vh}
+#app{background:#f8fafc}
+#notifBtn svg,#backBtn svg{display:block}
+#profileMenu svg,#form-profile svg{width:20px;height:20px;flex:0 0 auto}
+#profileAvatarPreview img{display:block}
+.toast{box-shadow:0 12px 30px rgba(16,21,64,.18)}
+@media(max-width:820px){.top{position:relative;z-index:20}}
