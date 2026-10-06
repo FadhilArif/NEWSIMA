@@ -1,54 +1,81 @@
-# NEWSIMA Security Setup
+# NEWSIMA Security & Deployment
 
-This repository now fails closed: the browser cannot authenticate in demo mode and no arbitrary email/password can open the application.
+The application is fail-closed: there is no demo login and an arbitrary email cannot open the application.
 
-## 1. Configure the browser client
+## Browser configuration
 
-Edit `config.js` with the Supabase project URL and the **anon/publishable** key.
+`config.js` contains only the public Supabase URL and publishable/anon key.
 
-Never put a `service_role` or secret key in `config.js`.
+Never put a Supabase secret/service-role key in browser code.
 
-## 2. Apply the database migration
+## Authentication
 
-Run:
+Browser login calls the `secure-login` Edge Function.
 
-```bash
-supabase db push
-```
+The function:
+- rate-limits by IP and normalized email;
+- verifies credentials with Supabase Auth;
+- resets the counters after successful authentication;
+- returns only the user session tokens.
 
-or paste `supabase/migrations/202610060001_security_baseline.sql` into the Supabase SQL Editor.
+There is no direct browser `signUp()` flow and no client-side fake login.
 
-The migration adds:
-- role validation for `admin`, `pembimbing`, `staf_keuangan`, `mahasiswa`
-- RLS for profiles, organizations, memberships, proker, and notifications
-- protection against self-assigning an administrator role
-- server-side login rate-limit storage/functions
+## Rate limiting
 
-## 3. Deploy the two Edge Functions
+The production limiter is server-side:
 
-```bash
-supabase functions deploy secure-login
-supabase functions deploy admin-create-user
-```
+- IP: 5 failed attempts / 15 minutes
+- normalized email: 5 failed attempts / 15 minutes
 
-`secure-login` is intentionally public at the Edge gateway because it is the credential-verification endpoint. It applies the database rate limiter before attempting authentication.
+Both limits must allow the request.
 
-`admin-create-user` keeps the default JWT verification and only accepts an authenticated administrator.
+## Roles
 
-## 4. Login rate limit
+The live SIMAWA schema uses:
 
-The server-side limiter uses two keys:
-- IP address: 5 attempts / 15 minutes
-- normalized email: 5 attempts / 15 minutes
+- `admin`
+- `wakil_rektor`
+- `pembimbing`
+- `staf_keuangan`
+- `mahasiswa`
 
-Both must be allowed. Successful authentication resets both counters.
+Frontend visibility is only convenience. Authorization is enforced with PostgreSQL RLS.
 
-## 5. Role authorization
+## Account creation
 
-The client hides menus that a role cannot use, but the real protection is PostgreSQL RLS. Never rely on the JavaScript role check alone.
+Administrators create accounts through `admin-create-user`.
 
-## 6. Account creation
+Each new account receives:
+- a random temporary password;
+- `wajib_ganti_sandi = true`;
+- the selected role;
+- optional organization + position membership.
 
-Administrators create accounts through `admin-create-user`. The old client-side `signUp()` flow is no longer used for account provisioning.
+The password completion step is handled by the authenticated `complete-password-change` Edge Function.
 
-Each created account receives a unique temporary password and `wajib_ganti_sandi = true`.
+## Data isolation
+
+RLS protects profiles, organizations and periods, memberships, proker and collaborators, documents and approvals, meetings, budgets and payouts, notifications, and audit logs.
+
+Legacy public policies that caused recursive `proker` evaluation were removed.
+
+## Notifications and audit
+
+Server-side database triggers create notifications for new proker, collaboration invitations, and proposal decisions.
+Audit triggers record important insert/update/delete actions in `jejak_audit`.
+
+## Profile photos
+
+The `avatars` Storage bucket is public-read, while writes are restricted to the authenticated user's own UUID folder.
+
+## Remaining Supabase dashboard recommendation
+
+Supabase Security Advisor currently has one remaining warning: **Leaked Password Protection is disabled**.
+
+Enable it under the Supabase Auth password-security settings to reject passwords found in known compromised-password datasets.
+
+This is an Auth dashboard setting, not an RLS/database migration.
+
+## Migration note
+
+The production project has already received the security hardening directly through Supabase migrations. The GitHub migration directory is kept for reproducibility, but its historical migration names do not exactly match the production migration history. Do not blindly run `supabase db push` against production without reconciling the migration history first.
