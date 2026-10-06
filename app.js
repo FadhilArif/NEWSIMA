@@ -1203,9 +1203,10 @@ async function render() {
       const ukmId=form.dataset.koordinatorForm;
       const select=form.querySelector('select[name="akun_id"]');
       if(!select || S.user.peran==='admin')return;
-      const {data,error}=await sb.rpc('get_ukm_coordinator_candidates',{p_ukm_id:ukmId});
-      if(!error){
-        select.innerHTML='<option value="">Pilih anggota BEM</option>'+(data||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
+      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
+      const candidates=data?.candidates||[];
+      if(!error&&data?.ok){
+        select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
       } else {
         select.innerHTML='<option value="">Gagal memuat kandidat</option>';
       }
@@ -1623,8 +1624,8 @@ document.addEventListener('submit', async e => {
     const ukmId=e.target.dataset.koordinatorForm;
     const accountId=e.target.querySelector('select[name="akun_id"]')?.value;
     if(!accountId)return toast('Pilih anggota BEM terlebih dahulu.');
-    const {error}=await sb.rpc('assign_ukm_coordinator',{p_ukm_id:ukmId,p_account_id:accountId});
-    if(error)return toast('Gagal menunjuk koordinator: '+error.message);
+    const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
+    if(error||!data?.ok)return toast('Gagal menunjuk koordinator: '+(data?.error||error?.message||'Terjadi kesalahan.'));
     toast('Koordinator UKM berhasil ditunjuk.');return render();
   }
 
