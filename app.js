@@ -439,7 +439,7 @@ const V = {
     '</div>' +
   '</div>',
 
-  akun: () => `<h1 class="t">Manajemen Akun</h1>`<p class="sub">Buat akun tunggal atau massal untuk calon pengguna SIMA.</p>
+  akun: () => `<h1 class="t">Manajemen Akun</h1><p class="sub">Buat akun tunggal atau massal untuk calon pengguna SIMA.</p>
   <div class="row2">
     <div class="card">
       <h3>Buat Akun Tunggal</h3>
