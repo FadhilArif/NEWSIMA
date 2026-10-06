@@ -9,12 +9,12 @@ const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLoca
 
 const ROLE_ACCESS = {
   user: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
-  admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','organisasi','unit_kerja','akun','audit','profil']),
+  admin: new Set(['periode','organisasi','unit_kerja','akun','jabatan','audit','profil']),
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
   mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
-  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','organisasi','unit_kerja','audit','profil'])
-};
+  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','profil'])
+}
 
 const VIEW_PERMISSION = {
   beranda:'beranda.view',
@@ -88,12 +88,20 @@ function positionLabel(code) {
 }
 
 function canAccessView(view) {
-  if (view === 'ganti_sandi' || view === 'profil') return true;
-  if (view === 'akun' || view === 'audit' || view === 'jabatan') return S.user?.peran === 'admin';
   const role = S.user?.peran || '';
-  if (role === 'admin' || role === 'wakil_rektor') return true;
+
+  // Credentials/profile are always reachable from the account shell.
+  if (view === 'ganti_sandi' || view === 'profil') return true;
+
+  // Administrator is isolated to the Admin module.
+  if (role === 'admin') return ADMIN_VIEWS.has(view);
+
+  // Non-admin accounts can never open Admin modules directly.
+  if (ADMIN_VIEWS.has(view)) return false;
+
   const permission = VIEW_PERMISSION[view];
   if (permission && S.permissions?.has(permission)) return true;
+
   if (S.positionsLoaded) return false;
   return ROLE_ACCESS[role]?.has(view) === true;
 }
@@ -646,7 +654,8 @@ function navigate(view, push=true) {
 
 function goBack() {
   const previous = S.history.pop();
-  S.view = previous || 'beranda';
+  const fallback = S.user?.peran === 'admin' ? 'organisasi' : 'beranda';
+  S.view = previous && canAccessView(previous) ? previous : fallback;
   render();
 }
 
@@ -747,6 +756,8 @@ async function hydrateUser(authUser) {
   $('#app').hidden = false;
   if (S.user.wajib_ganti_sandi) {
     S.view = 'ganti_sandi';
+  } else if (S.user.peran === 'admin') {
+    S.view = 'organisasi';
   } else {
     S.view = 'beranda';
   }
@@ -860,7 +871,11 @@ function renderShell() {
     $('#nav').innerHTML = '';
     $('#bn').innerHTML = '';
   } else {
-    $('#nav').innerHTML = MENU.map(([g, it]) => {
+    const visibleGroups = S.user.peran === 'admin'
+      ? MENU.filter(([g]) => g === 'Admin')
+      : MENU.filter(([g]) => g !== 'Admin');
+
+    $('#nav').innerHTML = visibleGroups.map(([g, it]) => {
       const allowed = it.filter(([k]) => canAccessView(k));
       if (!allowed.length) return '';
       return '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
@@ -871,8 +886,10 @@ function renderShell() {
         ).join('');
     }).join('');
 
-    const mobile = [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
-      .filter(([k]) => canAccessView(k));
+    const mobile = S.user.peran === 'admin'
+      ? []
+      : [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
+        .filter(([k]) => canAccessView(k));
     $('#bn').innerHTML = mobile.map(([k,t]) =>
       '<button class="' +
       (k === 'form'
