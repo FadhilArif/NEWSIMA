@@ -1,6 +1,6 @@
 -- NEWSIMA security baseline
 -- Apply this migration to the Supabase project before using the secure login flow.
--- Roles: admin, pembimbing, staf_keuangan, mahasiswa
+-- Roles: user, admin, pembimbing, staf_keuangan, mahasiswa, wakil_rektor
 --
 -- SECURITY MODEL
 -- 1) Browser never performs an open/demo login.
@@ -84,7 +84,7 @@ begin
   ) then
     alter table public.profiles
       add constraint profiles_peran_allowed
-      check (peran in ('admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa'))
+      check (peran in ('user','admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa'))
       not valid;
   end if;
 end $$;
@@ -113,7 +113,7 @@ begin
   end if;
 
   if new.peran is null
-     or new.peran not in ('admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa') then
+     or new.peran not in ('user','admin','pembimbing','wakil_rektor','staf_keuangan','mahasiswa') then
     raise exception 'INVALID_ROLE';
   end if;
 
@@ -403,7 +403,7 @@ to authenticated
 with check (
   (select private.is_admin())
   or (
-    (select private.current_role()) in ('mahasiswa','pembimbing')
+    (select private.current_role()) in ('user','mahasiswa','pembimbing')
     and exists (
       select 1
       from public.keanggotaan k
