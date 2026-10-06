@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
 
     const { data: org, error: orgError } = await adminClient
       .from("organisasi")
-      .select("id")
+      .select("id,tipe")
       .eq("id", organisasiId)
       .single();
 
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
 
     const { data: position, error: positionError } = await adminClient
       .from("jabatan_organisasi")
-      .select("id,kode,nama,unit_wajib,cakupan")
+      .select("id,kode,nama,unit_wajib,cakupan,unit_jenis_wajib,berlaku_tipe")
       .eq("kode", jabatanKode)
       .eq("aktif", true)
       .single();
@@ -150,6 +150,11 @@ Deno.serve(async (req) => {
     if (positionError || !position) {
       await adminClient.auth.admin.deleteUser(userId);
       return json({ error: "POSITION_NOT_FOUND" }, 400);
+    }
+
+    if (!Array.isArray(position.berlaku_tipe) || !position.berlaku_tipe.includes(org.tipe)) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "POSITION_NOT_ALLOWED_FOR_ORGANIZATION_TYPE" }, 400);
     }
 
     if (position.unit_wajib && !unitId) {
