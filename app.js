@@ -329,7 +329,7 @@ async function loadViewData(view) {
     case 'struktur': return loadStructure();
     case 'rapat': return loadMeetings();
     case 'plafon': return loadBudgets();
-    case 'cair': return Promise.all([loadPayouts(),loadSources()]);
+    case 'cair': return Promise.all([loadProker(),loadPayouts(),loadSources()]);
     case 'periode': return loadPeriods();
     case 'audit': return loadAudit();
     case 'akun': return Promise.all([loadAccounts(),loadOrganizations()]);
