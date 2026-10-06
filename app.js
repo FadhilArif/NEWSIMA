@@ -1180,8 +1180,8 @@ const V = {
     const jabatanOpts=(S.positions||[]).map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
     const unitOpts=(S.units||[]).map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama+' · '+u.jenis)+'</option>').join('');
     return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Setiap organisasi mempunyai jabatan dan ruang lingkupnya sendiri.')+
-      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label>NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Tanpa organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option>'+jabatanOpts+'</select><label>Unit kerja</label><select id="an-unit"><option value="">Tidak ada</option>'+unitOpts+'</select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
-      '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option>'+jabatanOpts+'</select><label>Unit kerja</label><select id="p-unit"><option value="">Tidak ada</option>'+unitOpts+'</select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
+      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label>NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option></select><label id="an-unit-label">Unit kerja</label><select id="an-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
+      '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option></select><label id="p-unit-label">Unit kerja</label><select id="p-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
       (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Penetapan organisasi</th><th>Status</th></tr></thead><tbody>'+S.accounts.map(x=>'<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):'Belum ditetapkan')+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Disimpan hanya di memori halaman.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
@@ -1437,17 +1437,40 @@ document.addEventListener('change', async e => {
     const orgEl=$('#'+prefix+'-org');
     const jabEl=$('#'+prefix+'-jabatan');
     const unitEl=$('#'+prefix+'-unit');
+    const unitLabel=$('#'+prefix+'-unit-label');
     const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl?.value||''));
-    const positions=(S.positions||[]).filter(j=>!org || (Array.isArray(j.berlaku_tipe) && j.berlaku_tipe.includes(org.tipe)));
-    if(jabEl){
-      const current=jabEl.value;
-      jabEl.innerHTML='<option value="">Pilih jabatan</option>'+positions.map(j=>'<option value="'+esc(j.kode)+'" '+(j.kode===current?'selected':'')+'>'+esc(j.nama)+'</option>').join('');
+    const positions=(S.positions||[]).filter(j=>!!org && Array.isArray(j.berlaku_tipe) && j.berlaku_tipe.includes(org.tipe));
+    if(e.target.id.endsWith('-org') && jabEl){
+      jabEl.innerHTML='<option value="">Pilih jabatan</option>'+positions.map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
+      jabEl.value='';
     }
     const pos=(S.positions||[]).find(j=>j.kode===jabEl?.value);
-    const units=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'') && (!pos?.unit_jenis_wajib || u.jenis===pos.unit_jenis_wajib));
+    const relevantUnits=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'') && (!pos?.unit_jenis_wajib || u.jenis===pos.unit_jenis_wajib));
+
+    if(unitLabel){
+      if(!pos){
+        unitLabel.textContent='Unit kerja';
+      }else if(pos.unit_jenis_wajib){
+        unitLabel.textContent=(pos.unit_jenis_wajib==='kementerian'?'Kementerian':'Divisi')+' '+(pos.unit_wajib?'(wajib)':'');
+      }else{
+        unitLabel.textContent='Unit kerja (tidak diperlukan untuk jabatan ini)';
+      }
+    }
+
     if(unitEl){
-      unitEl.innerHTML='<option value="">'+(pos?.unit_wajib?'Pilih unit':'Tidak ada')+'</option>'+units.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
-      unitEl.required=!!pos?.unit_wajib;
+      if(!pos || !pos.unit_jenis_wajib){
+        unitEl.innerHTML='<option value="">Tidak diperlukan untuk jabatan ini</option>';
+        unitEl.disabled=true;
+        unitEl.required=false;
+      }else if(!relevantUnits.length){
+        unitEl.innerHTML='<option value="">Belum ada '+(pos.unit_jenis_wajib==='kementerian'?'Kementerian':'Divisi')+'</option>';
+        unitEl.disabled=true;
+        unitEl.required=true;
+      }else{
+        unitEl.innerHTML='<option value="">Pilih '+(pos.unit_jenis_wajib==='kementerian'?'Kementerian':'Divisi')+'</option>'+relevantUnits.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
+        unitEl.disabled=false;
+        unitEl.required=!!pos.unit_wajib;
+      }
     }
   }
 
