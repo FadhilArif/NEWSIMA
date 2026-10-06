@@ -95,3 +95,20 @@ The data model is now separated into four layers:
 For division positions, `unit_id` is mandatory and must reference a division belonging to the same organization.
 
 The Admin menu contains **Jabatan & hak akses** so the administrator can change which modules/actions each position receives.
+
+
+## Organization domain model
+
+SIMA MHS now models the campus organization hierarchy explicitly:
+
+- BEM is the top organization for the period.
+- HMJ and UKM belong to a BEM through `induk_organisasi_id`.
+- BEM uses ministry units; HMJ uses division units.
+- UKM has Ketua, Wakil Ketua, Sekretaris and Bendahara, plus a separate UKM coordinator assignment.
+- Club has Ketua, Sekretaris and Bendahara accounts; ordinary Club members are stored as name/NIM records without login accounts.
+- Club-to-organization connections are many-to-many via `organisasi_relasi`.
+- One account can have multiple active memberships, one per organization.
+
+## UKM coordinator rule
+
+Only the President of the parent BEM can appoint an UKM coordinator. The candidate must be an active member of that BEM, regardless of the candidate's BEM position. Coordinator assignment is handled through the authenticated `ukm-coordinator` Edge Function; direct authenticated execution of the underlying coordinator RPCs is revoked.
