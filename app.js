@@ -209,7 +209,7 @@ function renderProfileMenu() {
     '<div class="p-4 flex items-center gap-3 border-b border-slate-100">' +
       avatarMarkup(S.user,'h-11 w-11') +
       '<div class="min-w-0"><p class="font-bold text-sm truncate">' + esc(S.user.nama || 'Pengguna') + '</p>' +
-      '<p class="text-xs text-slate-500 truncate">' + esc(S.user.email || '') + '</p></div>' +
+      '<p class="text-xs text-slate-500 truncate">' + esc(roleLabel(S.user.peran)) + ' · ' + esc(S.user.email || '') + '</p></div>' +
     '</div>' +
     '<div class="p-2">' +
       '<button data-profile-action="profile" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-semibold">' + icon('user') + '<span>Profil & organisasi</span></button>' +
