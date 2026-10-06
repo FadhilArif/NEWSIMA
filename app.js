@@ -33,7 +33,7 @@ function canAccessView(view) {
 function roleLabel(role) {
   return ROLE_LABEL[role] || 'Peran tidak dikenal';
 }
-const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
+const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
 
 // State Global
 const S = {
@@ -68,6 +68,7 @@ async function loadMemberships() {
   const { data, error } = await sb.from('keanggotaan')
     .select('id,akun_id,organisasi_id,unit_id,jabatan,status')
     .eq('akun_id', S.user.id)
+    .eq('status','aktif')
     .order('status');
   if (!error && Array.isArray(data)) S.memberships = data;
 }
