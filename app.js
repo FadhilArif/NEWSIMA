@@ -36,6 +36,26 @@ const VIEW_PERMISSION = {
   profil:null
 };
 
+const PERMISSION_CATALOG = {
+  'beranda.view':'Lihat beranda',
+  'proker.view':'Lihat program kerja',
+  'proker.create':'Buat program kerja',
+  'proker.edit':'Edit program kerja',
+  'kolaborasi.view':'Lihat kolaborasi',
+  'kolaborasi.manage':'Kelola kolaborasi',
+  'dokumen.review':'Review dokumen',
+  'rapat.manage':'Kelola rapat',
+  'laporan.review':'Review laporan',
+  'struktur.view':'Lihat struktur',
+  'struktur.manage':'Kelola struktur',
+  'anggota.manage':'Kelola anggota',
+  'keuangan.view':'Lihat keuangan',
+  'keuangan.manage':'Kelola keuangan',
+  'periode.view':'Lihat periode',
+  'organisasi.view':'Lihat organisasi',
+  'unit.manage':'Kelola unit kerja'
+};
+
 const ROLE_LABEL = {
   user:'User',
   admin:'Administrator',
@@ -81,14 +101,14 @@ const S = {
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
-  proker:[],csvData:[],lastCredentials:[],tempSb:null,renderToken:0,searchTimer:null
+  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
 }
 
 const MENU = [
   ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['struktur','Struktur dan anggota']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
   ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Pencairan dan verifikasi']]],
-  ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Unit kerja'],['akun','Akun dan penetapan'],['audit','Jejak audit']]]
+  ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Unit kerja'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
 ];
 
 // --- Fungsi Utilitas ---
@@ -431,14 +451,21 @@ async function loadUnits() {
 
 async function loadJabatanAndUnits() {
   if (!sb) return;
-  const [{data:positions,error:positionError},{data:units,error:unitError}] = await Promise.all([
+  const [{data:positions,error:positionError},{data:units,error:unitError},{data:access,error:accessError}] = await Promise.all([
     sb.from('jabatan_organisasi').select('id,kode,nama,tingkat,cakupan,unit_wajib,aktif').eq('aktif',true).order('tingkat',{ascending:false}),
-    sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').eq('jenis','divisi').order('nama')
+    sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').eq('jenis','divisi').order('nama'),
+    sb.from('hak_akses_jabatan').select('jabatan_id,kode')
   ]);
   if (positionError) return toast('Gagal memuat jabatan: '+positionError.message);
   if (unitError) return toast('Gagal memuat divisi: '+unitError.message);
+  if (accessError) return toast('Gagal memuat hak akses jabatan: '+accessError.message);
   S.positions = positions || [];
   S.units = units || [];
+  S.permissionMatrix = {};
+  (access || []).forEach(x=>{
+    if(!S.permissionMatrix[x.jabatan_id])S.permissionMatrix[x.jabatan_id]=new Set();
+    S.permissionMatrix[x.jabatan_id].add(x.kode);
+  });
 }
 
 
@@ -500,6 +527,7 @@ async function loadViewData(view) {
     case 'unit_kerja': return Promise.all([loadOrganizations(),loadUnits(),loadJabatanAndUnits()]);
     case 'audit': return loadAudit();
     case 'akun': return Promise.all([loadAccounts(),loadOrganizations(),loadJabatanAndUnits()]);
+    case 'jabatan': return loadJabatanAndUnits();
     case 'profil': return loadMemberships();
     default: return null;
   }
@@ -570,7 +598,7 @@ function goBack() {
 
 function resetClientState() {
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
-  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.positionsLoaded=false;
+  S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
@@ -969,6 +997,16 @@ const V = {
       (canWrite?'<form id="form-periode" class="card"><h3>Buat periode</h3><div class="f2"><div><label>Nama periode *</label><input id="pe-nama" required></div><div><label>Batas LPJ (hari) *</label><input id="pe-batas-hari" type="number" min="1" max="365" value="7" required><small>Deadline LPJ dihitung otomatis saat status proker berubah menjadi <b>Berjalan</b>.</small></div></div><label>Status periode</label><select id="pe-status"><option value="disiapkan">Disiapkan</option><option value="aktif">Aktif</option><option value="masa_lpj">Masa LPJ</option><option value="arsip">Arsip</option></select><button class="btn mt-4">Simpan periode</button></form>':'')+
       (S.periods.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.periods.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3>'+chip(x.status)+'</div><p class="sub">Batas LPJ: <b>'+esc(x.batas_lpj_hari ?? '-')+' hari</b> setelah proker mulai berjalan.</p></div>').join('')+'</div>':emptyCard('Belum ada periode.'));
   },
+  jabatan:function(){
+    if(S.user.peran!=='admin') return emptyCard('Akses hanya untuk administrator.');
+    return pageHeader('Jabatan & hak akses','Atur modul yang dapat digunakan oleh setiap jabatan organisasi.')+
+      '<div class="grid gap-4">'+
+      (S.positions||[]).map(j=>{
+        const selected=S.permissionMatrix?.[j.id]||new Set();
+        return '<form class="card" data-role-form="'+esc(j.id)+'"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4"><div><h3>'+esc(j.nama)+'</h3><p class="sub mb-0">'+esc(j.kode)+' · '+esc(j.cakupan)+(j.unit_wajib?' · wajib divisi':'')+'</p></div><button class="btn" type="submit">Simpan hak akses</button></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">'+Object.entries(PERMISSION_CATALOG).map(([code,label])=>'<label class="rounded-xl border border-slate-200 px-3 py-2 text-sm flex items-center gap-2"><input type="checkbox" name="perm" value="'+esc(code)+'" '+(selected.has(code)?'checked':'')+' style="width:auto">'+esc(label)+'</label>').join('')+'</div></form>';
+      }).join('')+'</div>';
+  },
+
   audit:function(){
     return pageHeader('Jejak audit','Riwayat perubahan penting dalam sistem.')+
       (S.audit.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Waktu</th><th>Akun</th><th>Aksi</th><th>Objek</th><th>ID</th></tr></thead><tbody>'+S.audit.map(x=>'<tr><td>'+dateID(x.waktu)+'</td><td>'+esc(x.akun?.nama||x.akun_id||'-')+'</td><td>'+esc(x.aksi||'-')+'</td><td>'+esc(x.objek||'-')+'</td><td class="text-xs">'+esc(x.objek_id||'-')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada jejak audit.'));
@@ -1348,6 +1386,21 @@ document.addEventListener('submit', async e => {
   }
 
   if(e.target.id==='form-profile')return saveProfile(e);
+
+  if(e.target.matches('form[data-role-form]')){
+    e.preventDefault();
+    if(S.user.peran!=='admin')return toast('Hanya admin yang boleh mengubah hak akses jabatan.');
+    const jabatanId=e.target.dataset.roleForm;
+    const codes=[...e.target.querySelectorAll('input[name="perm"]:checked')].map(x=>x.value);
+    const {error:deleteError}=await sb.from('hak_akses_jabatan').delete().eq('jabatan_id',jabatanId);
+    if(deleteError)return toast('Gagal menghapus hak akses lama: '+deleteError.message);
+    if(codes.length){
+      const {error:insertError}=await sb.from('hak_akses_jabatan').insert(codes.map(kode=>({jabatan_id:jabatanId,kode})));
+      if(insertError)return toast('Gagal menyimpan hak akses baru: '+insertError.message);
+    }
+    toast('Hak akses jabatan diperbarui.');
+    return loadJabatanAndUnits().then(()=>render());
+  }
 
   if(e.target.id==='form-ganti-pw'){
     e.preventDefault();
