@@ -33,6 +33,7 @@ const VIEW_PERMISSION = {
   unit_kerja:'unit.manage',
   akun:null,
   audit:null,
+  jabatan:null,
   profil:null
 };
 
@@ -80,7 +81,7 @@ function positionLabel(code) {
 
 function canAccessView(view) {
   if (view === 'ganti_sandi' || view === 'profil') return true;
-  if (view === 'akun' || view === 'audit') return S.user?.peran === 'admin';
+  if (view === 'akun' || view === 'audit' || view === 'jabatan') return S.user?.peran === 'admin';
   const role = S.user?.peran || '';
   if (role === 'admin' || role === 'wakil_rektor') return true;
   const permission = VIEW_PERMISSION[view];
