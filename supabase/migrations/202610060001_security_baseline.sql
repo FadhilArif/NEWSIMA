@@ -72,6 +72,7 @@ grant execute on function private.current_role() to authenticated;
 grant execute on function private.is_admin() to authenticated;
 grant execute on function private.is_finance() to authenticated;
 grant execute on function private.is_reviewer() to authenticated;
+grant usage on schema private to authenticated;
 
 -- ------------------------------------------------------------
 -- Role values
@@ -130,6 +131,35 @@ before update on public.profiles
 for each row execute function private.guard_profile_changes();
 
 revoke all on function private.guard_profile_changes() from public, anon, authenticated;
+
+create or replace function private.guard_profile_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $
+begin
+  -- Direct/self-service signups can never select a privileged role.
+  -- Trusted server-side account creation uses service_role.
+  if current_user not in ('postgres','service_role') then
+    new.peran := 'mahasiswa';
+  end if;
+
+  if new.peran is null
+     or new.peran not in ('admin','pembimbing','staf_keuangan','mahasiswa') then
+    raise exception 'INVALID_ROLE';
+  end if;
+
+  return new;
+end;
+$;
+
+drop trigger if exists trg_guard_profile_insert on public.profiles;
+create trigger trg_guard_profile_insert
+before insert on public.profiles
+for each row execute function private.guard_profile_insert();
+
+revoke all on function private.guard_profile_insert() from public, anon, authenticated;
 
 -- ------------------------------------------------------------
 -- Server-side login rate limiting
