@@ -557,7 +557,7 @@ async function saveProfile(e) {
   if (S.pendingAvatarFile) {
     const file = S.pendingAvatarFile;
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const path = 'profiles/' + S.user.id + '-' + Date.now() + '.' + ext;
+    const path = S.user.id + '/' + Date.now() + '.' + ext;
     const up = await sb.storage.from('avatars').upload(path, file, { upsert:true, contentType:file.type || 'image/jpeg' });
     if (!up.error) {
       const pub = sb.storage.from('avatars').getPublicUrl(path);
