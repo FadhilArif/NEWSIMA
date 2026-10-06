@@ -80,3 +80,18 @@ This is an Auth dashboard setting, not an RLS/database migration.
 ## Migration note
 
 The production project has already received the security hardening directly through Supabase migrations. The GitHub migration directory is kept for reproducibility, but its historical migration names do not exactly match the production migration history. Do not blindly run `supabase db push` against production without reconciling the migration history first.
+
+## Organization positions and permissions
+
+The data model is now separated into four layers:
+
+- `profiles`: account/application identity and global role.
+- `keanggotaan`: links an account to an organization.
+- `unit_kerja`: ministry/division scope.
+- `jabatan_organisasi`: the actual position (Presiden, Wakil Presiden, Sekretaris, Bendahara, Ketua Divisi, Staff Divisi).
+
+`keanggotaan.jabatan_id` points to `jabatan_organisasi`. Position permissions are stored in `hak_akses_jabatan` and enforced by PostgreSQL RLS through `private.has_org_permission(...)`.
+
+For division positions, `unit_id` is mandatory and must reference a division belonging to the same organization.
+
+The Admin menu contains **Jabatan & hak akses** so the administrator can change which modules/actions each position receives.
