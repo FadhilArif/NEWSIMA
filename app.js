@@ -749,13 +749,34 @@ async function hydrateUser(authUser) {
     wajib_ganti_sandi: !!profile.wajib_ganti_sandi
   };
   if (!sb) loadLocalProfile();
-  // Build account-scoped organization context before loading any module data.
-  await loadContexts();
-  // Drop every account-scoped collection before loading the new identity.
-  // This prevents the previous account's data from flashing or remaining in memory.
-  S.history = []; S.notifications = []; S.memberships = []; S.pendingAvatarFile = null;
+
+  // Clear the previous identity BEFORE building the new account context.
+  // loadContexts() populates memberships, organizations, permissions and orgId.
+  S.history = [];
+  S.notifications = [];
+  S.memberships = [];
+  S.organizations = [];
+  S.positions = [];
+  S.permissions = new Set();
+  S.positionsLoaded = false;
   S.proker = [];
-  S.ctx = 0; S.tab = 'semua'; S.q = ''; S.orgId = null;
+  S.ctxs = [];
+  S.ctx = 0;
+  S.tab = 'semua';
+  S.q = '';
+  S.orgId = null;
+  S.pendingAvatarFile = null;
+  S.selectedProkerId = null;
+  S.structureOrgId = null;
+  S.organizationRelations = [];
+  S.coordinatorAssignments = [];
+  S.clubMembers = [];
+  S.revealedCredential = null;
+
+  // Build the new account-scoped organization context after the old identity
+  // has been completely cleared.
+  await loadContexts();
+
   $('#login').hidden = true;
   $('#app').hidden = false;
   if (S.user.wajib_ganti_sandi) {
@@ -990,9 +1011,12 @@ const V = {
   },
   form:function(){
     const privileged=['admin','wakil_rektor'].includes(S.user.peran);
+    const currentOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
     return pageHeader('Form proposal program kerja','Lengkapi data kegiatan sebelum menjadi draft.')+
       '<form id="ff" class="card" novalidate>'+
-      (privileged?'<label for="f-org">Organisasi *</label><select id="f-org" name="organisasi_id" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select>':'')+
+      (privileged
+        ? '<label for="f-org">Organisasi *</label><select id="f-org" name="organisasi_id" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select>'
+        : '<div class="card bg-slate-50 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(currentOrg?.nama||'Belum ada organisasi')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(currentOrg?.tipe||'')+' · konteks akun aktif</p></div>')+
       '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali">Sekali</option><option value="berulang">Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" required></div></div>'+
       '<label>Lokasi *</label><input id="t" name="tempat" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3"></textarea>'+
       '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label>'+
@@ -1524,6 +1548,7 @@ document.addEventListener('change', async e => {
     S.ctx=Number(e.target.value);
     S.orgId=S.ctxs[S.ctx]?.orgId||null;
     S.selectedProkerId=null;
+    await loadPermissionsForOrganization(S.orgId);
     return render();
   }
   if(['an-org','an-jabatan','p-org','p-jabatan'].includes(e.target.id)){
