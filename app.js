@@ -86,7 +86,8 @@ function canAccessView(view) {
   if (role === 'admin' || role === 'wakil_rektor') return true;
   const permission = VIEW_PERMISSION[view];
   if (permission && S.permissions?.has(permission)) return true;
-  return ROLE_ACCESS[role]?.has(view) === true && (!S.positionsLoaded || !S.permissions || S.permissions.size === 0);
+  if (S.positionsLoaded) return false;
+  return ROLE_ACCESS[role]?.has(view) === true;
 }
 
 function roleLabel(role) {
