@@ -251,7 +251,16 @@ async function hydrateUser(authUser) {
     const { data } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
     profile = data || {};
   }
-  const role = profile.peran || authUser.user_metadata?.peran || '';
+  if (!profile || !profile.aktif) {
+    await sb?.auth.signOut();
+    resetClientState();
+    $('#app').hidden = true;
+    $('#login').hidden = false;
+    $('#le').textContent = 'Akun tidak aktif. Hubungi administrator.';
+    return;
+  }
+
+  const role = profile.peran || '';
   if (!ROLE_ACCESS[role]) {
     await sb?.auth.signOut();
     resetClientState();
