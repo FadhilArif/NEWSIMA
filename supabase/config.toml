@@ -1,0 +1,8 @@
+# Supabase Edge Functions configuration
+# Login is intentionally unauthenticated at the platform layer because
+# the function performs credential verification itself and applies rate limits.
+[functions.secure-login]
+verify_jwt = false
+
+# Admin account creation must be called by an authenticated administrator.
+# The default verify_jwt=true is intentionally kept for this function.
