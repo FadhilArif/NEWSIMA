@@ -114,7 +114,7 @@ function roleLabel(role) {
   return ROLE_LABEL[role] || 'Peran tidak dikenal';
 }
 
-const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
+const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Perlu revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Sedang berjalan','ok'], selesai:['Kegiatan selesai','bl'], lpj_diajukan:['LPJ menunggu review','wa'], lpj_disetujui:['LPJ disetujui','ok'], tidak_terlaksana:['Tidak terlaksana','er'], arsip:['Diarsipkan',''], digabung:['Digabung',''] };
 
 // State Global
 const S = {
@@ -1000,14 +1000,23 @@ const V = {
   },
   proker:function(){
     const f=S.proker.filter(p=>(S.tab==='semua'||p.status===S.tab)&&((p.nama||'').toLowerCase().includes(S.q.toLowerCase())||(p.ketua||'').toLowerCase().includes(S.q.toLowerCase())));
-    const tabs=[['semua','Semua'],['draft','Draft'],['proposal_diajukan','Menunggu review'],['revisi','Revisi'],['disetujui','Disetujui'],['berjalan','Berjalan'],['selesai','Selesai']];
+    const tabs=[['semua','Semua'],['direncanakan','Direncanakan'],['revisi','Perlu revisi'],['proposal_diajukan','Menunggu review'],['disetujui','Disetujui'],['berjalan','Berjalan'],['selesai','Selesai'],['lpj_diajukan','LPJ review'],['lpj_disetujui','LPJ disetujui']];
+    const actionLabel=(p)=>{
+      if(p.status==='direncanakan')return 'Ajukan proposal';
+      if(p.status==='revisi')return 'Ajukan ulang';
+      if(p.status==='disetujui')return 'Mulai pelaksanaan';
+      if(p.status==='berjalan')return 'Tandai selesai';
+      if(p.status==='selesai')return 'Ajukan LPJ';
+      if(p.status==='proposal_diajukan')return 'Lihat review';
+      if(p.status==='lpj_diajukan')return 'Review LPJ';
+      return 'Lihat detail';
+    };
     return pageHeader('Daftar program kerja','Kelola program kerja Anda.',canAccessView('form')?'<button class="btn" data-go="form">+ Buat proker</button>':'')+
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
-      (f.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th></tr></thead><tbody>'+
-        f.map(p=>'<tr data-go="review" data-proker-id="'+esc(p.id)+'"><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td></tr>').join('')+
+      (f.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tindak lanjut</th></tr></thead><tbody>'+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
-
   },
   form:function(){
     const privileged=['admin','wakil_rektor'].includes(S.user.peran);
@@ -1026,14 +1035,40 @@ const V = {
   review:function(){
     const d=S.detail;
     if(!d?.proker)return emptyCard('Detail proker tidak ditemukan.','<button class="btn" data-go="proker">Kembali</button>');
-    const p=d.proker, proposal=d.docs.find(x=>x.jenis==='proposal');
-    const reviewer=['admin','wakil_rektor','pembimbing'].includes(S.user.peran);
-    return pageHeader(p.nama,'Detail program kerja.',chip(p.status))+
-      '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
-      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div>'+(doc.id===proposal?.id?'<span class="chip bl">Proposal utama</span>':'')+'</div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div></div>'+
-      (reviewer&&proposal?'<div class="card"><h3>Tindakan review</h3><p class="sub">Berikan komentar dan pilih keputusan untuk proposal.</p><label>Komentar</label><textarea id="kk" rows="3" placeholder="Masukkan catatan review"></textarea><p class="err" id="ke"></p><div class="flex flex-wrap gap-2 mt-3"><button class="btn d" data-act="revisi">Minta revisi</button><button class="btn w" data-act="teruskan">Teruskan</button><button class="btn" data-act="setuju">Setujui</button></div></div>':'')+
-      '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div>'+
-      '<div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
+    const p=d.proker;
+    const proposal=d.docs.find(x=>x.jenis==='proposal');
+    const lpj=d.docs.find(x=>x.jenis==='laporan_akhir');
+    const canEdit=S.permissions?.has('proker.edit');
+    const canCreate=S.permissions?.has('proker.create');
+    const canReview=S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review');
+    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReview;
+    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReview;
+    const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
+    let actions='';
+    if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=action('submit','Ajukan proposal');
+    else if(p.status==='revisi'&&(canCreate||canEdit)) actions=action('resubmit','Ajukan ulang');
+    else if(p.status==='disetujui'&&canEdit) actions=action('start','Mulai pelaksanaan');
+    else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
+    else if(p.status==='selesai'&&canEdit) actions=action('submit_lpj','Ajukan LPJ');
+    else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label><textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
+    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
+
+    const steps=[
+      ['direncanakan','Direncanakan'],
+      ['proposal_diajukan','Review proposal'],
+      ['disetujui','Disetujui'],
+      ['berjalan','Pelaksanaan'],
+      ['selesai','Selesai'],
+      ['lpj_diajukan','Review LPJ'],
+      ['lpj_disetujui','Selesai administrasi']
+    ];
+    const currentIndex=Math.max(steps.findIndex(x=>x[0]===p.status),0);
+    return pageHeader(p.nama,'Alur tindak lanjut program kerja.',chip(p.status))+
+      '<div class="card mb-4"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
+      '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
+      '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+(actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+'</div></div>'+
+      '<div class="card"><h3>Dokumen</h3>'+(d.docs.length?d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+'</p></div>'+(doc.id===proposal?.id?'<span class="chip bl">Proposal</span>':doc.id===lpj?.id?'<span class="chip bl">LPJ</span>':'')+'</div></div>').join(''):'<p class="sub">Belum ada dokumen.</p>')+'</div>'+
+      '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div><div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
     return pageHeader('Undangan kolaborasi','Kelola undangan organisasi untuk program kerja.')+
@@ -1492,25 +1527,30 @@ document.addEventListener('click', async e => {
   if(e.target.closest('[data-del]')){e.target.closest('.peserta')?.remove();return hitung();}
   if(e.target.id==='btn-csv')return prosesBulkCSV();
 
+  const workflow=e.target.closest('[data-proker-action]');
+  if(workflow){
+    if(!sb)return toast('Supabase belum tersedia.');
+    const action=workflow.dataset.prokerAction;
+    const prokerId=workflow.dataset.prokerId||S.selectedProkerId;
+    if(!prokerId)return toast('Proker tidak ditemukan.');
+    const comment=$('#workflow-comment')?.value?.trim()||null;
+    const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:comment});
+    if(error)return toast('Tindakan gagal: '+(error.message||'Tidak dapat memproses alur proker.'));
+    if(data?.status)toast('Status proker diperbarui menjadi: '+(ST[data.status]?.[0]||data.status));
+    S.selectedProkerId=prokerId;
+    return render();
+  }
+
   const act=e.target.closest('[data-act]');
   if(act){
-    const k=($('#kk')?.value||'').trim();
-    if(act.dataset.act==='revisi'&&!k){if($('#ke'))$('#ke').textContent='Komentar wajib diisi saat meminta revisi.';return;}
-    const docId=S.reviewDocId || S.detail?.docs?.find(d=>d.jenis==='proposal')?.id;
-    if(!docId)return toast('Tidak ada dokumen proposal yang dapat direview.');
-    if(sb){
-      const payload={dokumen_id:docId,tahap:'koordinator',keputusan:act.dataset.act,komentar:k,oleh:S.user.id,sebagai:S.user.peran};
-      const {error}=await sb.from('persetujuan').insert(payload);
-      if(error)return toast(error.message);
-
-      const nextDocStatus=act.dataset.act==='setuju'?'disetujui':act.dataset.act==='revisi'?'revisi':'diteruskan';
-      await sb.from('dokumen').update({status:nextDocStatus}).eq('id',docId);
-      if(S.selectedProkerId){
-        const nextProkerStatus=act.dataset.act==='setuju'?'disetujui':act.dataset.act==='revisi'?'revisi':'proposal_diajukan';
-        await sb.from('proker').update({status:nextProkerStatus}).eq('id',S.selectedProkerId);
-      }
-    }
-    toast({revisi:'Dokumen dikembalikan untuk revisi',teruskan:'Diteruskan ke tahap berikutnya',setuju:'Dokumen disetujui'}[act.dataset.act]||'Tindakan tersimpan');
+    if(!sb)return toast('Supabase belum tersedia.');
+    const action=act.dataset.act==='revisi'?'revise':act.dataset.act==='setuju'?'approve':act.dataset.act;
+    const k=($('#kk')?.value||'').trim()||null;
+    const prokerId=S.selectedProkerId;
+    if(!prokerId)return toast('Proker tidak ditemukan.');
+    const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:k});
+    if(error)return toast('Review gagal: '+(error.message||'Tidak dapat memproses review.'));
+    toast('Review tersimpan.');
     return render();
   }
 });
