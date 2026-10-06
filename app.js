@@ -1185,7 +1185,7 @@ const V = {
       (S.revealedCredential?'<div class="card border border-amber-200 bg-amber-50 mb-4"><div class="flex items-start justify-between gap-3"><div><h3>Password sementara</h3><p class="sub !text-amber-900">Password lama tidak bisa dibaca kembali. Ini adalah password sementara baru yang baru saja direset dan wajib diganti saat login.</p><p class="font-bold">'+esc(S.revealedCredential.nama||S.revealedCredential.email||'Akun')+'</p></div><button class="text-sm underline" data-account-action="close-credential">Tutup</button></div><div class="flex gap-2 mt-3"><input readonly value="'+esc(S.revealedCredential.password)+'" id="revealed-password" class="font-mono flex-1"><button class="btn" data-account-action="copy-credential">Salin</button></div></div>':'')+
       (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Penetapan organisasi</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>'+S.accounts.map(x=>{
         const actionButtons='<div class="flex flex-wrap gap-2 min-w-[260px]">'+
-          '<button class="btn" data-account-action="reset-password" data-account-id="'+esc(x.id)+'">Reset & lihat password</button>'+
+          '<button class="btn" data-account-action="reset-password" data-account-id="'+esc(x.id)+'">Reset & tampilkan password</button>'+
           (x.aktif?'<button class="btn" data-account-action="deactivate" data-account-id="'+esc(x.id)+'">Nonaktifkan</button>':'<button class="btn" data-account-action="activate" data-account-id="'+esc(x.id)+'">Aktifkan</button>')+
           '<button class="btn" data-account-action="delete" data-account-id="'+esc(x.id)+'">Hapus akun</button>'+
           '</div>';
@@ -1622,7 +1622,8 @@ document.addEventListener('submit', async e => {
     try{
       const {data,error}=await sb.functions.invoke('admin-create-user',{body:input});
       if(error||!data?.ok)return toast(data?.error||error?.message||'Gagal membuat akun.');
-      toast('Akun dibuat. Password sementara: '+data.temporary_password);
+      S.revealedCredential={id:data.id,nama:input.nama,email:input.email,password:data.temporary_password};
+      toast('Akun dibuat. Password sementara ditampilkan di panel akun.');
       e.target.reset();return render();
     }catch(error){return toast('Gagal membuat akun: '+error.message);}
   }
