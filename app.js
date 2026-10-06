@@ -11,14 +11,16 @@ const ROLE_ACCESS = {
   admin: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','akun','audit','profil']),
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
-  mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil'])
+  mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
+  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','rapat','plafon','cair','periode','audit','profil'])
 };
 
 const ROLE_LABEL = {
   admin: 'Administrator',
   pembimbing: 'Pembimbing',
   staf_keuangan: 'Staf Keuangan',
-  mahasiswa: 'Mahasiswa'
+  mahasiswa: 'Mahasiswa',
+  wakil_rektor: 'Wakil Rektor'
 };
 
 function canAccessView(view) {
@@ -153,15 +155,15 @@ async function loadNotifications() {
   S.notifications = [];
   if (sb && S.user.id) {
     try {
-      const { data, error } = await sb.from('notifications')
-        .select('id,title,message,type,read,created_at,view')
-        .eq('user_id', S.user.id)
-        .order('created_at', { ascending:false })
+      const { data, error } = await sb.from('notifikasi')
+        .select('id,pesan,tautan,dibaca,dibuat')
+        .eq('akun_id', S.user.id)
+        .order('dibuat', { ascending:false })
         .limit(30);
       if (!error && Array.isArray(data)) {
         S.notifications = data.map(n => ({
-          id:n.id, title:n.title || 'Notifikasi', message:n.message || '',
-          type:n.type || 'info', read:!!n.read, created_at:n.created_at, view:n.view || ''
+          id:n.id, title:'Notifikasi', message:n.pesan || '',
+          type:'info', read:!!n.dibaca, created_at:n.dibuat, view:n.tautan || ''
         }));
       }
     } catch (_) {}
@@ -630,7 +632,7 @@ document.addEventListener('click', async e => {
     if (notif.dataset.notif === 'read-all') {
       S.notifications.forEach(n => n.read = true);
       if (sb && S.user.id) {
-        try { await sb.from('notifications').update({ read:true }).eq('user_id', S.user.id); } catch (_) {}
+        try { await sb.from('notifikasi').update({ dibaca:true }).eq('akun_id', S.user.id); } catch (_) {}
       }
       renderNotificationPanel();
       return;
@@ -639,8 +641,8 @@ document.addEventListener('click', async e => {
       const n = S.notifications.find(x => String(x.id) === String(notif.dataset.id));
       if (n) {
         n.read = true;
-        if (sb && typeof n.id === 'number') {
-          try { await sb.from('notifications').update({ read:true }).eq('id', n.id); } catch (_) {}
+        if (sb && n.id) {
+          try { await sb.from('notifikasi').update({ dibaca:true }).eq('id', n.id).eq('akun_id', S.user.id); } catch (_) {}
         }
         $('#notifPanel').hidden = true;
         if (n.view) navigate(n.view);
