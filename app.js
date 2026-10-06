@@ -1,5 +1,5 @@
 // Isi dari Supabase: Project Settings > API. Kosong = mode demo.
-const SUPABASE_URL = '', SUPABASE_KEY = '';
+const SUPABASE_URL = 'xmlkuhmrpqurljlvmwfl', SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtbGt1aG1ycHF1cmxqbHZtd2ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNzIxMTYsImV4cCI6MjEwNjg0ODExNn0.-GeHj3A3l85b9VCHdOenJxzJZhBEobvPKkbiPtkzocM';
 const sb = SUPABASE_URL && window.supabase ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLocaleString('id-ID');
 const ST = { draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Berjalan','ok'], selesai:['Selesai','bl'], tidak_terlaksana:['Tidak terlaksana','er'] };
