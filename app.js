@@ -1473,11 +1473,22 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-organisasi'){
     e.preventDefault();
-    const nama=$('#o-nama').value.trim(),tipe=$('#o-tipe').value,periode_id=$('#o-periode').value;
+    const nama=$('#o-nama').value.trim();
+    const tipe=$('#o-tipe').value;
+    const periode_id=$('#o-periode').value;
+    const induk_organisasi_id=(tipe==='HMJ'||tipe==='UKM')?($('#o-parent').value||null):null;
+    const relasi=[...($('#o-relasi')?.selectedOptions||[])].map(x=>x.value);
     if(!nama)return toast('Nama organisasi wajib diisi.');
     if(!periode_id)return toast('Pilih periode terlebih dahulu.');
-    const {error}=await sb.from('organisasi').insert({nama,tipe,periode_id});
+    if((tipe==='HMJ'||tipe==='UKM')&&!induk_organisasi_id)return toast('Pilih BEM sebagai induk organisasi.');
+    if(tipe==='BEM'&&induk_organisasi_id)return toast('BEM tidak boleh memiliki induk.');
+    const {data,error}=await sb.from('organisasi').insert({nama,tipe,periode_id,induk_organisasi_id}).select('id').single();
     if(error)return toast('Gagal membuat organisasi: '+error.message);
+    if(tipe==='CLUB'&&relasi.length){
+      const rows=relasi.filter(id=>id!==data.id).map(id=>({organisasi_id:data.id,terhubung_dengan_id:id,hubungan:'terhubung',dibuat_oleh:S.user.id}));
+      const r=await sb.from('organisasi_relasi').insert(rows);
+      if(r.error)return toast('Organisasi dibuat, tetapi koneksi Club gagal: '+r.error.message);
+    }
     toast('Organisasi berhasil ditambahkan.');return render();
   }
 
@@ -1503,6 +1514,38 @@ document.addEventListener('submit', async e => {
     const {error}=await sb.from('periode').insert({nama,status,batas_lpj_hari});
     if(error)return toast('Gagal membuat periode: '+error.message);
     toast('Periode tersimpan. Deadline LPJ akan dihitung otomatis saat proker mulai berjalan.');return render();
+  }
+
+
+  if(e.target.id==='form-penetapan'){
+    e.preventDefault();
+    const p_account_id=$('#p-akun').value;
+    const p_organisasi_id=$('#p-org').value;
+    const p_jabatan_kode=$('#p-jabatan').value;
+    const p_unit_id=$('#p-unit').value||null;
+    if(!p_account_id||!p_organisasi_id||!p_jabatan_kode)return toast('Akun, organisasi, dan jabatan wajib diisi.');
+    const {error}=await sb.rpc('assign_organization_membership',{p_account_id,p_organisasi_id,p_jabatan_kode,p_unit_id});
+    if(error)return toast('Gagal menambahkan penetapan: '+error.message);
+    toast('Akun berhasil ditambahkan ke organisasi.');return render();
+  }
+
+  if(e.target.id==='form-club-member'){
+    e.preventDefault();
+    const nama=$('#cm-nama').value.trim(),nim=$('#cm-nim').value.trim();
+    if(!S.orgId||!nama||!nim)return toast('Nama dan NIM wajib diisi.');
+    const {error}=await sb.from('anggota_non_akun').insert({organisasi_id:S.orgId,nama,nim,dibuat_oleh:S.user.id});
+    if(error)return toast('Gagal menambah anggota Club: '+error.message);
+    toast('Anggota Club ditambahkan tanpa akun.');return render();
+  }
+
+  if(e.target.matches('form[data-koordinator-form]')){
+    e.preventDefault();
+    const ukmId=e.target.dataset.koordinatorForm;
+    const accountId=e.target.querySelector('select[name="akun_id"]')?.value;
+    if(!accountId)return toast('Pilih anggota BEM terlebih dahulu.');
+    const {error}=await sb.rpc('assign_ukm_coordinator',{p_ukm_id:ukmId,p_account_id:accountId});
+    if(error)return toast('Gagal menunjuk koordinator: '+error.message);
+    toast('Koordinator UKM berhasil ditunjuk.');return render();
   }
 
   if(e.target.id==='form-profile')return saveProfile(e);
