@@ -135,6 +135,24 @@ async function loadMemberships() {
   S.positionsLoaded = true;
 }
 
+async function loadPermissionsForOrganization(orgId) {
+  if (['admin','wakil_rektor'].includes(S.user.peran)) {
+    S.permissions = new Set(['*']);
+    return;
+  }
+  if (!sb || !orgId) {
+    S.permissions = new Set();
+    return;
+  }
+  const membership = S.memberships.find(m => m.organisasi_id === orgId && m.status === 'aktif');
+  if (!membership?.jabatan_id) {
+    S.permissions = new Set();
+    return;
+  }
+  const {data,error}=await sb.from('hak_akses_jabatan').select('kode').eq('jabatan_id',membership.jabatan_id);
+  S.permissions = error ? new Set() : new Set((data||[]).map(x=>x.kode));
+}
+
 async function loadContexts() {
   await Promise.all([loadOrganizations(), loadMemberships()]);
   const privileged = ['admin','wakil_rektor'].includes(S.user.peran);
