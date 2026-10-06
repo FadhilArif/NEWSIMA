@@ -65,8 +65,9 @@ Deno.serve(async (req) => {
     email?: string;
     nim?: string;
     peran?: string;
-    organisasi?: string;
-    jabatan?: string;
+    organisasi_id?: string | null;
+    jabatan_kode?: string | null;
+    unit_id?: string | null;
   };
 
   try {
@@ -79,8 +80,9 @@ Deno.serve(async (req) => {
   const email = String(body.email || "").trim().toLowerCase();
   const nim = String(body.nim || "").trim();
   const peran = String(body.peran || "mahasiswa").trim();
-  const organisasi = String(body.organisasi || "").trim();
-  const jabatan = String(body.jabatan || "Anggota").trim();
+  const organisasiId = String(body.organisasi_id || "").trim();
+  const jabatanKode = String(body.jabatan_kode || "").trim();
+  const unitId = String(body.unit_id || "").trim();
 
   if (!nama || !/^\S+@\S+\.\S+$/.test(email) || !nim) {
     return json({ error: "INVALID_INPUT" }, 400);
@@ -121,31 +123,75 @@ Deno.serve(async (req) => {
     return json({ error: "PROFILE_CREATE_FAILED" }, 500);
   }
 
-  if (organisasi) {
-    const { data: org } = await adminClient
+  if (organisasiId || jabatanKode || unitId) {
+    if (!organisasiId || !jabatanKode) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "ORGANIZATION_AND_POSITION_REQUIRED" }, 400);
+    }
+
+    const { data: org, error: orgError } = await adminClient
       .from("organisasi")
       .select("id")
-      .eq("nama", organisasi)
+      .eq("id", organisasiId)
       .single();
 
-    if (org) {
-      const { error: membershipError } = await adminClient
-        .from("keanggotaan")
-        .insert({
-          akun_id: userId,
-          organisasi_id: org.id,
-          jabatan: jabatan || "Anggota",
-          status: "aktif",
-        });
+    if (orgError || !org) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "ORGANIZATION_NOT_FOUND" }, 400);
+    }
 
-      if (membershipError) {
-        return json({
-          ok: true,
-          warning: "ACCOUNT_CREATED_MEMBERSHIP_FAILED",
-          id: userId,
-          temporary_password: temporaryPassword,
-        }, 207);
+    const { data: position, error: positionError } = await adminClient
+      .from("jabatan_organisasi")
+      .select("id,kode,nama,unit_wajib,cakupan")
+      .eq("kode", jabatanKode)
+      .eq("aktif", true)
+      .single();
+
+    if (positionError || !position) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "POSITION_NOT_FOUND" }, 400);
+    }
+
+    if (position.unit_wajib && !unitId) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "DIVISION_REQUIRED_FOR_POSITION" }, 400);
+    }
+
+    if (unitId) {
+      const { data: unit, error: unitError } = await adminClient
+        .from("unit_kerja")
+        .select("id,organisasi_id,jenis")
+        .eq("id", unitId)
+        .single();
+
+      if (unitError || !unit || unit.organisasi_id !== organisasiId) {
+        await adminClient.auth.admin.deleteUser(userId);
+        return json({ error: "UNIT_NOT_IN_ORGANIZATION" }, 400);
       }
+
+      if (position.cakupan === "divisi" && unit.jenis !== "divisi") {
+        await adminClient.auth.admin.deleteUser(userId);
+        return json({ error: "DIVISION_POSITION_REQUIRES_DIVISION_UNIT" }, 400);
+      }
+    }
+
+    const { error: membershipError } = await adminClient
+      .from("keanggotaan")
+      .insert({
+        akun_id: userId,
+        organisasi_id: organisasiId,
+        unit_id: unitId || null,
+        jabatan_id: position.id,
+        jabatan: position.nama,
+        status: "aktif",
+      });
+
+    if (membershipError) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({
+        error: "MEMBERSHIP_CREATE_FAILED",
+        detail: membershipError.message,
+      }, 400);
     }
   }
 
