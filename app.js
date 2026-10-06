@@ -843,63 +843,54 @@ function hitung() {
 }
 
 // --- Fungsi CSV ---
+function parseCSVLine(line) {
+  const out=[];let cur='';let quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted&&line[i+1]==='"'){cur+='"';i++;continue;}
+      quoted=!quoted;continue;
+    }
+    if(ch===','&&!quoted){out.push(cur.trim());cur='';continue;}
+    cur+=ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 function bacaCSV(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const text = e.target.result;
-    const rows = text.split('\n').filter(r => r.trim() !== '').map(row => {
-      return row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g).map(s => s.replace(/^"|"$/g, '').trim());
-    });
-    S.csvData = rows;
-    $('#csv-preview').innerHTML = rows.map((r, i) => `<div>${i+1}. ${r[0]} (${r[1]}) - ${r[3] || 'mahasiswa'}</div>`).join('');
-    $('#btn-csv').disabled = rows.length === 0;
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=String(e.target.result||'').replace(/\r/g,'');
+    const lines=text.split('\n').filter(x=>x.trim());
+    const rows=lines.map(parseCSVLine).filter(r=>r.some(Boolean));
+    S.csvData=rows;
+    const preview=$('#csv-preview');
+    if(preview)preview.innerHTML=rows.slice(0,50).map((r,i)=>'<div>'+esc((i+1)+'. '+(r[0]||'-')+' ('+(r[1]||'-')+') · '+(r[3]||'mahasiswa'))+'</div>').join('');
+    const btn=$('#btn-csv');if(btn)btn.disabled=rows.length===0;
   };
-  reader.readAsText(file);
+  reader.readAsText(file,'utf-8');
 }
 
 async function prosesBulkCSV() {
-  if (!sb) return toast('Supabase belum dikonfigurasi.');
-  if (S.user.peran !== 'admin') return toast('Hanya administrator yang boleh membuat akun.');
-
-  let sukses = 0, gagal = 0;
-  const credentials = [];
-
-  for (const row of S.csvData) {
-    const [nama, email, nim, peran, orgNama, jabatan] = row;
-    if (!email || !nama || !nim) { gagal++; continue; }
-
-    try {
-      const { data, error } = await sb.functions.invoke('admin-create-user', {
-        body: {
-          nama,
-          email: email.trim().toLowerCase(),
-          nim,
-          peran: peran || 'mahasiswa',
-          organisasi: orgNama || '',
-          jabatan: jabatan || 'Anggota'
-        }
-      });
-
-      if (error || !data?.ok) {
-        console.error(error || data);
-        gagal++;
-        continue;
-      }
-
-      credentials.push({ nama, email, temporary_password:data.temporary_password });
-      sukses++;
-    } catch (error) {
-      console.error(error);
-      gagal++;
-    }
+  if(!sb)return toast('Supabase belum dikonfigurasi.');
+  if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
+  let sukses=0,gagal=0;const credentials=[];
+  for(const row of S.csvData){
+    const [nama,email,nim,peran,orgNama,jabatan]=row;
+    if(!email||!nama||!nim){gagal++;continue;}
+    try{
+      const {data,error}=await sb.functions.invoke('admin-create-user',{body:{nama,email:email.trim().toLowerCase(),nim,peran:peran||'mahasiswa',organisasi:orgNama||'',jabatan:jabatan||'Anggota'}});
+      if(error||!data?.ok){console.error(error||data);gagal++;continue;}
+      credentials.push({nama,email,temporary_password:data.temporary_password});sukses++;
+    }catch(error){console.error(error);gagal++;}
   }
-
-  toast('Selesai: ' + sukses + ' sukses, ' + gagal + ' gagal. Password sementara unik hanya ditampilkan saat pembuatan.');
-  console.table(credentials);
-  S.csvData = [];
-  render();
+  S.lastCredentials=credentials;S.csvData=[];
+  toast('Selesai: '+sukses+' sukses, '+gagal+' gagal.');
+  if(credentials.length)console.table(credentials);
+  return render();
 }
-
 
 // --- Event Listeners ---
 document.addEventListener('click', async e => {
