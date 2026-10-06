@@ -365,7 +365,7 @@ with check (
 
 alter table public.keanggotaan enable row level security;
 revoke all on table public.keanggotaan from anon;
-grant select on table public.keanggotaan to authenticated;
+grant select, insert, update, delete on table public.keanggotaan to authenticated;
 
 drop policy if exists keanggotaan_select_self_or_admin on public.keanggotaan;
 create policy keanggotaan_select_self_or_admin
@@ -388,7 +388,7 @@ with check ((select private.is_admin()));
 -- Organizations are readable to authenticated users, but writable only by admins.
 alter table public.organisasi enable row level security;
 revoke all on table public.organisasi from anon;
-grant select on table public.organisasi to authenticated;
+grant select, insert, update, delete on table public.organisasi to authenticated;
 
 drop policy if exists organisasi_select_authenticated on public.organisasi;
 create policy organisasi_select_authenticated
@@ -466,7 +466,6 @@ using (
         and k.status = 'aktif'
     )
   )
-  or (select private.is_finance())
 )
 with check (
   (select private.is_admin())
@@ -480,7 +479,6 @@ with check (
         and k.status = 'aktif'
     )
   )
-  or (select private.is_finance())
 );
 
 drop policy if exists proker_delete_admin on public.proker;
