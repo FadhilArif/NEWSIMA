@@ -956,7 +956,7 @@ function resetClientState() {
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
   S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
-  S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
+  S.proker=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
 S.viewCache={};
@@ -1342,17 +1342,26 @@ const V = {
   form:function(){
     const privileged=['admin','wakil_rektor'].includes(S.user.peran);
     const currentOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
-    return pageHeader('Form proposal program kerja','Lengkapi data kegiatan sebelum menjadi draft.')+
+    const edit=S.editProkerId ? S.detail?.proker : null;
+    const isEdit=!!(edit && String(edit.id)===String(S.editProkerId));
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(edit?.organisasi_id));
+    const title=isEdit?'Edit program kerja':'Form proposal program kerja';
+    const desc=isEdit?'Perbarui data proker yang masih direncanakan atau sedang dalam revisi.':'Lengkapi data kegiatan sebelum menjadi draft.';
+    const budget=formatMoney(edit?.anggaran_diajukan||0);
+    return pageHeader(title,desc)+
       '<form id="ff" class="card" novalidate>'+
-      (privileged
-        ? '<label for="f-org">Organisasi *</label><select id="f-org" name="organisasi_id" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select>'
-        : '<div class="card bg-slate-50 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(currentOrg?.nama||'Belum ada organisasi')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(currentOrg?.tipe||'')+' · konteks akun aktif</p></div>')+
-      '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali">Sekali</option><option value="berulang">Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" required></div></div>'+
-      '<label>Lokasi *</label><input id="t" name="tempat" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3"></textarea>'+
-      '<div class="card bg-slate-50 border border-slate-200 mb-4"><label>Pengajuan anggaran kampus</label><input id="f-anggaran" name="anggaran_diajukan" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="Rp 0"><small>Isi 0 bila proker tidak meminta dana kampus. Nilai ini adalah jumlah yang diminta pada proposal; Wakil Rektor yang menentukan jumlah final yang disetujui.</small></div>'+
-      '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label>'+
-      '<div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>'+
-      '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="proker">Batal</button><button class="btn">Simpan draft</button></div></form>';
+      (isEdit
+        ? '<div class="card bg-slate-50 border border-slate-200 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(org?.nama||'-')+'</p><p class="text-xs text-slate-500 mt-1">Organisasi proker tidak dapat diubah setelah dibuat.</p></div>'
+        : (privileged
+          ? '<label for="f-org">Organisasi *</label><select id="f-org" name="organisasi_id" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select>'
+          : '<div class="card bg-slate-50 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(currentOrg?.nama||'Belum ada organisasi')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(currentOrg?.tipe||'')+' · konteks akun aktif</p></div>'))+
+      '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" value="'+esc(edit?.nama||'')+'" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali" '+(edit?.jenis!=='berulang'?'selected':'')+'>Sekali</option><option value="berulang" '+(edit?.jenis==='berulang'?'selected':'')+'>Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" value="'+esc(edit?.tanggal_mulai||'')+'" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" value="'+esc(edit?.tanggal_selesai||'')+'" required></div></div>'+
+      '<label>Lokasi *</label><input id="t" name="tempat" value="'+esc(edit?.tempat||'')+'" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3">'+esc(edit?.deskripsi||'')+'</textarea>'+
+      '<div class="card bg-slate-50 border border-slate-200 mb-4"><label>Pengajuan anggaran kampus</label><input id="f-anggaran" name="anggaran_diajukan" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(budget)+'"><small>Nominal ini adalah jumlah yang diajukan. Wakil Rektor menentukan nominal final yang disetujui saat review.</small></div>'+
+      (isEdit
+        ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> nama, jenis, jadwal, lokasi, deskripsi, dan anggaran dapat diubah. Kolaborator tetap dipertahankan.</p></div>'
+        : '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label><div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>')+
+      '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="'+(isEdit?'review':'proker')+'">Batal</button><button class="btn">'+(isEdit?'Simpan perubahan':'Simpan draft')+'</button></div></form>';
   },
   review:function(){
     const d=S.detail;
@@ -1402,7 +1411,10 @@ const V = {
     )+
       '<div class="card mb-4 workflow-steps"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
-      '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+(actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
+      '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
+        ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
+          ? '<button class="btn s mb-3" data-proker-edit="'+esc(p.id)+'">Edit proker</button>' : '')+
+        (actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
         (((S.user.peran!=='wakil_rektor')&&(canEdit||S.user.peran==='admin')&&['draft','direncanakan','revisi'].includes(p.status))?
           '<div class="mt-4 pt-4 border-t border-slate-200"><button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker</button></div>':'')+
       '</div></div>'+
@@ -1709,7 +1721,7 @@ async function render(options={}) {
   if(cacheable)setHtmlCache(view,html);
   root.innerHTML=html;
   root.classList.remove('view-initial-loading','view-refreshing');
-  if(view==='form')pesertaRow(true);
+  if(view==='form'&&!S.editProkerId)pesertaRow(true);
   renderShell();
   document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
   if(view==='akun')syncSpecialAccountRole();
@@ -1729,11 +1741,17 @@ async function render(options={}) {
     });
   }
 }
-function pesertaRow(reset) {
+function pesertaRow(reset, initialRows=[]) {
   const box=$('#ps'); if(!box)return;
   if(reset)box.innerHTML='';
+  const rows=initialRows.length?initialRows:[{}];
   const options=(S.organizations||[]).filter(o=>String(o.id)!==String(S.orgId)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('');
-  box.insertAdjacentHTML('beforeend','<div class="peserta"><select aria-label="Organisasi peserta" data-org-id><option value="">Pilih organisasi peserta</option>'+options+'</select><input type="text" inputmode="numeric" autocomplete="off" data-money="porsi" placeholder="Rp 0" aria-label="Porsi plafon"><button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button></div>');
+  rows.forEach(row=>{
+    box.insertAdjacentHTML('beforeend','<div class="peserta"><select aria-label="Organisasi peserta" data-org-id><option value="">Pilih organisasi peserta</option>'+options+'</select><input type="text" inputmode="numeric" autocomplete="off" data-money="porsi" placeholder="Rp 0" aria-label="Porsi plafon" value="'+esc(formatMoney(row.porsi_plafon||0))+'"><button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button></div>');
+    const item=box.lastElementChild;
+    const sel=item?.querySelector('[data-org-id]');
+    if(sel&&row.organisasi_id)sel.value=row.organisasi_id;
+  });
 }
 
 function parseMoney(value) {
@@ -1985,6 +2003,22 @@ document.addEventListener('click', async e => {
   if(e.target.id==='tp'){pesertaRow();return hitung();}
   if(e.target.closest('[data-del]')){e.target.closest('.peserta')?.remove();return hitung();}
   if(e.target.id==='btn-csv')return prosesBulkCSV();
+
+  const prokerEdit=e.target.closest('[data-proker-edit]');
+  if(prokerEdit){
+    if(!sb)return toast('Supabase belum tersedia.');
+    const id=prokerEdit.dataset.prokerEdit;
+    const p=S.detail?.proker;
+    if(!p||String(p.id)!==String(id))return toast('Proker tidak ditemukan.');
+    if(!['direncanakan','revisi'].includes(p.status))return toast('Proker hanya dapat diedit saat direncanakan atau perlu revisi.');
+    if(S.detail.readOnlyCollaborator)return toast('Kolaborator hanya dapat melihat proker.');
+    if(S.user.peran==='wakil_rektor')return toast('Wakil Rektor hanya dapat melihat dan mereview.');
+    if(!(S.permissions?.has('proker.edit')||S.user.peran==='admin'))return toast('Anda tidak memiliki hak edit proker.');
+    S.editProkerId=id;
+    S.selectedProkerId=id;
+    clearHtmlCache();
+    return navigate('form');
+  }
 
   const prokerDelete=e.target.closest('[data-proker-delete]');
   if(prokerDelete){
@@ -2325,6 +2359,28 @@ document.addEventListener('submit', async e => {
     if(errors.length){$('#fe').textContent=errors.join(' ');return;}
     const anggaranDiajukan=parseMoney(f.anggaran_diajukan);
     if(kolab&&!hitung())errors.push('Total porsi kolaborator melebihi pengajuan anggaran kampus.');
+    if(S.editProkerId){
+      const target=S.detail?.proker;
+      if(!target||String(target.id)!==String(S.editProkerId))return toast('Proker yang diedit tidak ditemukan.');
+      const {data,error}=await sb.rpc('update_proker_draft',{
+        p_proker_id:S.editProkerId,
+        p_nama:f.nama,
+        p_jenis:f.jenis,
+        p_tanggal_mulai:f.mulai,
+        p_tanggal_selesai:f.selesai,
+        p_tempat:f.tempat,
+        p_deskripsi:f.deskripsi||'',
+        p_anggaran_diajukan:anggaranDiajukan
+      });
+      if(error)return toast('Gagal memperbarui proker: '+(error.message||'Tidak dapat memperbarui proker.'));
+      S.selectedProkerId=target.id;
+      S.editProkerId=null;
+      clearViewCache();
+      await loadProkerDetail();
+      toast('Program kerja berhasil diperbarui.');
+      return navigate('review');
+    }
+
     const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id,anggaran_diajukan:anggaranDiajukan,anggaran_disetujui:0};
     const {data,error}=await sb.from('proker').insert(payload).select('id').single();
     if(error)return toast('Gagal menyimpan proker: '+error.message);
@@ -2332,7 +2388,7 @@ document.addEventListener('submit', async e => {
       const collabRows=[...document.querySelectorAll('.peserta')].map(row=>({
         proker_id:data.id,
         organisasi_id:row.querySelector('select[data-org-id]')?.value||null,
-        porsi_plafon:Number(row.querySelector('input[type=number]')?.value||0),
+        porsi_plafon:parseMoney(row.querySelector('[data-money="porsi"]')?.value),
         status:'diundang'
       })).filter(x=>x.organisasi_id);
       if(collabRows.length){
