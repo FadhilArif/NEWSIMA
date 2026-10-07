@@ -588,8 +588,12 @@ async function loadBudgets() {
   S.budgets=[];
   if(!sb)return;
 
-  const activePeriod=(S.periods||[]).find(x=>x.status==='aktif')
-    || (await sb.from('periode').select('id,nama,status,batas_lpj_hari').eq('status','aktif').maybeSingle()).data;
+  const {data:periodRows,error:periodError}=await sb.from('periode')
+    .select('id,nama,status,batas_lpj_hari')
+    .order('nama');
+  if(periodError)return toast('Gagal memuat periode: '+periodError.message);
+  S.periods=periodRows||[];
+  const activePeriod=S.periods.find(x=>x.status==='aktif');
   if(!activePeriod?.id)return;
 
   const {data:budget,error}=await sb.from('anggaran_periode')
