@@ -2079,7 +2079,13 @@ const V = {
           ? '<button class="btn s mb-3" data-proker-edit="'+esc(p.id)+'">Edit proker</button>' : '')+
         (actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
         (((S.user.peran!=='wakil_rektor')&&(canEdit||S.user.peran==='admin')&&['draft','direncanakan','revisi'].includes(p.status))?
-          '<div class="mt-4 pt-4 border-t border-slate-200"><button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker</button></div>':'')+
+          '<div class="mt-4 pt-4 border-t border-slate-200">'+
+            '<div class="rounded-xl border border-red-200 bg-red-50 p-3 mb-3">'+
+              '<p class="text-sm font-semibold text-red-800">Peringatan penghapusan</p>'+
+              '<p class="text-xs text-red-700 mt-1">Hapus Proker akan menghapus data kegiatan beserta dokumen, riwayat persetujuan, rincian anggaran, relasi kolaborator, dan data terkait. Tindakan ini permanen dan tidak dapat dibatalkan.</p>'+
+            '</div>'+
+            '<button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker secara permanen</button>'+
+          '</div>':'')+
       '</div></div>'+
       '<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>Dokumen</h3><p class="sub mb-0">File proposal dan LPJ disimpan di Supabase Storage dan wajib ada sebelum pengajuan.</p></div></div>'+
       ((S.user.peran!=='wakil_rektor')&&(!readOnlyCollaborator)&&(p.status==='direncanakan'||p.status==='revisi')&&(canCreate||canEdit)
@@ -2838,8 +2844,28 @@ document.addEventListener('click', async e => {
     const id=prokerDelete.dataset.prokerDelete;
     if(!id)return;
     const p=S.detail?.proker;
-    const ok=window.confirm('Hapus proker "'+(p?.nama||'ini')+'"? Proker yang masih direncanakan/revisi akan dihapus beserta dokumen dan data turunannya. Tindakan ini tidak dapat dibatalkan.');
-    if(!ok)return;
+    if(!p)return toast('Detail Proker tidak ditemukan.');
+
+    if(!['draft','direncanakan','revisi'].includes(p.status)){
+      return toast('Proker pada tahap ini tidak dapat dihapus.');
+    }
+
+    const firstConfirm=window.confirm(
+      'PERINGATAN PENGHAPUSAN PERMANEN\\n\\n'+
+      'Proker: "'+(p.nama||'ini')+'"\\n'+
+      'Status: '+(ST[p.status]?.[0]||p.status)+'\\n\\n'+
+      'Penghapusan akan menghilangkan Proker beserta dokumen, riwayat persetujuan, rincian anggaran, relasi kolaborator, dan data terkait.\\n\\n'+
+      'Tindakan ini tidak dapat dibatalkan.\\n\\n'+
+      'Lanjutkan?'
+    );
+    if(!firstConfirm)return;
+
+    const secondConfirm=window.confirm(
+      'KONFIRMASI TERAKHIR\\n\\n'+
+      'Anda benar-benar ingin menghapus "'+(p.nama||'ini')+'" secara permanen?\\n\\n'+
+      'Klik OK hanya jika Anda yakin.'
+    );
+    if(!secondConfirm)return;
     const {data,error}=await sb.rpc('delete_proker_draft',{p_proker_id:id});
     if(error)return toast('Proker tidak dapat dihapus: '+(error.message||'Terjadi kesalahan.'));
     const paths=(data||[]).map(x=>x.file_path).filter(Boolean);
