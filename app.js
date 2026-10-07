@@ -422,7 +422,7 @@ async function loadProker() {
       bemHmjQuery=sb.from('proker')
         .select(selectFields)
         .in('organisasi_id',hmjIds)
-        .eq('review_stage','bem')
+        .in('review_stage',['bem','bem_from_wakil_rektor'])
         .order('tanggal_mulai',{ascending:true});
     }
   }
@@ -645,7 +645,7 @@ async function loadInbox() {
     const [ownRes,hmjRes]=await Promise.all([
       sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false}),
       hmjIds.length
-        ? sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').in('organisasi_id',hmjIds).eq('tahap','bem').order('id',{ascending:false})
+        ? sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').in('organisasi_id',hmjIds).in('tahap',['bem','bem_from_wakil_rektor']).order('id',{ascending:false})
         : Promise.resolve({data:[],error:null})
     ]);
     if(ownRes.error)return toast('Gagal memuat inbox: '+ownRes.error.message);
@@ -1672,7 +1672,7 @@ const V = {
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
     const canReviewStage=!readOnlyCollaborator && (
       (p.review_stage==='pembimbing_hmj' && S.user.peran==='pembimbing' && S.permissions?.has('dokumen.review'))
-      || (p.review_stage==='bem' && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has('dokumen.review'))
+      || (['bem','bem_from_wakil_rektor'].includes(p.review_stage) && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has('dokumen.review'))
       || (p.review_stage==='wakil_rektor' && S.user.peran==='wakil_rektor')
       || (!p.review_stage && canReviewLegacy)
     );
@@ -1689,6 +1689,10 @@ const V = {
           : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else if(p.organisasi?.tipe==='HMJ' && p.review_stage==='hmj_from_pembimbing'){
         actions=proposal?.file_path ? action('resubmit','Ajukan ulang ke Pembimbing') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }else if(p.review_stage==='bem_from_wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.user.peran!=='wakil_rektor'){
+        actions=proposal?.file_path
+          ? '<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari Wakil Rektor. BEM dapat mengirim kembali ke Wakil Rektor atau mengembalikan ke HMJ untuk perbaikan.</p><div class="flex flex-wrap gap-2 mt-3">'+action('resubmit','Kirim kembali ke Wakil Rektor')+action('revise','Kembalikan ke HMJ','d')+'</div></div>'
+          : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else if(p.organisasi?.tipe==='BEM' && p.review_stage==='bem_from_wakil_rektor'){
         actions=proposal?.file_path ? action('resubmit','Ajukan kembali ke Wakil Rektor') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else{
@@ -1705,8 +1709,20 @@ const V = {
           '<label class="mt-3">Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
           :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
         '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+
-          action('revise',p.review_stage==='pembimbing_hmj'?'Kembalikan ke HMJ':p.review_stage==='bem'?'Kembalikan ke HMJ':'Minta revisi','d')+
-          action('approve',p.review_stage==='pembimbing_hmj'?'Setujui & teruskan ke BEM':p.review_stage==='bem'?'Setujui & teruskan ke Wakil Rektor':'Setujui','')+
+          action('revise',
+            p.review_stage==='pembimbing_hmj'
+              ? 'Kembalikan ke HMJ'
+              : p.review_stage==='bem'
+                ? 'Kembalikan ke HMJ'
+                : 'Minta revisi',
+            'd')+
+          action('approve',
+            p.review_stage==='pembimbing_hmj'
+              ? 'Setujui & teruskan ke BEM'
+              : p.review_stage==='bem'
+                ? 'Setujui & teruskan ke Wakil Rektor'
+                : 'Setujui',
+            '')+
         '</div></div>';
     }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
