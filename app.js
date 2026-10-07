@@ -517,7 +517,20 @@ async function loadProker() {
       .eq('status','bergabung')
     : {data:[],error:null};
 
-  if(collabError)console.warn('Gagal memuat kolaborasi:',collabError.message);
+  if(collabError){
+    const status=Number(collabError.status||collabError?.code||0);
+    if(status===401 || /JWT|token|session|permission denied/i.test(collabError.message||'')){
+      console.warn('Sesi tidak valid saat memuat kolaborasi. Mengembalikan pengguna ke login.');
+      sb.auth.stopAutoRefresh?.();
+      await sb.auth.signOut({scope:'local'}).catch(()=>{});
+      resetClientState();
+      $('#app').hidden=true;
+      $('#login').hidden=false;
+      $('#le').textContent='Sesi akun berakhir. Silakan masuk kembali.';
+      return;
+    }
+    console.warn('Gagal memuat kolaborasi:',collabError.message);
+  }
 
   const collabIds=[...new Set((collabRows||[]).map(x=>x.proker_id).filter(Boolean))];
   const collabQuery=collabIds.length
