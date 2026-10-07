@@ -1603,7 +1603,8 @@ const V = {
       '<label>Lokasi *</label><input id="t" name="tempat" value="'+esc(edit?.tempat||'')+'" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3">'+esc(edit?.deskripsi||'')+'</textarea>'+
       '<div class="card bg-slate-50 border border-slate-200 mb-4"><div class="f2"><div><label>Sumber dana *</label><select id="f-sumber" name="sumber_dana_kode" required>'+sourceOptions+'</select></div><div><label>Total anggaran</label><input id="f-anggaran" name="anggaran_total" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(totalBudget)+'"><small>Hanya nominal dengan sumber <b>Kampus</b> yang diajukan ke Wakil Rektor dan mengurangi plafon kampus.</small></div></div><div id="f-sumber-detail-wrap" class="mt-3 '+detailClass+'"><label>Detail sumber dana *</label><input id="f-sumber-detail" name="sumber_dana_detail" value="'+esc(edit?.sumber_dana_detail||'')+'" placeholder="Contoh: sponsor perusahaan / bantuan alumni"><small>Wajib diisi untuk sumber dana Lain-lain.</small></div><p id="f-sumber-note" class="sub mt-3"></p></div>'+
       (isEdit
-        ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> nama, jenis, jadwal, lokasi, deskripsi, sumber dana, detail sumber dana, dan total anggaran dapat diubah. Kolaborator tetap dipertahankan.</p></div>'
+        ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> data kegiatan, sumber dana, anggaran, dan kolaborator dapat diperbarui selama Proker masih direncanakan atau perlu revisi.</p></div>'+
+          '<div class="card border border-slate-200 mb-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Kolaborator</h3><p class="sub mb-0">Tambahkan organisasi susulan, ubah porsi plafon, atau hapus kolaborator yang tidak lagi terlibat. Kolaborator baru akan menerima undangan.</p></div><span class="chip bl">Bisa diubah</span></div><div id="kb" class="mt-4"><div id="ps"></div><button type="button" class="btn w mt-3" id="tp">+ Tambah organisasi</button><p class="sub mt-2" id="tt"></p></div></div>'
         : '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label><div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>')+
       '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="'+(isEdit?'review':'proker')+'">Batal</button><button class="btn">'+(isEdit?'Simpan perubahan':'Simpan draft')+'</button></div></form>';
   },
@@ -2016,7 +2017,16 @@ async function render(options={}) {
   if(cacheable)setHtmlCache(view,html);
   root.innerHTML=html;
   root.classList.remove('view-initial-loading','view-refreshing');
-  if(view==='form'&&!S.editProkerId)pesertaRow(true);
+  if(view==='form'){
+    if(S.editProkerId){
+      const kb=$('#kb');
+      if(kb)kb.hidden=false;
+      pesertaRow(true,S.detail?.kolaborator||[]);
+      hitung();
+    }else{
+      pesertaRow(true);
+    }
+  }
   renderShell();
   document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
   if(view==='form'){
@@ -2044,9 +2054,26 @@ function pesertaRow(reset, initialRows=[]) {
   const box=$('#ps'); if(!box)return;
   if(reset)box.innerHTML='';
   const rows=initialRows.length?initialRows:[{}];
-  const options=(S.organizations||[]).filter(o=>String(o.id)!==String(S.orgId)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('');
+  const options=(S.organizations||[])
+    .filter(o=>String(o.id)!==String(S.detail?.proker?.organisasi_id||S.orgId))
+    .map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>')
+    .join('');
+
   rows.forEach(row=>{
-    box.insertAdjacentHTML('beforeend','<div class="peserta"><select aria-label="Organisasi peserta" data-org-id><option value="">Pilih organisasi peserta</option>'+options+'</select><input type="text" inputmode="numeric" autocomplete="off" data-money="porsi" placeholder="Rp 0" aria-label="Porsi plafon" value="'+esc(formatMoney(row.porsi_plafon||0))+'"><button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button></div>');
+    const statusLabel=row.status==='bergabung'?'Sudah bergabung'
+      :row.status==='menolak'?'Menolak undangan'
+      :row.status==='diundang'?'Menunggu undangan'
+      :'Kolaborator baru';
+
+    box.insertAdjacentHTML('beforeend',
+      '<div class="peserta flex flex-col sm:flex-row gap-2 sm:items-center">'+
+        '<select aria-label="Organisasi peserta" data-org-id class="flex-1"><option value="">Pilih organisasi peserta</option>'+options+'</select>'+
+        '<input type="text" inputmode="numeric" autocomplete="off" data-money="porsi" placeholder="Rp 0" aria-label="Porsi plafon" value="'+esc(formatMoney(row.porsi_plafon||0))+'">'+
+        '<span class="chip bl text-center">'+esc(statusLabel)+'</span>'+
+        '<button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button>'+
+      '</div>'
+    );
+
     const item=box.lastElementChild;
     const sel=item?.querySelector('[data-org-id]');
     if(sel&&row.organisasi_id)sel.value=row.organisasi_id;
@@ -2807,7 +2834,23 @@ document.addEventListener('submit', async e => {
     if(S.editProkerId){
       const target=S.detail?.proker;
       if(!target||String(target.id)!==String(S.editProkerId))return toast('Proker yang diedit tidak ditemukan.');
-      const {data,error}=await sb.rpc('update_proker_draft',{
+
+      const collabRows=[...document.querySelectorAll('#ps .peserta')]
+        .map(row=>({
+          organisasi_id:row.querySelector('[data-org-id]')?.value||null,
+          porsi_plafon:parseMoney(row.querySelector('[data-money="porsi"]')?.value||0)
+        }))
+        .filter(x=>x.organisasi_id);
+
+      const ids=collabRows.map(x=>String(x.organisasi_id));
+      if(new Set(ids).size!==ids.length){
+        return toast('Organisasi kolaborator tidak boleh dipilih lebih dari sekali.');
+      }
+      if(collabRows.reduce((sum,x)=>sum+x.porsi_plafon,0)>totalAnggaran){
+        return toast('Total porsi kolaborator tidak boleh melebihi total anggaran Proker.');
+      }
+
+      const {data,error}=await sb.rpc('update_proker_draft_with_collaborators',{
         p_proker_id:S.editProkerId,
         p_nama:f.nama,
         p_jenis:f.jenis,
@@ -2817,14 +2860,16 @@ document.addEventListener('submit', async e => {
         p_deskripsi:f.deskripsi||'',
         p_sumber_dana_kode:sourceCode,
         p_sumber_dana_detail:String(f.sumber_dana_detail||'').trim()||null,
-        p_anggaran_total:totalAnggaran
+        p_anggaran_total:totalAnggaran,
+        p_collaborators:collabRows
       });
-      if(error)return toast('Gagal memperbarui proker: '+(error.message||'Tidak dapat memperbarui proker.'));
+      if(error)return toast('Gagal memperbarui proker dan kolaborator: '+(error.message||'Tidak dapat memperbarui proker.'));
+
       S.selectedProkerId=target.id;
       S.editProkerId=null;
       clearViewCache();
       await loadProkerDetail();
-      toast('Program kerja berhasil diperbarui.');
+      toast('Program kerja dan kolaborator berhasil diperbarui.');
       return navigate('review');
     }
 
