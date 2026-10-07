@@ -42,10 +42,8 @@ using (
   -- Normal organization members see their own organization's Proker.
   or (
     private.has_org_permission(organisasi_id,'proker.view')
-    and coalesce(
-      (select p.peran from public.profiles p where p.id=auth.uid()),
-      ''::public.peran_akun
-    ) <> 'pembimbing'::public.peran_akun
+    and (select p.peran from public.profiles p where p.id=auth.uid())
+      is distinct from 'pembimbing'::public.peran_akun
   )
 
   -- Joined collaborators can see approved/collaborative Proker.
