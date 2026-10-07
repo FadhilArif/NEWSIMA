@@ -204,7 +204,7 @@ const S = {
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
-  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
+  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null
 }
 
 const MENU = [
@@ -440,20 +440,90 @@ async function loadProker() {
   }));
 }
 
-async function loadNotifications() {
-  S.notifications = [];
+async function loadNotifications({silent=false}={}) {
   if (!sb || !S.user.id) return;
+
   const { data, error } = await sb.from('notifikasi')
     .select('id,akun_id,organisasi_id,pesan,tautan,dibaca,dibuat')
     .eq('akun_id', S.user.id)
     .order('dibuat', { ascending:false })
     .limit(50);
-  if (!error && Array.isArray(data)) {
-    S.notifications = data.map(n => ({
-      id:n.id, title:'Notifikasi', message:n.pesan || '',
-      type:'info', read:!!n.dibaca, created_at:n.dibuat, view:n.tautan || ''
-    }));
+
+  if (error) {
+    if (!silent) console.warn('Gagal memuat notifikasi:', error);
+    return;
   }
+
+  S.notifications = Array.isArray(data) ? data.map(n => ({
+    id:n.id,
+    title:'Notifikasi',
+    message:n.pesan || '',
+    type:'info',
+    read:!!n.dibaca,
+    created_at:n.dibuat,
+    view:n.tautan || ''
+  })) : [];
+
+  renderNotificationPanel();
+}
+
+async function setupNotificationRealtime() {
+  if (!sb || !S.user.id) return;
+
+  if (S.notificationChannel) {
+    await sb.removeChannel(S.notificationChannel).catch(error =>
+      console.warn('Gagal mengganti channel notifikasi:', error)
+    );
+    S.notificationChannel = null;
+  }
+
+  const userId = S.user.id;
+  S.notificationChannel = sb
+    .channel('sima-notifications-' + userId)
+    .on(
+      'postgres_changes',
+      {
+        event:'INSERT',
+        schema:'public',
+        table:'notifikasi',
+        filter:'akun_id=eq.' + userId
+      },
+      payload => {
+        const row = payload.new;
+        if (!row || String(row.akun_id) !== String(userId)) return;
+
+        const exists = S.notifications.some(n => String(n.id) === String(row.id));
+        if (!exists) {
+          S.notifications.unshift({
+            id:row.id,
+            title:'Notifikasi',
+            message:row.pesan || '',
+            type:'info',
+            read:!!row.dibaca,
+            created_at:row.dibuat,
+            view:row.tautan || ''
+          });
+          S.notifications = S.notifications
+            .sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0))
+            .slice(0,50);
+        }
+
+        renderNotificationPanel();
+
+        if (typeof toast === 'function' && row.pesan) {
+          toast(row.pesan);
+        }
+      }
+    )
+    .subscribe(status => {
+      if (status === 'SUBSCRIBED') {
+        console.info('Realtime notifikasi aktif untuk akun:', userId);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('Realtime notifikasi gagal:', status);
+      }
+    });
+
+  await loadNotifications({silent:true});
 }
 
 async function loadProkerDetail() {
@@ -950,7 +1020,16 @@ function saveLocalProfile() {
 }
 
 function navigate(view, push=true) {
-  if (!view || view === S.view) return render();
+  if (!view) return render();
+
+  // Notification deep-link support: review:<proker_id>
+  if (typeof view === 'string' && view.startsWith('review:')) {
+    const prokerId = view.slice('review:'.length).trim();
+    if (prokerId) S.selectedProkerId = prokerId;
+    view = 'review';
+  }
+
+  if (view === S.view) return render({force:true});
   if (!canAccessView(view)) {
     toast('Akses ditolak untuk role ' + roleLabel(S.user?.peran));
     return;
@@ -968,6 +1047,10 @@ function goBack() {
 }
 
 function resetClientState() {
+  if (S.notificationChannel && sb) {
+    sb.removeChannel(S.notificationChannel).catch(error => console.warn('Gagal melepas channel notifikasi:', error));
+    S.notificationChannel = null;
+  }
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
   S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
@@ -1088,6 +1171,9 @@ async function hydrateUser(authUser) {
   // Build the new account-scoped organization context after the old identity
   // has been completely cleared.
   await loadContexts();
+
+  // Notification inbox is account-scoped and should be available on every page.
+  await setupNotificationRealtime();
 
   $('#login').hidden = true;
   $('#app').hidden = false;
@@ -1926,8 +2012,12 @@ document.addEventListener('click', async e => {
 
   if (e.target.closest('#notifBtn')) {
     const p=$('#notifPanel');
-    if(p)p.hidden=!p.hidden;
+    if(p) p.hidden=!p.hidden;
     const m=$('#profileMenu'); if(m)m.hidden=true;
+
+    // Refresh once when the bell is opened so the inbox stays correct even
+    // when Realtime was temporarily unavailable.
+    if(p && !p.hidden) await loadNotifications({silent:true});
     return;
   }
 
@@ -1952,7 +2042,7 @@ document.addEventListener('click', async e => {
         n.read=true;
         if(sb&&n.id) await sb.from('notifikasi').update({dibaca:true}).eq('id',n.id).eq('akun_id',S.user.id);
         if($('#notifPanel'))$('#notifPanel').hidden=true;
-        if(n.view)navigate(n.view);
+        if(n.view) navigate(n.view);
         else renderNotificationPanel();
       }
       return;
