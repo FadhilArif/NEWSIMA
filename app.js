@@ -1052,7 +1052,6 @@ async function hydrateUser(authUser) {
   // Build the new account-scoped organization context after the old identity
   // has been completely cleared.
   await loadContexts();
-  if(S.user.peran==='admin') await loadStorageStatus();
 
   $('#login').hidden = true;
   $('#app').hidden = false;
@@ -1063,9 +1062,14 @@ async function hydrateUser(authUser) {
   } else {
     S.view = 'beranda';
   }
-  await loadProker();
-  await loadNotifications();
+
+  // First paint immediately; view data is loaded asynchronously by render().
   render();
+
+  // Storage meter is informational and should never block first paint.
+  if(S.user.peran==='admin'){
+    loadStorageStatus().catch(error=>console.warn('Storage status gagal dimuat:',error));
+  }
 }
 
 async function logout() {
