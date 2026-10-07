@@ -620,10 +620,12 @@ async function loadInbox() {
 async function loadGallery() {
   S.gallery=[];
   if(!sb)return;
+
   const {data,error}=await sb.from('foto_kegiatan')
     .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
     .order('proker_id')
     .order('urutan');
+
   if(error)return toast('Gagal memuat galeri: '+error.message);
 
   const rows=Array.isArray(data)?data:[];
@@ -631,21 +633,51 @@ async function loadGallery() {
   const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
 
   const [prokerRows,userRows]=await Promise.all([
-    ids.length?sb.from('proker').select('id,nama,organisasi_id').in('id',ids):{data:[]},
+    ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):{data:[]},
     userIds.length?sb.from('profiles').select('id,nama,email').in('id',userIds):{data:[]}
   ]);
 
   const pmap=Object.fromEntries((prokerRows.data||[]).map(x=>[x.id,x]));
   const umap=Object.fromEntries((userRows.data||[]).map(x=>[x.id,x]));
 
-  S.gallery=await Promise.all(rows.map(async x=>{
+  const hydrated=await Promise.all(rows.map(async x=>{
     let thumb_url='';
     if(x.thumb_path){
       const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
       thumb_url=signed.data?.signedUrl||'';
     }
-    return {...x,proker:pmap[x.proker_id]||null,uploader:umap[x.diunggah_oleh]||null,thumb_url};
+    return {
+      ...x,
+      proker:pmap[x.proker_id]||null,
+      uploader:umap[x.diunggah_oleh]||null,
+      thumb_url
+    };
   }));
+
+  // One gallery card per Proker. The cover photo is intentionally randomized.
+  const grouped=new Map();
+  hydrated.forEach(photo=>{
+    const key=String(photo.proker_id);
+    if(!grouped.has(key)){
+      grouped.set(key,{
+        proker_id:photo.proker_id,
+        proker:photo.proker,
+        photos:[]
+      });
+    }
+    grouped.get(key).photos.push(photo);
+  });
+
+  S.gallery=[...grouped.values()].map(group=>{
+    const photos=[...group.photos].sort((a,b)=>Number(a.urutan||0)-Number(b.urutan||0));
+    const cover=photos[Math.floor(Math.random()*photos.length)]||photos[0]||null;
+    return {
+      ...group,
+      photos,
+      cover,
+      photo_count:photos.length
+    };
+  });
 }
 
 async function loadReports() {
@@ -1127,6 +1159,60 @@ function renderNotificationPanel() {
       '<span class="block text-xs text-slate-500 mt-0.5">' + esc(n.message) + '</span></span></button>'
     ).join('') + '</div>' : '<div class="p-8 text-center text-sm text-slate-500">Belum ada notifikasi.</div>');
 }
+
+function closeActivityGallery() {
+  const modal=$('#activityGalleryModal');
+  if(modal)modal.remove();
+}
+
+function openActivityGallery(prokerId) {
+  const album=(S.gallery||[]).find(x=>String(x.proker_id)===String(prokerId));
+  if(!album)return toast('Album kegiatan tidak ditemukan.');
+
+  closeActivityGallery();
+
+  const modal=document.createElement('div');
+  modal.id='activityGalleryModal';
+  modal.className='fixed inset-0 z-[100] bg-slate-950/80 p-4 sm:p-6 overflow-y-auto';
+  modal.innerHTML=
+    '<div class="min-h-full flex items-start justify-center py-4 sm:py-8">'+
+      '<div class="w-full max-w-6xl rounded-3xl bg-white shadow-2xl overflow-hidden">'+
+        '<div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-4">'+
+          '<div class="min-w-0">'+
+            '<p class="text-xs font-semibold uppercase tracking-wide text-sima-600">Dokumentasi kegiatan</p>'+
+            '<h2 class="text-xl font-bold mt-1 truncate">'+esc(album.proker?.nama||'Kegiatan')+'</h2>'+
+            '<p class="text-sm text-slate-500 mt-1">'+album.photos.length+' foto</p>'+
+          '</div>'+
+          '<button type="button" data-gallery-close class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 grid place-items-center text-slate-600 text-xl" aria-label="Tutup">×</button>'+
+        '</div>'+
+        '<div class="p-4 sm:p-6">'+
+          '<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
+            album.photos.map(photo=>
+              '<div class="rounded-2xl border border-slate-200 overflow-hidden bg-white">'+
+                (photo.thumb_url
+                  ? '<img src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-56 object-cover bg-slate-100">'
+                  : '<div class="w-full h-56 bg-slate-100 grid place-items-center text-slate-400">Pratinjau tidak tersedia</div>')+
+                '<div class="p-3">'+
+                  '<p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p>'+
+                  '<p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p>'+
+                  '<p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p>'+
+                '</div>'+
+              '</div>'
+            ).join('')+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  modal.addEventListener('click',event=>{
+    if(event.target===modal || event.target.closest('[data-gallery-close]'))closeActivityGallery();
+  });
+  document.body.append(modal);
+}
+
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape')closeActivityGallery();
+});
 
 function renderProfileMenu() {
   const m = $('#profileMenu');
@@ -1614,15 +1700,20 @@ const V = {
       (S.inbox.length?'<div class="grid gap-3">'+S.inbox.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.jenis)+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></div></div>').join('')+'</div>':emptyCard('Inbox kosong.'));
   },
   galeri:function(){
-    return pageHeader('Galeri kegiatan','Dokumentasi kegiatan yang tercatat di SIMA.')+
-      (S.gallery.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.gallery.map(x=>
-        '<div class="card !p-0 overflow-hidden">'+
-          (x.thumb_url
-            ? '<img src="'+esc(x.thumb_url)+'" alt="'+esc(x.file_name||x.proker?.nama||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
-            : '<div class="h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan</div>')+
-          '<div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(x.file_name||x.keterangan||'Foto kegiatan')+'</p><p class="text-xs text-slate-500">'+dateTimeID(x.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(x.uploader?.nama||x.diunggah_oleh||'-')+'</p></div>'+
-        '</div>'
-      ).join('')+'</div>':emptyCard('Belum ada foto kegiatan.'));
+    return pageHeader('Galeri kegiatan','Satu album untuk setiap program kerja. Klik thumbnail untuk melihat seluruh foto.')+
+      (S.gallery.length
+        ? '<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
+          S.gallery.map(x=>
+            '<button type="button" class="card !p-0 overflow-hidden text-left group hover:-translate-y-0.5 transition" data-gallery-proker="'+esc(x.proker_id)+'">'+
+              (x.cover?.thumb_url
+                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105"><span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>'
+                : '<div class="relative h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>')+
+              '<div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateID(x.proker?.tanggal_mulai||'')+(x.proker?.tanggal_selesai?' – '+dateID(x.proker.tanggal_selesai):'')+'</p><p class="text-xs text-slate-400 mt-1">Klik untuk melihat dokumentasi kegiatan</p></div>'+
+            '</button>'
+          ).join('')+
+          '</div>'
+        : emptyCard('Belum ada foto kegiatan.')
+      );
   },
   laporan:function(){
     return pageHeader('Laporan akhir','Pantau laporan akhir kegiatan.')+
@@ -2200,6 +2291,18 @@ document.addEventListener('click', async e => {
   if(reviewDoc){
     S.reviewDocId=reviewDoc.dataset.reviewDoc;
     toast('Dokumen dipilih untuk ditinjau.');
+    return;
+  }
+
+  const galleryCard=e.target.closest('[data-gallery-proker]');
+  if(galleryCard){
+    openActivityGallery(galleryCard.dataset.galleryProker);
+    return;
+  }
+
+  const galleryClose=e.target.closest('[data-gallery-close]');
+  if(galleryClose){
+    closeActivityGallery();
     return;
   }
 
