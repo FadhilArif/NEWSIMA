@@ -22,9 +22,45 @@ table{width:100%;border-collapse:collapse}th{font-size:12px;color:var(--mu);text
 .pdf{background:#2a2f45;border-radius:12px;padding:20px;display:grid;place-items:center;min-height:300px}.pdf div{background:#fff;width:70%;aspect-ratio:3/4;display:grid;place-items:center;text-align:center;font-weight:700;padding:12px}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:9}
 .bn{display:none}
-@media(max-width:820px){#login{grid-template-columns:1fr}.hero{display:none}#app{grid-template-columns:1fr}aside{display:none}main{padding:14px 14px 90px}.g3{grid-template-columns:repeat(3,1fr)}.row2,.f2{grid-template-columns:1fr}
-.bn{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--ln);justify-content:space-around;padding:8px 0}.bn button{border:0;background:none;color:var(--mu);font-size:11px}.bn .on{color:var(--p);font-weight:700}.bn .fab{background:var(--p);color:#fff;width:44px;height:44px;border-radius:50%;font-size:22px;margin-top:-18px}
-table,thead,tbody,tr,td{display:block}thead{display:none}tr{border-bottom:1px solid var(--ln);padding:6px 0}td{border:0;padding:2px 4px}}
+@media(max-width:820px){
+  #login{grid-template-columns:1fr}
+  .hero{display:none}
+  #app{grid-template-columns:1fr}
+  aside{display:none}
+  main{padding:14px 12px 90px;width:100%;overflow-x:hidden}
+  .top{flex-wrap:wrap;align-items:center}
+  .ctx{min-width:0;max-width:calc(100vw - 92px);flex:1}
+  .ctx select{min-width:0;max-width:100%}
+  .g3{grid-template-columns:1fr}
+  .row2,.f2{grid-template-columns:1fr}
+  .card{padding:14px}
+  .tabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .tabs button{flex:0 0 auto}
+  .bar2{width:100%}
+  .toast{left:12px;right:12px;transform:none;text-align:center}
+  .bn{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--ln);justify-content:space-around;padding:8px 0;z-index:40}
+  .bn button{border:0;background:none;color:var(--mu);font-size:11px;min-width:0}
+  .bn .on{color:var(--p);font-weight:700}
+  .bn .fab{background:var(--p);color:#fff;width:44px;height:44px;border-radius:50%;font-size:22px;margin-top:-18px}
+  table,thead,tbody,tr,td{display:block}
+  thead{display:none}
+  tr{border-bottom:1px solid var(--ln);padding:8px 0}
+  td{border:0;padding:3px 4px}
+}
+@media(max-width:520px){
+  h1.t{font-size:22px}
+  .top{gap:8px}
+  .ctx{order:2;flex-basis:100%;max-width:none}
+  .sp{display:none}
+  .av{margin-left:auto}
+  .g3{gap:8px}
+}
+@media(max-width:340px){
+  main{padding-left:10px;padding-right:10px}
+  .card{padding:12px;border-radius:12px}
+  .btn{padding:9px 12px}
+  input,select,textarea{padding:9px 10px}
+}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 /* Tambahkan di bagian bawah style.css */
 #csv-preview div { padding: 4px 0; border-bottom: 1px solid var(--ln); font-size: 12px; }
