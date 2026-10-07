@@ -366,6 +366,7 @@ async function loadContexts() {
   S.orgId = S.ctxs[S.ctx]?.orgId || null;
 
   // Permission set must follow the currently selected organization/position.
+  const privileged = S.user.peran === 'admin' || S.user.peran === 'wakil_rektor';
   if (!privileged && S.orgId) {
     const selected = S.memberships.find(m => m.organisasi_id === S.orgId);
     if (selected?.jabatan_id) {
