@@ -3,7 +3,13 @@ const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
 const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
 const SECURE_LOGIN_FUNCTION = 'secure-login';
 const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } })
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    })
   : null;
 const $ = s => document.querySelector(s), rp = n => 'Rp' + Number(n || 0).toLocaleString('id-ID');
 
@@ -1633,10 +1639,37 @@ async function initAuth() {
     renderShell();
     return;
   }
-  const { data } = await sb.auth.getSession();
-  if (data?.session?.user) await hydrateUser(data.session.user);
-  sb.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_OUT') {
+
+  // Do not auto-refresh a stale browser session while the login screen is open.
+  // The session is explicitly started after a successful login.
+  sb.auth.stopAutoRefresh?.();
+
+  try {
+    const { data, error } = await sb.auth.getSession();
+    if (error) {
+      console.warn('Session lama tidak dapat dipulihkan:', error.message);
+      await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+    } else if (data?.session?.user) {
+      const { data: refreshed, error: refreshError } = await sb.auth.refreshSession(data.session);
+      if (!refreshError && refreshed?.session?.user) {
+        await sb.auth.startAutoRefresh?.();
+        await hydrateUser(refreshed.session.user);
+      } else {
+        await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+      }
+    }
+  } catch (error) {
+    console.warn('Pemulihan sesi gagal:', error);
+    await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+  }
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if(session?.user) {
+        sb.auth.startAutoRefresh?.();
+      }
+    } else if (event === 'SIGNED_OUT') {
+      sb.auth.stopAutoRefresh?.();
       resetClientState();
       $('#app').hidden = true;
       $('#login').hidden = false;
@@ -3137,6 +3170,11 @@ document.addEventListener('submit', async e => {
     if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memverifikasi...';}
     try{
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
+
+      // Fully detach the previous browser session before creating a new one.
+      sb.auth.stopAutoRefresh?.();
+      await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+
       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
       const payload=await response.json().catch(()=>({}));
       if(response.status===429){
@@ -3149,8 +3187,14 @@ document.addEventListener('submit', async e => {
       }
       if(!payload.session?.access_token||!payload.session?.refresh_token)return $('#le').textContent='Sesi login tidak valid.';
       const {data,error}=await sb.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});
-      if(error||!data.session?.user)return $('#le').textContent='Gagal membuat sesi akun.';
-      $('#le').textContent='';$('#pw').value='';
+      if(error||!data.session?.user){
+        await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+        return $('#le').textContent='Gagal membuat sesi akun.';
+      }
+
+      sb.auth.startAutoRefresh?.();
+      $('#le').textContent='';
+      $('#pw').value='';
       await hydrateUser(data.session.user);
     }catch(error){console.error(error);$('#le').textContent='Login tidak dapat diproses. Periksa secure-login Edge Function.';}
     finally{if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Masuk';}}
