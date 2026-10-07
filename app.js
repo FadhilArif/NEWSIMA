@@ -13,7 +13,7 @@ const ROLE_ACCESS = {
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
   mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
-  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','profil'])
+  wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','plafon','profil'])
 }
 
 const ADMIN_VIEWS = new Set(['periode','organisasi','unit_kerja','akun','jabatan','audit']);
@@ -181,7 +181,7 @@ function canAccessView(view) {
   // Wakil Rektor is a campus-wide observer with review authority only for BEM.
   // The actual approve/revise authorization is enforced server-side.
   if (role === 'wakil_rektor') {
-    return new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','profil']).has(view);
+    return new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','plafon','profil']).has(view);
   }
 
   const permission = VIEW_PERMISSION[view];
@@ -385,12 +385,12 @@ async function loadProker() {
   const isWakil=S.user.peran==='wakil_rektor';
   const ownQuery = (S.orgId && !isWakil)
     ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh')
+      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
       .eq('organisasi_id', S.orgId)
       .order('tanggal_mulai',{ascending:true})
     : (isWakil
       ? sb.from('proker')
-        .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh')
+        .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
         .order('tanggal_mulai',{ascending:true})
       : Promise.resolve({data:[],error:null}));
 
@@ -403,7 +403,7 @@ async function loadProker() {
   const collabIds=[...new Set((collabRows||[]).map(x=>x.proker_id).filter(Boolean))];
   const collabQuery=collabIds.length
     ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh')
+      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
       .in('id',collabIds)
       .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
@@ -430,7 +430,14 @@ async function loadProker() {
   (budgetRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].ajuan+=Number(x.subtotal||0);});
   (payoutRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].cair+=Number(x.jumlah||0);});
 
-  S.proker=rows.map(p=>({...p,organisasi:orgMap[p.organisasi_id]||null,ketua:p.ketua_pelaksana||'-',mulai:p.tanggal_mulai||'-',ajuan:totals[p.id]?.ajuan||0,cair:totals[p.id]?.cair||0}));
+  S.proker=rows.map(p=>({
+    ...p,
+    organisasi:orgMap[p.organisasi_id]||null,
+    ketua:p.ketua_pelaksana||'-',
+    mulai:p.tanggal_mulai||'-',
+    ajuan:Number(p.anggaran_diajukan||0)>0?Number(p.anggaran_diajukan):Number(totals[p.id]?.ajuan||0),
+    cair:totals[p.id]?.cair||0
+  }));
 }
 
 async function loadNotifications() {
@@ -463,7 +470,7 @@ async function loadProkerDetail() {
 
   const [orgRes, docs, kolab, decisions] = await Promise.all([
     proker.organisasi_id
-      ? sb.from('organisasi').select('id,nama,tipe').eq('id',proker.organisasi_id).maybeSingle()
+      ? sb.from('organisasi').select('id,nama,tipe,periode_id').eq('id',proker.organisasi_id).maybeSingle()
       : Promise.resolve({data:null}),
     sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at').eq('proker_id',S.selectedProkerId).order('jenis'),
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
@@ -472,11 +479,18 @@ async function loadProkerDetail() {
       : Promise.resolve({data:[]})
   ]);
 
+  const periodId=orgRes.data?.periode_id||null;
+  let budgetStatus=null;
+  if(periodId){
+    const bs=await sb.rpc('get_anggaran_periode_status',{p_periode_id:periodId});
+    budgetStatus=Array.isArray(bs.data)?(bs.data[0]||null):(bs.data||null);
+  }
   S.detail = {
     proker:{...proker,organisasi:orgRes.data || null},
     docs:docs.data || [],
     kolaborator:kolab.data || [],
     keputusan:decisions.data || [],
+    budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
       (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung')
   };
@@ -573,14 +587,39 @@ async function loadMeetings() {
 async function loadBudgets() {
   S.budgets=[];
   if(!sb)return;
-  let q=sb.from('plafon_anggaran').select('organisasi_id,jumlah,diinput_oleh,diinput_pada').order('diinput_pada',{ascending:false});
-  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
-  const {data,error}=await q;
-  if(error)return toast('Gagal memuat plafon: '+error.message);
-  const ids=[...new Set((data||[]).map(x=>x.organisasi_id))];
-  const orgs=ids.length?(await sb.from('organisasi').select('id,nama,tipe').in('id',ids)).data||[]:[];
-  const omap=Object.fromEntries(orgs.map(x=>[x.id,x]));
-  S.budgets=(data||[]).map(x=>({...x,organisasi:omap[x.organisasi_id]}));
+
+  const activePeriod=(S.periods||[]).find(x=>x.status==='aktif')
+    || (await sb.from('periode').select('id,nama,status,batas_lpj_hari').eq('status','aktif').maybeSingle()).data;
+  if(!activePeriod?.id)return;
+
+  const {data:budget,error}=await sb.from('anggaran_periode')
+    .select('id,periode_id,plafon,diatur_oleh,diatur_pada')
+    .eq('periode_id',activePeriod.id)
+    .maybeSingle();
+  if(error){
+    toast('Gagal memuat plafon periode: '+error.message);
+    return;
+  }
+
+  const {data:statusData,error:statusError}=await sb.rpc('get_anggaran_periode_status',{p_periode_id:activePeriod.id});
+  if(statusError){
+    toast('Gagal menghitung penggunaan plafon: '+statusError.message);
+    return;
+  }
+
+  const status=Array.isArray(statusData)?(statusData[0]||null):(statusData||null);
+  S.budgets=budget?[{
+    ...budget,
+    periode:activePeriod,
+    ...(status||{})
+  }]:[{
+    periode_id:activePeriod.id,
+    plafon:0,
+    digunakan:0,
+    tersisa:0,
+    persentase:0,
+    periode:activePeriod
+  }];
 }
 
 async function loadPayouts() {
@@ -1194,8 +1233,9 @@ const V = {
         : '<div class="card bg-slate-50 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(currentOrg?.nama||'Belum ada organisasi')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(currentOrg?.tipe||'')+' · konteks akun aktif</p></div>')+
       '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali">Sekali</option><option value="berulang">Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" required></div></div>'+
       '<label>Lokasi *</label><input id="t" name="tempat" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3"></textarea>'+
+      '<div class="card bg-slate-50 border border-slate-200 mb-4"><label>Pengajuan anggaran kampus</label><input id="f-anggaran" name="anggaran_diajukan" type="number" min="0" step="1000" value="0"><small>Isi 0 bila proker tidak meminta dana kampus. Nilai ini adalah jumlah yang diminta pada proposal; Wakil Rektor yang menentukan jumlah final yang disetujui.</small></div>'+
       '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label>'+
-      '<div id="kb" hidden><label>Dana kampus proker</label><input id="dk" type="number" min="0" value="0"><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>'+
+      '<div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>'+
       '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="proker">Batal</button><button class="btn">Simpan draft</button></div></form>';
   },
   review:function(){
@@ -1218,7 +1258,11 @@ const V = {
     else if(p.status==='disetujui'&&canEdit) actions=action('start','Mulai pelaksanaan');
     else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
     else if(p.status==='selesai'&&canEdit) actions=lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
-    else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label><textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
+    else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label>'+
+      ((S.user.peran==='wakil_rektor'&&p.organisasi?.tipe==='BEM')?
+        '<label class="mt-3">Anggaran disetujui Wakil Rektor</label><input id="approved-budget" type="number" min="0" max="'+esc(p.anggaran_diajukan||0)+'" step="1000" value="'+esc(p.anggaran_diajukan||0)+'"><p class="sub">Diajukan: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
+        :'')+
+      '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
 
     const steps=[
@@ -1241,7 +1285,7 @@ const V = {
       chip(p.status)
     )+
       '<div class="card mb-4"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
-      '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
+      '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+(actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
         (((S.user.peran!=='wakil_rektor')&&(canEdit||S.user.peran==='admin')&&['draft','direncanakan','revisi'].includes(p.status))?
           '<div class="mt-4 pt-4 border-t border-slate-200"><button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker</button></div>':'')+
@@ -1338,10 +1382,17 @@ const V = {
       (S.meetings.length?'<div class="grid gap-3">'+S.meetings.map(x=>'<div class="card"><div class="flex justify-between gap-3"><div><h3>Rapat #'+esc(x.nomor||'-')+'</h3><p class="sub mb-1">'+dateID(x.tanggal)+' · '+esc(x.dokumen_id)+'</p></div>'+chip(x.hasil||'-')+'</div><p class="text-sm">'+esc(x.notulen||'Belum ada notulen.')+'</p></div>').join('')+'</div>':emptyCard('Belum ada rapat.'));
   },
   plafon:function(){
-    const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
-    return pageHeader('Plafon dan anggaran','Kelola plafon anggaran organisasi.')+
-      (canWrite?'<form id="form-plafon" class="card"><h3>Atur plafon</h3><div class="f2"><div><label>Organisasi</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOptions(S.orgId)+'</select></div><div><label>Jumlah</label><input id="p-jumlah" type="number" min="0" required></div></div><button class="btn mt-4">Simpan plafon</button></form>':'')+
-      (S.budgets.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Organisasi</th><th>Plafon</th><th>Terakhir diinput</th></tr></thead><tbody>'+S.budgets.map(x=>'<tr><td>'+esc(x.organisasi?.nama||'-')+'</td><td>'+rp(x.jumlah)+'</td><td>'+dateID(x.diinput_pada)+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada plafon.'));
+    const b=S.budgets[0]||null;
+    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    const plafon=Number(b?.plafon||0), digunakan=Number(b?.digunakan||0), tersisa=Number(b?.tersisa||0);
+    const periodName=b?.periode?.nama||'Belum ada periode aktif';
+    return pageHeader('Plafon dan anggaran','Anggaran kampus berlaku bersama untuk seluruh organisasi dalam satu periode.',
+      S.user.peran==='wakil_rektor'?'<span class="chip bl">Wakil Rektor · pengendali plafon</span>':'')+
+      '<div class="g3 mb-4"><div class="k bl"><b>'+rp(plafon)+'</b>Plafon periode</div><div class="k er"><b>'+rp(digunakan)+'</b>Sudah disetujui</div><div class="k wa"><b>'+rp(tersisa)+'</b>Sisa plafon</div></div>'+
+      (canWrite?'<form id="form-plafon" class="card"><h3>Atur plafon periode</h3><div class="f2"><div><label>Periode</label><select id="p-periode" required>'+((S.periods||[]).filter(x=>x.status==='aktif').map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')||'<option value="">Tidak ada periode aktif</option>')+'</select></div><div><label>Total plafon kampus</label><input id="p-jumlah" type="number" min="0" step="1000" value="'+esc(plafon)+'" required></div></div><p class="sub">Satu plafon dipakai bersama oleh BEM, HMJ, UKM, dan organisasi lain. Plafon berkurang ketika pengajuan anggaran disetujui.</p><button class="btn mt-4">Simpan plafon</button></form>':'')+
+      '<div class="card"><div class="flex items-center justify-between gap-3 mb-4"><div><h3>'+esc(periodName)+'</h3><p class="sub">Penggunaan dihitung dari seluruh <b>anggaran yang sudah disetujui</b>.</p></div><span class="chip '+(tersisa>0?'ok':'er')+'">'+(plafon>0?Math.round((digunakan/plafon)*100):0)+'% terpakai</span></div>'+
+      '<div class="h-3 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-blue-600" style="width:'+Math.min(plafon?digunakan/plafon*100:0,100)+'%"></div></div>'+
+      '<div class="grid grid-cols-3 gap-3 mt-4"><div class="rounded-xl bg-slate-50 p-3"><small>Plafon</small><p class="font-bold">'+rp(plafon)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Digunakan</small><p class="font-bold">'+rp(digunakan)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Sisa</small><p class="font-bold">'+rp(tersisa)+'</p></div></div></div>';
   },
   cair:function(){
     const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
@@ -1516,10 +1567,11 @@ function pesertaRow(reset) {
 
 function totalPorsi() { return [...document.querySelectorAll('.peserta input[type=number]')].reduce((a, i) => a + (+i.value || 0), 0); }
 
-function hitung() { 
-  const dk = +$('#dk')?.value || 0, tp = totalPorsi(); 
-  if ($('#tt')) $('#tt').textContent = `Porsi peserta ${rp(tp)} dari ${rp(dk)}. Beban penyelenggara utama ${rp(Math.max(dk - tp, 0))}.`; 
-  return tp <= dk; 
+function hitung() {
+  const dk=+$('#f-anggaran')?.value||0;
+  const tp=totalPorsi();
+  if($('#tt'))$('#tt').textContent=`Porsi peserta ${rp(tp)} dari ${rp(dk)}. Beban penyelenggara utama ${rp(Math.max(dk-tp,0))}.`;
+  return tp<=dk;
 }
 
 // --- Fungsi CSV ---
@@ -1850,7 +1902,14 @@ document.addEventListener('click', async e => {
     const prokerId=workflow.dataset.prokerId||S.selectedProkerId;
     if(!prokerId)return toast('Proker tidak ditemukan.');
     const comment=$('#workflow-comment')?.value?.trim()||null;
-    const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:comment});
+    const approvedBudgetEl=$('#approved-budget');
+    const approvedBudget=approvedBudgetEl ? Math.max(0,Number(approvedBudgetEl.value||0)||0) : null;
+    const {data,error}=await sb.rpc('transition_proker',{
+      p_proker_id:prokerId,
+      p_action:action,
+      p_comment:comment,
+      p_anggaran_disetujui:approvedBudget
+    });
     if(error)return toast('Tindakan gagal: '+(error.message||'Tidak dapat memproses alur proker.'));
     if(data?.status)toast('Status proker diperbarui menjadi: '+(ST[data.status]?.[0]||data.status));
     S.selectedProkerId=prokerId;
@@ -1877,7 +1936,7 @@ document.addEventListener('input', e => {
     clearTimeout(S.searchTimer);
     S.searchTimer=setTimeout(()=>render(),220);
   }
-  if(e.target.closest('#kb'))hitung();
+  if(e.target.closest('#kb') || e.target.id==='f-anggaran')hitung();
 });
 
 document.addEventListener('change', async e => {
@@ -2022,9 +2081,10 @@ document.addEventListener('submit', async e => {
     const pesertaRows=[...document.querySelectorAll('.peserta')];
     const validPeserta=pesertaRows.filter(row=>row.querySelector('select[data-org-id]')?.value);
     if(kolab&&!validPeserta.length)errors.push('Tambahkan minimal satu organisasi peserta.');
-    if(kolab&&!hitung())errors.push('Total porsi peserta melebihi dana kampus proker.');
     if(errors.length){$('#fe').textContent=errors.join(' ');return;}
-    const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id};
+    const anggaranDiajukan=Math.max(0,Number(f.anggaran_diajukan||0)||0);
+    if(kolab&&!hitung())errors.push('Total porsi kolaborator melebihi pengajuan anggaran kampus.');
+    const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id,anggaran_diajukan:anggaranDiajukan,anggaran_disetujui:0};
     const {data,error}=await sb.from('proker').insert(payload).select('id').single();
     if(error)return toast('Gagal menyimpan proker: '+error.message);
     if(kolab&&data?.id){
@@ -2075,11 +2135,13 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-plafon'){
     e.preventDefault();
-    const organisasi_id=$('#p-org').value,jumlah=Number($('#p-jumlah').value||0);
-    if(!organisasi_id||jumlah<0)return toast('Organisasi dan jumlah wajib valid.');
-    const {error}=await sb.from('plafon_anggaran').upsert({organisasi_id,jumlah,diinput_oleh:S.user.id,diinput_pada:new Date().toISOString()});
+    if(!['admin','wakil_rektor'].includes(S.user.peran))return toast('Hanya Wakil Rektor/Administrator yang boleh mengatur plafon.');
+    const periodeId=$('#p-periode').value;
+    const jumlah=Number($('#p-jumlah').value||0);
+    if(!periodeId||jumlah<0)return toast('Periode dan jumlah plafon wajib valid.');
+    const {error}=await sb.rpc('set_anggaran_periode',{p_periode_id:periodeId,p_plafon:jumlah});
     if(error)return toast('Gagal menyimpan plafon: '+error.message);
-    toast('Plafon tersimpan.');return render();
+    toast('Plafon periode berhasil disimpan.');return render();
   }
 
   if(e.target.id==='form-cair'){
