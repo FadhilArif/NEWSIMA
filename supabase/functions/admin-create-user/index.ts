@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
   let body: {
     nama?: string;
     email?: string;
-    nim?: string;
+    nim?: string | null;
     peran?: string;
     organisasi_id?: string | null;
     jabatan_kode?: string | null;
@@ -78,13 +78,15 @@ Deno.serve(async (req) => {
 
   const nama = String(body.nama || "").trim();
   const email = String(body.email || "").trim().toLowerCase();
-  const nim = String(body.nim || "").trim();
+  const nimRaw = String(body.nim || "").trim();
   const peran = String(body.peran || "mahasiswa").trim();
+  const requiresNim = ["user","mahasiswa"].includes(peran);
+  const nim = nimRaw && nimRaw !== "-" ? nimRaw : null;
   const organisasiId = String(body.organisasi_id || "").trim();
   const jabatanKode = String(body.jabatan_kode || "").trim();
-  const unitId = String(body.unit_id || "").trim();
+  let unitId = String(body.unit_id || "").trim();
 
-  if (!nama || !/^\S+@\S+\.\S+$/.test(email) || !nim) {
+  if (!nama || !/^\S+@\S+\.\S+$/.test(email) || (requiresNim && !nim)) {
     return json({ error: "INVALID_INPUT" }, 400);
   }
 
@@ -120,7 +122,15 @@ Deno.serve(async (req) => {
 
   if (profileError) {
     await adminClient.auth.admin.deleteUser(userId);
-    return json({ error: "PROFILE_CREATE_FAILED" }, 500);
+
+    if (profileError.code === "23505" && /profiles_nim_key/i.test(profileError.message || "")) {
+      return json({
+        error: "NIM_ALREADY_USED",
+        detail: "NIM tersebut sudah digunakan akun lain. Untuk Pembimbing/non-mahasiswa, kosongkan NIM."
+      }, 400);
+    }
+
+    return json({ error: "PROFILE_CREATE_FAILED", detail: profileError.message || "" }, 500);
   }
 
   if (organisasiId || jabatanKode || unitId) {
@@ -138,6 +148,34 @@ Deno.serve(async (req) => {
     if (orgError || !org) {
       await adminClient.auth.admin.deleteUser(userId);
       return json({ error: "ORGANIZATION_NOT_FOUND" }, 400);
+    }
+
+    if (peran === "pembimbing") {
+      if (org.tipe !== "HMJ" || jabatanKode !== "pembimbing_hmj") {
+        await adminClient.auth.admin.deleteUser(userId);
+        return json({ error: "PEMBIMBING_MUST_USE_HMJ_POSITION" }, 400);
+      }
+
+      const { data: programUnits, error: programUnitsError } = await adminClient
+        .from("unit_kerja")
+        .select("id,nama,jenis,organisasi_id")
+        .eq("organisasi_id", organisasiId)
+        .eq("jenis", "program_studi");
+
+      if (programUnitsError) {
+        await adminClient.auth.admin.deleteUser(userId);
+        return json({ error: "HMJ_PROGRAM_STUDY_LOOKUP_FAILED", detail: programUnitsError.message }, 400);
+      }
+
+      if ((programUnits || []).length !== 1) {
+        await adminClient.auth.admin.deleteUser(userId);
+        return json({
+          error: "HMJ_PROGRAM_STUDY_UNIT_NOT_UNIQUE",
+          detail: "Setiap HMJ harus memiliki tepat satu unit program studi sebelum akun Pembimbing dibuat."
+        }, 400);
+      }
+
+      unitId = programUnits[0].id;
     }
 
     const { data: position, error: positionError } = await adminClient
