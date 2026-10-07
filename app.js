@@ -832,7 +832,7 @@ async function loadViewData(view){
       await loadProker();
       break;
     case 'review':
-      await loadProkerDetail();
+      await Promise.all([loadProkerDetail(),loadSources()]);
       break;
     case 'form':
       await loadSources();
