@@ -583,7 +583,7 @@ async function loadProker() {
   const totals=Object.fromEntries(ids.map(id=>[id,{ajuan:0,cair:0}]));
 
   const [orgRes,budgetRes,payoutRes]=await Promise.all([
-    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):{data:[]},
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe,induk_organisasi_id').in('id',orgIds):{data:[]},
     ids.length?sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id',ids):{data:[]},
     ids.length?sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id',ids):{data:[]}
   ]);
@@ -1875,7 +1875,19 @@ const V = {
   proker:function(){
     const f=S.proker.filter(p=>(S.tab==='semua'||p.status===S.tab)&&((p.nama||'').toLowerCase().includes(S.q.toLowerCase())||(p.ketua||'').toLowerCase().includes(S.q.toLowerCase())));
     const tabs=[['semua','Semua'],['direncanakan','Direncanakan'],['revisi','Perlu revisi'],['proposal_diajukan','Menunggu review'],['disetujui','Disetujui'],['berjalan','Berjalan'],['selesai','Selesai'],['lpj_diajukan','LPJ review'],['lpj_disetujui','LPJ disetujui']];
+    const isBemReviewerFor=(p)=>{
+      return ['bem','bem_from_wakil_rektor'].includes(p.review_stage) &&
+        p.organisasi?.tipe==='HMJ' &&
+        String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
+        S.permissions?.has('dokumen.review');
+    };
+    const isStageReviewerFor=(p)=>{
+      return isBemReviewerFor(p) ||
+        (S.user.peran==='pembimbing' && p.review_stage==='pembimbing_hmj' && S.permissions?.has('dokumen.review')) ||
+        (S.user.peran==='wakil_rektor' && p.review_stage==='wakil_rektor');
+    };
     const actionLabel=(p)=>{
+      if(isStageReviewerFor(p)) return 'Review pengajuan';
       if(S.user.peran==='wakil_rektor'){
         if(['proposal_diajukan','lpj_diajukan'].includes(p.status)) return 'Review pengajuan';
         return 'Lihat proker';
@@ -1897,7 +1909,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+(p.__collaborator?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -1938,8 +1950,28 @@ const V = {
     const p=d.proker;
     const proposal=d.docs.find(x=>x.jenis==='proposal');
     const lpj=d.docs.find(x=>x.jenis==='laporan_akhir');
-    const readOnlyCollaborator=!!d.readOnlyCollaborator;
-    const wakilReadOnly = S.user.peran==='wakil_rektor' && p.organisasi?.tipe!=='BEM';
+    const isBemReviewerForStage=
+      ['bem','bem_from_wakil_rektor'].includes(p.review_stage) &&
+      p.organisasi?.tipe==='HMJ' &&
+      String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
+      S.permissions?.has('dokumen.review');
+
+    const isPembimbingReviewerForStage=
+      S.user.peran==='pembimbing' &&
+      p.review_stage==='pembimbing_hmj' &&
+      S.permissions?.has('dokumen.review');
+
+    const isWakilReviewerForStage=
+      S.user.peran==='wakil_rektor' &&
+      p.review_stage==='wakil_rektor';
+
+    const isStageReviewer=
+      isBemReviewerForStage ||
+      isPembimbingReviewerForStage ||
+      isWakilReviewerForStage;
+
+    const readOnlyCollaborator=!!d.readOnlyCollaborator && !isStageReviewer;
+    const wakilReadOnly = S.user.peran==='wakil_rektor' && !isWakilReviewerForStage;
     const canEdit=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
@@ -2032,7 +2064,11 @@ const V = {
         ? (['proposal_diajukan','lpj_diajukan'].includes(p.status)
           ? 'Pengajuan · Wakil Rektor dapat review, setujui, atau revisi.'
           : 'Pemantauan semua organisasi · akses hanya baca.')
-        : (readOnlyCollaborator?'Dokumentasi kolaborator · akses hanya baca.':'Alur tindak lanjut program kerja.')+
+        : (readOnlyCollaborator
+        ? 'Dokumentasi kolaborator · akses hanya baca.'
+        : isStageReviewer
+          ? 'Pengajuan HMJ · BEM dapat review, setujui, atau revisi.'
+          : 'Alur tindak lanjut program kerja.')+
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
