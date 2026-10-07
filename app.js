@@ -6,7 +6,7 @@ const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
   ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: {
         persistSession: true,
-        autoRefreshToken: false,
+        autoRefreshToken: true,
         detectSessionInUrl: false
       }
     })
@@ -303,6 +303,7 @@ const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diaj
 // State Global
 const S = {
   user:{nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false},
+  authLost:false,
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
@@ -518,16 +519,18 @@ async function loadProker() {
     : {data:[],error:null};
 
   if(collabError){
-    const status=Number(collabError.status||collabError?.code||0);
-    if(status===401 || /JWT|token|session|permission denied/i.test(collabError.message||'')){
-      console.warn('Sesi tidak valid saat memuat kolaborasi. Mengembalikan pengguna ke login.');
-      sb.auth.stopAutoRefresh?.();
-      await sb.auth.signOut({scope:'local'}).catch(()=>{});
-      resetClientState();
-      $('#app').hidden=true;
-      $('#login').hidden=false;
-      $('#le').textContent='Sesi akun berakhir. Silakan masuk kembali.';
-      return;
+    const status=Number(collabError.status||0);
+    if(status===401){
+      const {data:userCheck,error:userCheckError}=await sb.auth.getUser();
+      if(userCheckError || !userCheck?.user){
+        console.warn('Session benar-benar tidak valid:',userCheckError?.message||collabError.message);
+        await sb.auth.signOut({scope:'local'}).catch(()=>{});
+        resetClientState();
+        $('#app').hidden=true;
+        $('#login').hidden=false;
+        $('#le').textContent='Sesi akun berakhir. Silakan masuk kembali.';
+        return;
+      }
     }
     console.warn('Gagal memuat kolaborasi:',collabError.message);
   }
@@ -968,6 +971,11 @@ async function loadBudgets() {
   S.approvedCampusProkers=[];
   if(!sb)return;
 
+  const canSeeCampusBudget=['admin','wakil_rektor'].includes(S.user.peran);
+  if(!canSeeCampusBudget){
+    return;
+  }
+
   const {data:periodRows,error:periodError}=await sb.from('periode')
     .select('id,nama,status,batas_lpj_hari')
     .order('nama');
@@ -1365,6 +1373,7 @@ function resetClientState() {
     S.notificationChannel = null;
   }
   S.user={nama:'',email:'',nim:'',avatar_url:'',wajib_ganti_sandi:false};
+  S.authLost=true;
   S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
@@ -1499,6 +1508,7 @@ async function hydrateUser(authUser) {
     return;
   }
 
+  S.authLost=false;
   S.user = {
     id: authUser.id,
     nama: profile.nama || authUser.user_metadata?.nama || authUser.email?.split('@')[0] || 'Pengguna',
@@ -1653,39 +1663,38 @@ async function initAuth() {
     return;
   }
 
-  // Do not auto-refresh a stale browser session while the login screen is open.
-  // The session is explicitly started after a successful login.
-  sb.auth.stopAutoRefresh?.();
-
   try {
     const { data, error } = await sb.auth.getSession();
+
     if (error) {
-      console.warn('Session lama tidak dapat dipulihkan:', error.message);
+      console.warn('Sesi lokal tidak dapat dipulihkan:', error.message);
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
     } else if (data?.session?.user) {
-      const { data: refreshed, error: refreshError } = await sb.auth.refreshSession(data.session);
-      if (!refreshError && refreshed?.session?.user) {
-        await sb.auth.startAutoRefresh?.();
-        await hydrateUser(refreshed.session.user);
-      } else {
-        await sb.auth.signOut({ scope:'local' }).catch(()=>{});
-      }
+      // Let Supabase manage refresh. Do not manually refresh the same session.
+      await hydrateUser(data.session.user);
+    } else {
+      S.authLost=true;
+      $('#app').hidden=true;
+      $('#login').hidden=false;
     }
   } catch (error) {
     console.warn('Pemulihan sesi gagal:', error);
     await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+    S.authLost=true;
+    $('#app').hidden=true;
+    $('#login').hidden=false;
   }
 
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      if(session?.user) {
-        sb.auth.startAutoRefresh?.();
+      if (session?.user && S.authLost) {
+        hydrateUser(session.user).catch(error=>console.warn('Hydrate setelah auth event gagal:',error));
       }
     } else if (event === 'SIGNED_OUT') {
-      sb.auth.stopAutoRefresh?.();
       resetClientState();
       $('#app').hidden = true;
       $('#login').hidden = false;
+      $('#le').textContent = '';
     }
   });
 }
@@ -1702,6 +1711,11 @@ function getTempSb() {
 // --- Fungsi Render ---
 function renderShell() {
   if (!$('#app') || !$('#nav') || !$('#bn') || !$('#cx') || !$('#notifBtn') || !$('#backBtn')) return;
+  if(S.authLost && !S.user.id){
+    $('#app').hidden=true;
+    $('#login').hidden=false;
+    return;
+  }
 
   if (S.user.wajib_ganti_sandi) {
     $('#nav').innerHTML = '';
@@ -3185,7 +3199,6 @@ document.addEventListener('submit', async e => {
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
 
       // Fully detach the previous browser session before creating a new one.
-      sb.auth.stopAutoRefresh?.();
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
 
       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
@@ -3205,7 +3218,6 @@ document.addEventListener('submit', async e => {
         return $('#le').textContent='Gagal membuat sesi akun.';
       }
 
-      sb.auth.startAutoRefresh?.();
       $('#le').textContent='';
       $('#pw').value='';
       await hydrateUser(data.session.user);
