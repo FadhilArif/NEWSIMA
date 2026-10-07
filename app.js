@@ -1666,15 +1666,13 @@ function clearLegacyAuthStorage() {
   try {
     const currentKey=AUTH_STORAGE_KEY;
     const removable=[];
-    for(let i=0;i<localStorage.length;i++){
-      const key=localStorage.key(i);
-      if(!key)continue;
-      // Previous SIMA builds used Supabase's default project-scoped auth key.
-      // Do not touch the current versioned key.
-      if(key!==currentKey && (key.startsWith('sb-') || key.includes('sima.auth'))) {
-        removable.push(key);
-      }
-    }
+    const legacyKeys=[
+      'sb-xmlkuhmrpqurljlvmwfl-auth-token',
+      'sima.auth.v1'
+    ];
+    legacyKeys.forEach(key=>{
+      if(key!==currentKey && localStorage.getItem(key)!==null) removable.push(key);
+    });
     removable.forEach(key=>localStorage.removeItem(key));
   } catch (error) {
     console.warn('Legacy auth storage cleanup skipped:',error);
