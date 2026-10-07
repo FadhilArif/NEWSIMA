@@ -26,6 +26,7 @@ const VIEW_PERMISSION = {
   undangan:'kolaborasi.view',
   galeri:'proker.view',
   laporan:'proker.view',
+  anggota:null,
   struktur:'struktur.view',
   inbox:'dokumen.review',
   rapat:'rapat.manage',
@@ -259,6 +260,10 @@ function canAccessView(view) {
   if (role === 'admin') return ADMIN_VIEWS.has(view);
   if (ADMIN_VIEWS.has(view)) return false;
 
+  if (view === 'anggota') {
+    return role === 'pembimbing' || role === 'wakil_rektor';
+  }
+
   // Wakil Rektor is a campus-wide observer with review authority only for BEM.
   // The actual approve/revise authorization is enforced server-side.
   if (role === 'wakil_rektor') {
@@ -295,12 +300,12 @@ const S = {
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
-  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
+  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null
 }
 
 const MENU = [
-  ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['struktur','Struktur dan anggota'],['koordinator','Koordinator UKM']]],
+  ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['anggota','Lihat anggota'],['struktur','Struktur dan anggota'],['koordinator','Koordinator UKM']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
   ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Pencairan dan verifikasi']]],
   ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Struktur organisasi'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
@@ -841,6 +846,60 @@ async function loadGallery() {
   });
 }
 
+async function loadAnggota() {
+  S.anggota=[];
+  if(!sb || !S.user.id) return;
+
+  if(!Array.isArray(S.periods) || !S.periods.length){
+    await loadPeriods();
+  }
+  if(!Array.isArray(S.organizations) || !S.organizations.length){
+    await loadOrganizations();
+  }
+
+  const role=S.user.peran;
+  let allowedPeriodIds=[];
+
+  if(role==='wakil_rektor'){
+    allowedPeriodIds=[...new Set(
+      (S.organizations||[])
+        .filter(o=>o.tipe==='BEM' && o.periode_id)
+        .map(o=>o.periode_id)
+    )];
+  }else if(role==='pembimbing'){
+    const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+    if(current?.tipe==='HMJ'){
+      allowedPeriodIds=[...new Set(
+        (S.organizations||[])
+          .filter(o=>o.tipe==='HMJ' && o.periode_id && String(o.nama).toLowerCase()===String(current.nama).toLowerCase())
+          .map(o=>o.periode_id)
+      )];
+    }
+  }
+
+  const periodOptions=(S.periods||[]).filter(p=>allowedPeriodIds.includes(p.id));
+  if(!periodOptions.length){
+    S.anggota=[];
+    S.anggotaPeriodId=null;
+    return;
+  }
+
+  if(!S.anggotaPeriodId || !allowedPeriodIds.includes(S.anggotaPeriodId)){
+    const active=(periodOptions||[]).find(p=>p.status==='aktif');
+    S.anggotaPeriodId=active?.id || periodOptions[0].id;
+  }
+
+  const {data,error}=await sb.rpc('get_visible_member_directory',{
+    p_periode_id:S.anggotaPeriodId
+  });
+
+  if(error){
+    S.anggota=[];
+    return toast('Gagal memuat anggota: '+(error.message||'Tidak dapat memuat daftar anggota.'));
+  }
+
+  S.anggota=Array.isArray(data)?data:[];
+}
 async function loadReports() {
   S.reports=[];
   if(!sb)return;
@@ -1090,6 +1149,7 @@ const VIEW_CACHE_KEYS = {
   inbox:['inbox'],
   galeri:['gallery'],
   laporan:['reports'],
+  anggota:['anggota','periods'],
   struktur:['structure','units','clubMembers'],
   rapat:['meetings'],
   cair:['proker','payouts','sources'],
@@ -1118,7 +1178,7 @@ function restoreView(view){
 }
 
 function htmlCacheKey(view){
-  return [view,S.orgId||'global',S.structureOrgId||'',S.tab||'',S.q||''].join('|');
+  return [view,S.orgId||'global',S.structureOrgId||'',S.tab||'',S.q||'',S.anggotaPeriodId||'',S.anggotaQ||''].join('|');
 }
 function getHtmlCache(view){
   const cached=S.htmlCache?.[htmlCacheKey(view)];
@@ -1161,6 +1221,9 @@ async function loadViewData(view){
       break;
     case 'laporan':
       await loadReports();
+      break;
+    case 'anggota':
+      await loadAnggota();
       break;
     case 'struktur':
       await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
@@ -1286,7 +1349,7 @@ function resetClientState() {
   S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
-  S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.approvedCampusProkers=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
+  S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.approvedCampusProkers=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];S.anggota=[];S.anggotaPeriodId=null;S.anggotaQ='';
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
 S.viewCache={};
 S.viewCacheTtl=15000;
@@ -1926,6 +1989,47 @@ const V = {
     return pageHeader('Laporan akhir','Pantau laporan akhir kegiatan.')+
       (S.reports.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Status</th><th>Tahap</th><th></th></tr></thead><tbody>'+S.reports.map(x=>'<tr><td><b>'+esc(x.proker?.nama||'-')+'</b></td><td>'+chip(x.status||'draft')+'</td><td>'+esc(x.tahap||'-')+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada laporan akhir.'));
   },
+  anggota:function(){
+    const role=S.user.peran;
+    const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+    const supervisedName=role==='pembimbing' ? (current?.nama||'HMJ') : 'Badan Eksekutif Mahasiswa';
+    const allowedPeriodIds=role==='wakil_rektor'
+      ? [...new Set((S.organizations||[]).filter(o=>o.tipe==='BEM'&&o.periode_id).map(o=>o.periode_id))]
+      : [...new Set((S.organizations||[]).filter(o=>o.tipe==='HMJ'&&o.periode_id&&String(o.nama).toLowerCase()===String(supervisedName).toLowerCase()).map(o=>o.periode_id))];
+
+    const periods=(S.periods||[]).filter(p=>allowedPeriodIds.includes(p.id));
+    const filtered=S.anggota.filter(x=>
+      String(x.nama||'').toLowerCase().includes(String(S.anggotaQ||'').toLowerCase())
+    );
+
+    return pageHeader(
+      'Lihat anggota',
+      role==='pembimbing'
+        ? 'Daftar anggota '+supervisedName+' berdasarkan periode yang dipilih.'
+        : 'Daftar anggota BEM berdasarkan periode yang dipilih.'
+    )+
+    '<div class="card mb-4">'+
+      '<div class="grid sm:grid-cols-[220px_1fr] gap-3 items-end">'+
+        '<div><label>Periode</label><select id="anggota-period">'+
+          periods.map(p=>'<option value="'+esc(p.id)+'" '+(String(p.id)===String(S.anggotaPeriodId||'')?'selected':'')+'>'+esc(p.nama)+'</option>').join('')+
+        '</select></div>'+
+        '<div><label>Cari nama anggota</label><input id="anggota-q" type="search" placeholder="Ketik nama anggota..." value="'+esc(S.anggotaQ||'')+'"></div>'+
+      '</div>'+
+      '<div class="flex items-center justify-between gap-3 mt-4">'+
+        '<p class="sub mb-0">'+filtered.length+' anggota ditemukan'+(S.anggotaQ?' untuk pencarian "'+esc(S.anggotaQ)+'"':'')+'</p>'+
+        (role==='pembimbing'
+          ? '<span class="chip bl">'+esc(supervisedName)+'</span>'
+          : '<span class="chip bl">BEM</span>')+
+      '</div>'+
+    '</div>'+
+    (filtered.length
+      ? '<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Jabatan</th><th>Unit kerja</th><th>NIM</th></tr></thead><tbody>'+
+        filtered.map(x=>'<tr><td><b>'+esc(x.nama||'-')+'</b></td><td>'+esc(x.jabatan_nama||x.jabatan||'Anggota')+'</td><td>'+esc(x.unit_nama||'-')+'</td><td>'+esc(x.nim||'-')+'</td></tr>').join('')+
+        '</tbody></table></div>'
+      : emptyCard(S.anggotaQ?'Tidak ada anggota dengan nama tersebut.':'Belum ada anggota pada periode yang dipilih.')
+    );
+  },
+
   struktur:function(){
     const isPrivileged=['admin','wakil_rektor'].includes(S.user.peran);
     const selectedId=isPrivileged ? (S.structureOrgId||'') : (S.orgId||'');
@@ -2844,6 +2948,12 @@ document.addEventListener('input', e => {
     clearTimeout(S.searchTimer);
     S.searchTimer=setTimeout(()=>render(),220);
   }
+  if(e.target.id==='anggota-q'){
+    S.anggotaQ=e.target.value;
+    clearHtmlCache();
+    clearTimeout(S.searchTimer);
+    S.searchTimer=setTimeout(()=>render(),180);
+  }
   if(e.target.matches('[data-money]')){
     syncMoneyInput(e.target);
     const max=Number(e.target.dataset.moneyMax||0);
@@ -2884,6 +2994,13 @@ document.addEventListener('change', async e => {
       const bems=(S.organizations||[]).filter(o=>o.tipe==='BEM' && (!selectedPeriod || String(o.periode_id)===String(selectedPeriod)));
       parent.innerHTML='<option value="">Pilih BEM</option>'+bems.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+'</option>').join('');
     }
+  }
+
+  if(e.target.id==='anggota-period'){
+    S.anggotaPeriodId=e.target.value||null;
+    await loadAnggota();
+    clearHtmlCache();
+    return render();
   }
 
   if(e.target.id==='struktur-org'){
