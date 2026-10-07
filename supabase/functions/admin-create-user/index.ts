@@ -218,6 +218,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    const { error: profileUnitError } = await adminClient
+      .from("profiles")
+      .update({ unit_kerja_id: unitId || null })
+      .eq("id", userId);
+
+    if (profileUnitError) {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({
+        error: "PROFILE_UNIT_ASSIGNMENT_FAILED",
+        detail: profileUnitError.message || ""
+      }, 500);
+    }
+
     const { error: membershipError } = await adminClient
       .from("keanggotaan")
       .insert({
