@@ -770,29 +770,107 @@ async function loadSources() {
   if(!error)S.sources=data||[];
 }
 
-async function loadViewData(view) {
+const VIEW_CACHE_KEYS = {
+  beranda:['proker','notifications','budgets','periods'],
+  proker:['proker'],
+  undangan:['undangan'],
+  inbox:['inbox'],
+  galeri:['gallery'],
+  laporan:['reports'],
+  struktur:['structure','units','clubMembers'],
+  rapat:['meetings'],
+  cair:['proker','payouts','sources'],
+  koordinator:['organizations','coordinatorAssignments']
+};
+
+function viewCacheKey(view){
+  return view+'|'+String(S.orgId||'global')+'|'+String(S.structureOrgId||'');
+}
+
+function snapshotView(view){
+  const keys=VIEW_CACHE_KEYS[view];
+  if(!keys)return;
+  const snap={};
+  keys.forEach(k=>{snap[k]=Array.isArray(S[k])?[...S[k]]:S[k]});
+  S.viewCache[viewCacheKey(view)]={at:Date.now(),data:snap};
+}
+
+function restoreView(view){
+  const keys=VIEW_CACHE_KEYS[view];
+  if(!keys)return false;
+  const cached=S.viewCache[viewCacheKey(view)];
+  if(!cached || Date.now()-cached.at>S.viewCacheTtl)return false;
+  keys.forEach(k=>{S[k]=Array.isArray(cached.data[k])?[...cached.data[k]]:cached.data[k]});
+  return true;
+}
+
+function clearViewCache(){
+  S.viewCache={};
+}
+
+async function loadViewData(view){
   switch(view){
-    case 'beranda': return Promise.all([loadProker(),loadNotifications(),loadBudgets()]);
-    case 'proker': return loadProker();
-    case 'review': return loadProkerDetail();
-    case 'undangan': return loadUndangan();
-    case 'inbox': return loadInbox();
-    case 'galeri': return loadGallery();
-    case 'laporan': return loadReports();
-    case 'struktur': return Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
-    case 'rapat': return loadMeetings();
-    case 'plafon': return loadBudgets();
-    case 'cair': return Promise.all([loadProker(),loadPayouts(),loadSources()]);
-    case 'periode': return loadPeriods();
-    case 'organisasi': return Promise.all([loadOrganizations(),loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
-    case 'unit_kerja': return loadStructureCatalog();
-    case 'audit': return loadAudit();
-    case 'akun': return Promise.all([loadAccounts(),loadOrganizations(),loadJabatanAndUnits()]);
-    case 'jabatan': return loadJabatanAndUnits();
-    case 'koordinator': return Promise.all([loadOrganizations(),loadCoordinatorAssignments()]);
-    case 'profil': return loadMemberships();
-    default: return null;
+    case 'beranda':
+      await Promise.all([loadProker(),loadNotifications(),loadBudgets()]);
+      break;
+    case 'proker':
+      await loadProker();
+      break;
+    case 'review':
+      await loadProkerDetail();
+      break;
+    case 'undangan':
+      await loadUndangan();
+      break;
+    case 'inbox':
+      await loadInbox();
+      break;
+    case 'galeri':
+      await loadGallery();
+      break;
+    case 'laporan':
+      await loadReports();
+      break;
+    case 'struktur':
+      await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
+      break;
+    case 'rapat':
+      await loadMeetings();
+      break;
+    case 'plafon':
+      await loadBudgets();
+      break;
+    case 'cair':
+      await Promise.all([loadProker(),loadPayouts(),loadSources()]);
+      break;
+    case 'periode':
+      await loadPeriods();
+      break;
+    case 'organisasi':
+      await Promise.all([loadOrganizations(),loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
+      break;
+    case 'unit_kerja':
+      await loadStructureCatalog();
+      break;
+    case 'audit':
+      await loadAudit();
+      break;
+    case 'akun':
+      await Promise.all([loadAccounts(),loadOrganizations(),loadJabatanAndUnits()]);
+      break;
+    case 'jabatan':
+      await loadJabatanAndUnits();
+      break;
+    case 'koordinator':
+      await Promise.all([loadOrganizations(),loadCoordinatorAssignments()]);
+      break;
+    case 'profil':
+      await loadMemberships();
+      break;
+    default:
+      break;
   }
+  snapshotView(view);
 }
 
 
@@ -866,6 +944,8 @@ function resetClientState() {
   S.proker=[];S.detail=null;S.selectedProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
+S.viewCache={};
+S.viewCacheTtl=15000;
   $('#fl')?.reset();
   $('#v')?.replaceChildren();
   $('#nav')?.replaceChildren();
@@ -1522,32 +1602,72 @@ const V = {
   }
 };
 
-async function render() {
-  const token = ++S.renderToken;
-  renderShell();
-  const root = $('#v');
-  if (!root) return;
+async function render(options={}) {
+  const token=++S.renderToken;
+  const root=$('#v');
+  if(!root)return;
 
-  root.innerHTML = '<div class="card"><div class="skeleton" style="height:18px;width:35%;margin-bottom:10px"></div><div class="skeleton" style="height:12px;width:60%"></div><div class="skeleton" style="height:180px;margin-top:18px"></div></div>';
+  const view=S.view;
+  const keys=VIEW_CACHE_KEYS[view];
+  const hadContent=!!root.innerHTML.trim();
+  const cached=keys ? restoreView(view) : false;
 
-  try {
-    await loadViewData(S.view);
-  } catch (error) {
+  // Keep the current screen visible while data is fetched.
+  // Only the very first load gets a skeleton.
+  if(hadContent || cached){
+    root.classList.add('view-refreshing');
+  }else{
+    root.innerHTML='<div class="page-loading" aria-label="Memuat halaman"><div class="loading-shimmer w-40"></div><div class="loading-shimmer w-64"></div><div class="loading-panel"></div></div>';
+    root.classList.add('view-initial-loading');
+  }
+
+  try{
+    if(cached && !options.force){
+      const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
+      root.innerHTML=storageAdminBanner()+viewFn();
+      root.classList.remove('view-initial-loading','view-refreshing');
+      if(view==='form')pesertaRow(true);
+      document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
+      renderShell();
+
+      // Refresh read-only/list views in the background without flashing the UI.
+      if(keys && !['review','plafon','koordinator'].includes(view)){
+        const refreshView=view;
+        loadViewData(refreshView).then(()=>{
+          if(S.view===refreshView && token===S.renderToken){
+            const fn=V[refreshView]||(()=>emptyCard('Modul tidak tersedia.'));
+            root.innerHTML=storageAdminBanner()+fn();
+            renderShell();
+            document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
+          }
+        }).catch(error=>console.warn('Background refresh gagal:',error));
+      }
+      return;
+    }
+
+    await loadViewData(view);
+  }catch(error){
     console.error(error);
-    if (token !== S.renderToken) return;
-    root.innerHTML = '<div class="card"><h3>Gagal memuat halaman</h3><p class="sub">' + esc(error?.message || 'Terjadi kesalahan tak terduga.') + '</p></div>';
+    if(token!==S.renderToken)return;
+    root.classList.remove('view-initial-loading','view-refreshing');
+    if(!hadContent){
+      root.innerHTML='<div class="card"><h3>Gagal memuat halaman</h3><p class="sub">'+esc(error?.message||'Terjadi kesalahan tak terduga.')+'</p></div>';
+    }else{
+      toast('Pembaruan gagal dimuat. Data yang tampil sebelumnya tetap dipertahankan.');
+    }
     return;
   }
 
-  if (token !== S.renderToken) return;
-  const viewFn = V[S.view] || (() => emptyCard('Modul tidak tersedia.'));
-  root.innerHTML = storageAdminBanner() + viewFn();
-  if (S.view === 'form') pesertaRow(true);
+  if(token!==S.renderToken)return;
+  const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
+  root.innerHTML=storageAdminBanner()+viewFn();
+  root.classList.remove('view-initial-loading','view-refreshing');
+  if(view==='form')pesertaRow(true);
   renderShell();
   document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
-  if(S.view==='akun')syncSpecialAccountRole();
+  if(view==='akun')syncSpecialAccountRole();
 
-  if(S.view==='koordinator'){
+  if(view==='koordinator'){
     document.querySelectorAll('[data-koordinator-form]').forEach(async form=>{
       const ukmId=form.dataset.koordinatorForm;
       const select=form.querySelector('select[name="akun_id"]');
@@ -1556,13 +1676,12 @@ async function render() {
       const candidates=data?.candidates||[];
       if(!error&&data?.ok){
         select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
-      } else {
+      }else{
         select.innerHTML='<option value="">Gagal memuat kandidat</option>';
       }
     });
   }
 }
-
 function pesertaRow(reset) {
   const box=$('#ps'); if(!box)return;
   if(reset)box.innerHTML='';
@@ -1978,7 +2097,7 @@ document.addEventListener('click', async e => {
     const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:k});
     if(error)return toast('Review gagal: '+(error.message||'Tidak dapat memproses review.'));
     toast('Review tersimpan.');
-    return render();
+    clearViewCache();return render();
   }
 });
 
@@ -2215,7 +2334,7 @@ document.addEventListener('submit', async e => {
     if(!periodeId||jumlah<0)return toast('Periode dan jumlah plafon wajib valid.');
     const {error}=await sb.rpc('set_anggaran_periode',{p_periode_id:periodeId,p_plafon:jumlah});
     if(error)return toast('Gagal menyimpan plafon: '+error.message);
-    toast('Plafon periode berhasil disimpan.');return render();
+    toast('Plafon periode berhasil disimpan.');clearViewCache();return render();
   }
 
   if(e.target.id==='form-cair'){
