@@ -1855,11 +1855,23 @@ const V = {
     const canReview=canReviewLegacy||canReviewStage;
     const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReviewLegacy&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const pendingCollaborators=(d.kolaborator||[]).filter(x=>x.status!=='bergabung');
+    const confirmedCollaborators=(d.kolaborator||[]).filter(x=>x.status==='bergabung');
+    const collabReady=pendingCollaborators.length===0;
+    const blockedAction=(label)=>'<button type="button" class="btn opacity-50 cursor-not-allowed" disabled>'+label+'</button>';
+    const collabGate=!collabReady
+      ? '<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><b>Proker belum dapat dilanjutkan.</b> '+confirmedCollaborators.length+' dari '+(d.kolaborator||[]).length+' kolaborator sudah mengonfirmasi. Menunggu: '+esc(pendingCollaborators.map(x=>{const o=(S.organizations||[]).find(org=>String(org.id)===String(x.organisasi_id));return o?.nama||'Organisasi kolaborator';}).join(', '))+'</div>'
+      : '';
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
-    if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
+    if(p.status==='direncanakan'&&(canCreate||canEdit)){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : (proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
+    }
     else if(p.status==='revisi'&&(canCreate||canEdit)){
-      if(p.organisasi?.tipe==='HMJ' && p.review_stage==='hmj_from_bem'){
+      if(!collabReady) actions=collabGate+blockedAction('Menunggu konfirmasi kolaborator');
+      else if(p.organisasi?.tipe==='HMJ' && p.review_stage==='hmj_from_bem'){
         actions=proposal?.file_path
           ? '<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari BEM. HMJ dapat konsultasi ulang ke Pembimbing atau langsung melewati Pembimbing.</p><div class="flex flex-wrap gap-2 mt-3">'+action('resubmit_hmj_consult','Konsultasikan ke Pembimbing')+action('resubmit_hmj_skip','Lewati Pembimbing')+'</div></div>'
           : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
@@ -1875,9 +1887,9 @@ const V = {
         actions=proposal?.file_path ? action('resubmit','Ajukan ulang') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }
     }
-    else if(p.status==='disetujui'&&canEdit) actions=action('start','Mulai pelaksanaan');
-    else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
-    else if(p.status==='selesai'&&canEdit) actions=lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
+    else if(p.status==='disetujui'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : action('start','Mulai pelaksanaan');
+    else if(p.status==='berjalan'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : action('finish','Tandai selesai');
+    else if(p.status==='selesai'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : (lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
     else if(isProposalReview){
       const targetLabel=reviewStageLabel(p.review_stage);
       actions='<div class="w-full"><p class="text-sm text-slate-600 mb-3">Tahap saat ini: <b>'+esc(targetLabel||'Review internal')+'</b></p><label>Komentar review</label>'+
@@ -1959,7 +1971,11 @@ const V = {
             : '<div class="mt-4 rounded-2xl border border-dashed border-slate-300 p-6 text-center"><p class="sub">Belum ada foto kegiatan.</p></div>')+
           '</div>'
         : '')+
-      '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div><div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
+      (d.kolaborator.length
+        ? '<div class="row2"><div class="card"><div class="flex items-center justify-between gap-3"><h3>Kolaborator</h3><span class="chip '+(collabReady?'ok':'wa')+'">'+confirmedCollaborators.length+'/'+d.kolaborator.length+' dikonfirmasi</span></div>'+
+          d.kolaborator.map(x=>{const o=(S.organizations||[]).find(org=>String(org.id)===String(x.organisasi_id));return '<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm font-semibold">'+esc(o?.nama||'Organisasi kolaborator')+'</p><p class="text-xs text-slate-500">'+esc(x.status==='bergabung'?'Sudah bergabung':x.status==='menolak'?'Menolak undangan':'Menunggu konfirmasi')+'</p></div>';}).join('')+
+          '</div><div class="card"><h3>Riwayat persetujuan</h3>'
+        : '<div class="row2"><div class="card"><h3>Kolaborator</h3><p class="sub">Tidak ada kolaborator.</p></div><div class="card"><h3>Riwayat persetujuan</h3>')+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
     return pageHeader('Undangan kolaborasi',S.user.peran==='wakil_rektor'?'Pantauan undangan kolaborasi · akses hanya baca.':'Kelola undangan organisasi untuk program kerja.')+
