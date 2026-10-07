@@ -366,8 +366,8 @@ async function loadContexts() {
   S.orgId = S.ctxs[S.ctx]?.orgId || null;
 
   // Permission set must follow the currently selected organization/position.
-  const privileged = S.user.peran === 'admin' || S.user.peran === 'wakil_rektor';
-  if (!privileged && S.orgId) {
+  const privileged = ['admin','wakil_rektor'].includes(S.user?.peran||'');
+  if (!privileged && S.orgId && Array.isArray(S.memberships)) {
     const selected = S.memberships.find(m => m.organisasi_id === S.orgId);
     if (selected?.jabatan_id) {
       const {data,error}=await sb.from('hak_akses_jabatan').select('kode').eq('jabatan_id',selected.jabatan_id);
@@ -1984,6 +1984,8 @@ document.addEventListener('submit', async e => {
   if(e.target.id==='fl'){
     e.preventDefault();
     const email=$('#em').value.trim().toLowerCase(), password=$('#pw').value;
+    if(!email)return $('#le').textContent='Email wajib diisi.';
+    if(!password)return $('#le').textContent='Kata sandi wajib diisi.';
     const submitBtn=e.target.querySelector('button[type="submit"], .btn.full');
     if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memverifikasi...';}
     try{
