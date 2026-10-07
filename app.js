@@ -203,7 +203,7 @@ const S = {
   ctx:0,ctxs:[],view:'beranda',tab:'semua',q:'',orgId:null,
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
-  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
+  undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,renderToken:0,searchTimer:null
 }
 
@@ -586,6 +586,7 @@ async function loadMeetings() {
 
 async function loadBudgets() {
   S.budgets=[];
+  S.approvedCampusProkers=[];
   if(!sb)return;
 
   const {data:periodRows,error:periodError}=await sb.from('periode')
@@ -612,6 +613,17 @@ async function loadBudgets() {
   }
 
   const status=Array.isArray(statusData)?(statusData[0]||null):(statusData||null);
+
+  const {data:campusProkers,error:campusProkersError}=await sb.rpc('get_anggaran_periode_proposals',{
+    p_periode_id:activePeriod.id
+  });
+  if(campusProkersError){
+    console.error('Gagal memuat proposal pengguna plafon:',campusProkersError);
+    S.approvedCampusProkers=[];
+  }else{
+    S.approvedCampusProkers=Array.isArray(campusProkers)?campusProkers:[];
+  }
+
   S.budgets=budget?[{
     ...budget,
     periode:activePeriod,
@@ -1530,7 +1542,20 @@ const V = {
       (canWrite?'<form id="form-plafon" class="card"><h3>Atur plafon periode</h3><div class="f2"><div><label>Periode</label><select id="p-periode" required>'+((S.periods||[]).filter(x=>x.status==='aktif').map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')||'<option value="">Tidak ada periode aktif</option>')+'</select></div><div><label>Total plafon kampus</label><input id="p-jumlah" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(formatMoney(plafon))+'" required></div></div><p class="sub">Satu plafon dipakai bersama oleh BEM, HMJ, UKM, dan organisasi lain. Plafon berkurang ketika pengajuan anggaran disetujui.</p><button class="btn mt-4">Simpan plafon</button></form>':'')+
       '<div class="card"><div class="flex items-center justify-between gap-3 mb-4"><div><h3>'+esc(periodName)+'</h3><p class="sub">Penggunaan dihitung dari seluruh <b>anggaran yang sudah disetujui</b>.</p></div><span class="chip '+(tersisa>0?'ok':'er')+'">'+(plafon>0?Math.round((digunakan/plafon)*100):0)+'% terpakai</span></div>'+
       '<div class="h-3 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-blue-600" style="width:'+Math.min(plafon?digunakan/plafon*100:0,100)+'%"></div></div>'+
-      '<div class="grid grid-cols-3 gap-3 mt-4"><div class="rounded-xl bg-slate-50 p-3"><small>Plafon</small><p class="font-bold">'+rp(plafon)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Digunakan</small><p class="font-bold">'+rp(digunakan)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Sisa</small><p class="font-bold">'+rp(tersisa)+'</p></div></div></div>';
+      '<div class="grid grid-cols-3 gap-3 mt-4"><div class="rounded-xl bg-slate-50 p-3"><small>Plafon</small><p class="font-bold">'+rp(plafon)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Digunakan</small><p class="font-bold">'+rp(digunakan)+'</p></div><div class="rounded-xl bg-slate-50 p-3"><small>Sisa</small><p class="font-bold">'+rp(tersisa)+'</p></div></div></div>'+
+      '<div class="card"><div class="flex items-start justify-between gap-3 mb-4"><div><h3>Proposal yang menggunakan plafon kampus</h3><p class="sub">Hanya Proker dengan sumber dana <b>Kampus</b> dan anggaran yang sudah disetujui.</p></div><span class="chip '+(S.approvedCampusProkers.length?'ok':'wa')+'">'+S.approvedCampusProkers.length+' proposal</span></div>'+
+      (S.approvedCampusProkers.length
+        ? '<div class="space-y-3">'+S.approvedCampusProkers.map(x=>
+            '<div class="rounded-2xl border border-slate-200 p-4">'+
+              '<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">'+
+                '<div class="min-w-0"><h4 class="font-bold truncate">'+esc(x.proker_nama||'-')+'</h4><p class="sub mb-1">'+esc(x.organisasi_nama||'-')+'</p><div class="flex flex-wrap gap-2 items-center">'+chip(x.status||'-')+(x.anggaran_diajukan!==x.anggaran_disetujui?'<span class="text-xs text-slate-500">Diajukan '+rp(x.anggaran_diajukan||0)+'</span>':'')+'</div></div>'+
+                '<div class="sm:text-right shrink-0"><small>Disetujui</small><p class="text-lg font-bold text-emerald-800">'+rp(x.anggaran_disetujui||0)+'</p></div>'+
+              '</div>'+
+              (x.anggaran_disetujui_pada?'<p class="text-xs text-slate-500 mt-3">Disetujui pada '+dateTimeID(x.anggaran_disetujui_pada)+'</p>':'')+
+            '</div>'
+          ).join('')+'</div>'
+        : '<div class="rounded-2xl border border-dashed border-slate-300 p-6 text-center"><p class="sub">Belum ada proposal sumber dana Kampus yang disetujui.</p></div>')+
+      '</div>';
   },
   cair:function(){
     const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
