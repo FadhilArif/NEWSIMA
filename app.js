@@ -385,12 +385,12 @@ async function loadProker() {
   const isWakil=S.user.peran==='wakil_rektor';
   const ownQuery = (S.orgId && !isWakil)
     ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
+      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
       .eq('organisasi_id', S.orgId)
       .order('tanggal_mulai',{ascending:true})
     : (isWakil
       ? sb.from('proker')
-        .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
+        .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
         .order('tanggal_mulai',{ascending:true})
       : Promise.resolve({data:[],error:null}));
 
@@ -403,7 +403,7 @@ async function loadProker() {
   const collabIds=[...new Set((collabRows||[]).map(x=>x.proker_id).filter(Boolean))];
   const collabQuery=collabIds.length
     ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
+      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
       .in('id',collabIds)
       .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
@@ -435,7 +435,7 @@ async function loadProker() {
     organisasi:orgMap[p.organisasi_id]||null,
     ketua:p.ketua_pelaksana||'-',
     mulai:p.tanggal_mulai||'-',
-    ajuan:Number(p.anggaran_diajukan||0)>0?Number(p.anggaran_diajukan):Number(totals[p.id]?.ajuan||0),
+    ajuan:Number(p.anggaran_diajukan||0),
     cair:totals[p.id]?.cair||0
   }));
 }
@@ -461,7 +461,7 @@ async function loadProkerDetail() {
   if (!sb || !S.selectedProkerId) return;
 
   const { data:proker, error } = await sb.from('proker')
-    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
+    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
@@ -833,6 +833,9 @@ async function loadViewData(view){
       break;
     case 'review':
       await loadProkerDetail();
+      break;
+    case 'form':
+      await loadSources();
       break;
     case 'undangan':
       await loadUndangan();
@@ -1347,7 +1350,11 @@ const V = {
     const org=(S.organizations||[]).find(o=>String(o.id)===String(edit?.organisasi_id));
     const title=isEdit?'Edit program kerja':'Form proposal program kerja';
     const desc=isEdit?'Perbarui data proker yang masih direncanakan atau sedang dalam revisi.':'Lengkapi data kegiatan sebelum menjadi draft.';
-    const budget=formatMoney(edit?.anggaran_diajukan||0);
+    const funding=Array.isArray(S.sources)&&S.sources.length?S.sources:[{kode:'KAMPUS',nama:'Kampus',wajib_rincian:false,hitung_plafon:true},{kode:'PRODI',nama:'Prodi',wajib_rincian:false,hitung_plafon:false},{kode:'PRIBADI',nama:'Pribadi',wajib_rincian:false,hitung_plafon:false},{kode:'TANPA_DANA',nama:'Tanpa dana',wajib_rincian:false,hitung_plafon:false},{kode:'LAIN_LAIN',nama:'Lain-lain',wajib_rincian:true,hitung_plafon:false}];
+    const currentFunding=edit?.sumber_dana_kode||'KAMPUS';
+    const totalBudget=formatMoney(edit?.anggaran_total??edit?.anggaran_diajukan??0);
+    const detailClass=currentFunding==='LAIN_LAIN'?'':'hidden';
+    const sourceOptions=funding.map(x=>'<option value="'+esc(x.kode)+'" '+(String(currentFunding)===String(x.kode)?'selected':'')+'>'+esc(x.nama)+(x.hitung_plafon?' · mengurangi plafon kampus':' · tidak mengurangi plafon')+'</option>').join('');
     return pageHeader(title,desc)+
       '<form id="ff" class="card" novalidate>'+
       (isEdit
@@ -1357,9 +1364,9 @@ const V = {
           : '<div class="card bg-slate-50 mb-4"><small>Organisasi</small><p class="font-bold mt-1">'+esc(currentOrg?.nama||'Belum ada organisasi')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(currentOrg?.tipe||'')+' · konteks akun aktif</p></div>'))+
       '<div class="f2"><div><label>Nama program kerja *</label><input id="n" name="nama" value="'+esc(edit?.nama||'')+'" required></div><div><label>Jenis</label><select id="j" name="jenis"><option value="sekali" '+(edit?.jenis!=='berulang'?'selected':'')+'>Sekali</option><option value="berulang" '+(edit?.jenis==='berulang'?'selected':'')+'>Berulang</option></select></div><div><label>Tanggal mulai *</label><input id="m" name="mulai" type="date" value="'+esc(edit?.tanggal_mulai||'')+'" required></div><div><label>Tanggal selesai *</label><input id="e" name="selesai" type="date" value="'+esc(edit?.tanggal_selesai||'')+'" required></div></div>'+
       '<label>Lokasi *</label><input id="t" name="tempat" value="'+esc(edit?.tempat||'')+'" required><label>Deskripsi</label><textarea id="d" name="deskripsi" rows="3">'+esc(edit?.deskripsi||'')+'</textarea>'+
-      '<div class="card bg-slate-50 border border-slate-200 mb-4"><label>Pengajuan anggaran kampus</label><input id="f-anggaran" name="anggaran_diajukan" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(budget)+'"><small>Nominal ini adalah jumlah yang diajukan. Wakil Rektor menentukan nominal final yang disetujui saat review.</small></div>'+
+      '<div class="card bg-slate-50 border border-slate-200 mb-4"><div class="f2"><div><label>Sumber dana *</label><select id="f-sumber" name="sumber_dana_kode" required>'+sourceOptions+'</select></div><div><label>Total anggaran</label><input id="f-anggaran" name="anggaran_total" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(totalBudget)+'"><small>Hanya nominal dengan sumber <b>Kampus</b> yang diajukan ke Wakil Rektor dan mengurangi plafon kampus.</small></div></div><div id="f-sumber-detail-wrap" class="mt-3 '+detailClass+'"><label>Detail sumber dana *</label><input id="f-sumber-detail" name="sumber_dana_detail" value="'+esc(edit?.sumber_dana_detail||'')+'" placeholder="Contoh: sponsor perusahaan / bantuan alumni"><small>Wajib diisi untuk sumber dana Lain-lain.</small></div><p id="f-sumber-note" class="sub mt-3"></p></div>'+
       (isEdit
-        ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> nama, jenis, jadwal, lokasi, deskripsi, dan anggaran dapat diubah. Kolaborator tetap dipertahankan.</p></div>'
+        ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> nama, jenis, jadwal, lokasi, deskripsi, sumber dana, detail sumber dana, dan total anggaran dapat diubah. Kolaborator tetap dipertahankan.</p></div>'
         : '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label><div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>')+
       '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="'+(isEdit?'review':'proker')+'">Batal</button><button class="btn">'+(isEdit?'Simpan perubahan':'Simpan draft')+'</button></div></form>';
   },
@@ -1384,9 +1391,9 @@ const V = {
     else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
     else if(p.status==='selesai'&&canEdit) actions=lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
     else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label>'+
-      ((S.user.peran==='wakil_rektor'&&p.organisasi?.tipe==='BEM')?
-        '<label class="mt-3">Anggaran disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
-        :'')+
+      ((S.user.peran==='wakil_rektor'&&p.organisasi?.tipe==='BEM'&&p.sumber_dana_kode==='KAMPUS')?
+        '<label class="mt-3">Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
+        :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
       '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
 
@@ -1724,6 +1731,10 @@ async function render(options={}) {
   if(view==='form'&&!S.editProkerId)pesertaRow(true);
   renderShell();
   document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
+  if(view==='form'){
+    const source=$('#f-sumber');
+    if(source)source.dispatchEvent(new Event('change',{bubbles:true}));
+  }
   if(view==='akun')syncSpecialAccountRole();
 
   if(view==='koordinator'){
@@ -2155,7 +2166,7 @@ document.addEventListener('click', async e => {
     if(!prokerId)return toast('Proker tidak ditemukan.');
     const comment=$('#workflow-comment')?.value?.trim()||null;
     const approvedBudgetEl=$('#approved-budget');
-    const approvedBudget=approvedBudgetEl ? parseMoney(approvedBudgetEl.value) : null;
+    const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
     const {data,error}=await sb.rpc('transition_proker',{
       p_proker_id:prokerId,
       p_action:action,
@@ -2215,6 +2226,24 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('change', async e => {
+  if(e.target.id==='f-sumber'){
+    const source=(S.sources||[]).find(x=>x.kode===e.target.value);
+    const detailWrap=$('#f-sumber-detail-wrap');
+    const detailInput=$('#f-sumber-detail');
+    const note=$('#f-sumber-note');
+    if(detailWrap)detailWrap.classList.toggle('hidden',!source?.wajib_rincian);
+    if(detailInput)detailInput.required=!!source?.wajib_rincian;
+    if(note)note.textContent=source?.hitung_plafon
+      ? 'Sumber Kampus: nominal diajukan ke Wakil Rektor dan akan mengurangi plafon sesuai nominal yang disetujui.'
+      : source?.kode==='TANPA_DANA'
+        ? 'Tanpa dana: total anggaran harus Rp 0 dan tidak mengurangi plafon kampus.'
+        : 'Sumber dana ini tidak mengurangi plafon kampus.';
+    if(source?.kode==='TANPA_DANA'){
+      const money=$('#f-anggaran'); if(money)money.value='Rp 0';
+      syncMoneyInput(money);
+    }
+  }
+
   if(e.target.name==='pengajuan'){
     const kb=$('#kb'); if(kb)kb.hidden=e.target.value!=='kolaboratif';
     if(e.target.value==='kolaboratif'&&!document.querySelector('.peserta'))pesertaRow(true);
@@ -2347,6 +2376,9 @@ document.addEventListener('submit', async e => {
   if(e.target.id==='ff'){
     e.preventDefault();
     const f=Object.fromEntries(new FormData(e.target)), kolab=f.pengajuan==='kolaboratif', errors=[];
+    const source=(S.sources||[]).find(x=>x.kode===f.sumber_dana_kode)||null;
+    const sourceCode=f.sumber_dana_kode||'KAMPUS';
+    const totalAnggaran=parseMoney(f.anggaran_total);
     const orgId=f.organisasi_id||S.orgId;
     if(!orgId)errors.push('Pilih organisasi terlebih dahulu.');
     if(!f.nama)errors.push('Nama program kerja wajib diisi.');
@@ -2357,7 +2389,10 @@ document.addEventListener('submit', async e => {
     const validPeserta=pesertaRows.filter(row=>row.querySelector('select[data-org-id]')?.value);
     if(kolab&&!validPeserta.length)errors.push('Tambahkan minimal satu organisasi peserta.');
     if(errors.length){$('#fe').textContent=errors.join(' ');return;}
-    const anggaranDiajukan=parseMoney(f.anggaran_diajukan);
+    const anggaranDiajukan=sourceCode==='KAMPUS'?totalAnggaran:0;
+    if(!source)return toast('Pilih sumber dana.');
+    if(source.wajib_rincian&&!String(f.sumber_dana_detail||'').trim())errors.push('Detail sumber dana wajib diisi untuk Lain-lain.');
+    if(sourceCode==='TANPA_DANA'&&totalAnggaran!==0)errors.push('Proker tanpa dana harus bernilai Rp 0.');
     if(kolab&&!hitung())errors.push('Total porsi kolaborator melebihi pengajuan anggaran kampus.');
     if(S.editProkerId){
       const target=S.detail?.proker;
@@ -2370,7 +2405,9 @@ document.addEventListener('submit', async e => {
         p_tanggal_selesai:f.selesai,
         p_tempat:f.tempat,
         p_deskripsi:f.deskripsi||'',
-        p_anggaran_diajukan:anggaranDiajukan
+        p_sumber_dana_kode:sourceCode,
+        p_sumber_dana_detail:String(f.sumber_dana_detail||'').trim()||null,
+        p_anggaran_total:totalAnggaran
       });
       if(error)return toast('Gagal memperbarui proker: '+(error.message||'Tidak dapat memperbarui proker.'));
       S.selectedProkerId=target.id;
@@ -2381,7 +2418,7 @@ document.addEventListener('submit', async e => {
       return navigate('review');
     }
 
-    const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id,anggaran_diajukan:anggaranDiajukan,anggaran_disetujui:0};
+    const payload={organisasi_id:orgId,nama:f.nama,jenis:f.jenis,tanggal_mulai:f.mulai,tanggal_selesai:f.selesai,tempat:f.tempat,deskripsi:f.deskripsi||'',pengajuan:f.pengajuan,status:'direncanakan',ketua_pelaksana:S.user.nama,dibuat_oleh:S.user.id,sumber_dana_kode:sourceCode,sumber_dana_detail:source.wajib_rincian?String(f.sumber_dana_detail||'').trim():null,anggaran_total:totalAnggaran,anggaran_diajukan:anggaranDiajukan,anggaran_disetujui:0};
     const {data,error}=await sb.from('proker').insert(payload).select('id').single();
     if(error)return toast('Gagal menyimpan proker: '+error.message);
     if(kolab&&data?.id){
