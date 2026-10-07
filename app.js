@@ -963,6 +963,8 @@ S.viewCache={};
 S.viewCacheTtl=15000;
 S.htmlCache={};
 S.htmlCacheTtl=12000;
+S.htmlCache={};
+S.htmlCacheTtl=12000;
   $('#fl')?.reset();
   $('#v')?.replaceChildren();
   $('#nav')?.replaceChildren();
@@ -1046,6 +1048,8 @@ async function hydrateUser(authUser) {
   // Clear the previous identity BEFORE building the new account context.
   // loadContexts() populates memberships, organizations, permissions and orgId.
   S.history = [];
+  S.htmlCache = {};
+  S.viewCache = {};
   S.notifications = [];
   S.memberships = [];
   S.organizations = [];
@@ -1087,6 +1091,13 @@ async function hydrateUser(authUser) {
   if(S.user.peran==='admin'){
     loadStorageStatus().catch(error=>console.warn('Storage status gagal dimuat:',error));
   }
+
+  const idle=window.requestIdleCallback||((fn)=>setTimeout(fn,600));
+  idle(()=>{
+    if(S.user.peran!=='admin' && S.view==='beranda'){
+      loadViewData('proker').catch(error=>console.warn('Prefetch proker gagal:',error));
+    }
+  });
 }
 
 async function logout() {
