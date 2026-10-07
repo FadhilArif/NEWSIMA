@@ -2170,15 +2170,36 @@ document.addEventListener('click', async e => {
     const comment=$('#workflow-comment')?.value?.trim()||null;
     const approvedBudgetEl=$('#approved-budget');
     const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
-    const {data,error}=await sb.rpc('transition_proker',{
-      p_proker_id:prokerId,
-      p_action:action,
-      p_comment:comment,
-      p_anggaran_disetujui:approvedBudget
-    });
-    if(error)return toast('Tindakan gagal: '+(error.message||'Tidak dapat memproses alur proker.'));
+    let data,error;
+    if(action==='approve'){
+      const rpc=await sb.rpc('approve_proker',{
+        p_proker_id:prokerId,
+        p_anggaran_disetujui:approvedBudget,
+        p_comment:comment
+      });
+      data=Array.isArray(rpc.data)?rpc.data[0]:rpc.data;
+      error=rpc.error;
+    }else if(action==='revise'){
+      const rpc=await sb.rpc('revise_proker',{
+        p_proker_id:prokerId,
+        p_comment:comment
+      });
+      data=Array.isArray(rpc.data)?rpc.data[0]:rpc.data;
+      error=rpc.error;
+    }else{
+      const rpc=await sb.rpc('transition_proker',{
+        p_proker_id:prokerId,
+        p_action:action,
+        p_comment:comment,
+        p_anggaran_disetujui:approvedBudget
+      });
+      data=rpc.data;
+      error=rpc.error;
+    }
+    if(error)return toast('Tindakan gagal: '+(error.message||error.details||error.hint||'Tidak dapat memproses alur proker.'));
     if(data?.status)toast('Status proker diperbarui menjadi: '+(ST[data.status]?.[0]||data.status));
     S.selectedProkerId=prokerId;
+    clearViewCache();
     return render();
   }
 
