@@ -1693,6 +1693,16 @@ const V = {
   }
 };
 
+function buildViewHtml(view){
+  try{
+    const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
+    return storageAdminBanner()+viewFn();
+  }catch(error){
+    console.error('View render failed:',{view,error});
+    return '<div class="card border border-red-200 bg-red-50"><h3 class="!text-red-900">Gagal menampilkan halaman</h3><p class="sub !text-red-800">Terjadi kesalahan saat merender modul ini. Muat ulang halaman untuk mencoba lagi.</p></div>';
+  }
+}
+
 async function render(options={}) {
   const token=++S.renderToken;
   const root=$('#v');
@@ -1712,7 +1722,7 @@ async function render(options={}) {
 
     loadViewData(view).then(()=>{
       if(token!==S.renderToken||S.view!==view)return;
-      const fresh=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+      const fresh=buildViewHtml(view);
       setHtmlCache(view,fresh);
       root.innerHTML=fresh;
       root.classList.remove('view-refreshing','view-initial-loading');
@@ -1723,7 +1733,7 @@ async function render(options={}) {
   }
 
   if(dataCached){
-    const instant=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+    const instant=buildViewHtml(view);
     root.innerHTML=instant;
     root.classList.remove('view-initial-loading');
     root.classList.add('view-refreshing');
@@ -1731,7 +1741,7 @@ async function render(options={}) {
 
     loadViewData(view).then(()=>{
       if(token!==S.renderToken||S.view!==view)return;
-      const fresh=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+      const fresh=buildViewHtml(view);
       setHtmlCache(view,fresh);
       root.innerHTML=fresh;
       root.classList.remove('view-refreshing','view-initial-loading');
@@ -1763,8 +1773,7 @@ async function render(options={}) {
   }
 
   if(token!==S.renderToken)return;
-  const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
-  const html=storageAdminBanner()+viewFn();
+  const html=buildViewHtml(view);
   if(cacheable)setHtmlCache(view,html);
   root.innerHTML=html;
   root.classList.remove('view-initial-loading','view-refreshing');
