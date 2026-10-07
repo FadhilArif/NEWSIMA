@@ -4,7 +4,8 @@
 
 alter table public.foto_kegiatan
   alter column dokumen_id drop not null,
-  alter column drive_file_id drop not null;
+  alter column drive_file_id drop not null,
+  alter column urutan drop not null;
 
 alter table public.foto_kegiatan
   add column if not exists file_name text,
