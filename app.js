@@ -538,7 +538,7 @@ async function loadProkerDetail() {
   const docIdsResult = await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId);
   const docIds = (docIdsResult.data || []).map(x => x.id);
 
-  const [orgRes, docs, kolab, decisions] = await Promise.all([
+  const [orgRes, docs, kolab, decisions, photoRows] = await Promise.all([
     proker.organisasi_id
       ? sb.from('organisasi').select('id,nama,tipe,periode_id').eq('id',proker.organisasi_id).maybeSingle()
       : Promise.resolve({data:null}),
@@ -546,7 +546,8 @@ async function loadProkerDetail() {
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
     docIds.length
       ? sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',docIds).order('waktu',{ascending:false})
-      : Promise.resolve({data:[]})
+      : Promise.resolve({data:[]}),
+    sb.from('foto_kegiatan').select('id,proker_id,dokumen_id,file_name,mime_type,thumb_path,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at').eq('proker_id',S.selectedProkerId).order('urutan',{ascending:true})
   ]);
 
   const periodId=orgRes.data?.periode_id||null;
@@ -555,11 +556,29 @@ async function loadProkerDetail() {
     const bs=await sb.rpc('get_anggaran_periode_status',{p_periode_id:periodId});
     budgetStatus=Array.isArray(bs.data)?(bs.data[0]||null):(bs.data||null);
   }
+
+  const photos=Array.isArray(photoRows?.data)?photoRows.data:[];
+  const uploaderIds=[...new Set(photos.map(x=>x.diunggah_oleh).filter(Boolean))];
+  const uploaderRows=uploaderIds.length
+    ? ((await sb.from('profiles').select('id,nama,email').in('id',uploaderIds)).data||[])
+    : [];
+  const uploaderMap=Object.fromEntries(uploaderRows.map(x=>[x.id,x]));
+
+  const photoWithUrls=await Promise.all(photos.map(async x=>{
+    let thumb_url='';
+    if(x.thumb_path){
+      const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
+      thumb_url=signed.data?.signedUrl||'';
+    }
+    return {...x,thumb_url,uploader:uploaderMap[x.diunggah_oleh]||null};
+  }));
+
   S.detail = {
     proker:{...proker,organisasi:orgRes.data || null},
     docs:docs.data || [],
     kolaborator:kolab.data || [],
     keputusan:decisions.data || [],
+    photos:photoWithUrls,
     budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
       (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung')
@@ -601,13 +620,32 @@ async function loadInbox() {
 async function loadGallery() {
   S.gallery=[];
   if(!sb)return;
-  let q=sb.from('foto_kegiatan').select('id,proker_id,dokumen_id,drive_file_id,thumb_path,ukuran_byte,urutan,keterangan,diunggah_oleh').order('urutan');
-  const {data,error}=await q;
+  const {data,error}=await sb.from('foto_kegiatan')
+    .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
+    .order('proker_id')
+    .order('urutan');
   if(error)return toast('Gagal memuat galeri: '+error.message);
-  const ids=[...new Set((data||[]).map(x=>x.proker_id).filter(Boolean))];
-  const pm=ids.length?(await sb.from('proker').select('id,nama,organisasi_id').in('id',ids)).data||[]:[];
-  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
-  S.gallery=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
+
+  const rows=Array.isArray(data)?data:[];
+  const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
+  const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
+
+  const [prokerRows,userRows]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,organisasi_id').in('id',ids):{data:[]},
+    userIds.length?sb.from('profiles').select('id,nama,email').in('id',userIds):{data:[]}
+  ]);
+
+  const pmap=Object.fromEntries((prokerRows.data||[]).map(x=>[x.id,x]));
+  const umap=Object.fromEntries((userRows.data||[]).map(x=>[x.id,x]));
+
+  S.gallery=await Promise.all(rows.map(async x=>{
+    let thumb_url='';
+    if(x.thumb_path){
+      const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
+      thumb_url=signed.data?.signedUrl||'';
+    }
+    return {...x,proker:pmap[x.proker_id]||null,uploader:umap[x.diunggah_oleh]||null,thumb_url};
+  }));
 }
 
 async function loadReports() {
@@ -1548,6 +1586,23 @@ const V = {
       (d.docs.length?'<div class="mt-4">'+d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+(doc.file_name?' · '+esc(doc.file_name):'')+'</p></div>'+(doc.file_path?'<button class="btn s" data-doc-download="'+esc(doc.file_path)+'">Buka</button>': '<span class="chip wa">Belum ada file</span>')+
         ((doc.file_path && (doc.status==='draft'||doc.status==='revisi'))?'<button class="btn d" data-doc-delete="'+esc(doc.id)+'">Hapus</button>':'')+'</div></div>').join('')+'</div>':'<p class="sub mt-4">Belum ada dokumen.</p>')+
       '</div>'+
+      ((['selesai','lpj_diajukan','lpj_disetujui'].includes(p.status))
+        ? '<div class="card mt-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Foto kegiatan</h3><p class="sub mb-0">Dokumentasi kegiatan setelah pelaksanaan selesai. Maksimal 5 foto, maksimal 10 MB per foto.</p></div><span class="chip '+(d.photos.length>=5?'wa':'bl')+'">'+d.photos.length+'/5 foto</span></div>'+
+          (((!readOnlyCollaborator)&&(canEdit||S.user.peran==='admin')&&d.photos.length<5)
+            ? '<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div class="flex flex-col sm:flex-row gap-2 sm:items-center"><input id="activity-photo-input" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" class="flex-1"><button class="btn" type="button" data-activity-photo-upload data-proker-id="'+esc(p.id)+'">Upload foto kegiatan</button></div><p class="text-xs text-slate-500 mt-2">Pilih 1–'+(5-d.photos.length)+' foto. Format JPG, PNG, WEBP, atau GIF.</p></div>'
+            : '')+
+          (d.photos.length
+            ? '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+d.photos.map(photo=>
+                '<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">'+
+                  (photo.thumb_url
+                    ? '<img src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
+                    : '<div class="w-full h-48 bg-slate-100 grid place-items-center text-slate-400 text-sm">Pratinjau tidak tersedia</div>')+
+                  '<div class="p-3"><p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p></div>'+
+                '</div>'
+              ).join('')+'</div>'
+            : '<div class="mt-4 rounded-2xl border border-dashed border-slate-300 p-6 text-center"><p class="sub">Belum ada foto kegiatan.</p></div>')+
+          '</div>'
+        : '')+
       '<div class="row2"><div class="card"><h3>Kolaborator</h3>'+(d.kolaborator.length?d.kolaborator.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm">Organisasi #'+esc(x.organisasi_id)+'</p><p class="text-xs text-slate-500">'+esc(x.status)+' · '+rp(x.porsi_plafon)+'</p></div>').join(''):'<p class="sub">Tidak ada kolaborator.</p>')+'</div><div class="card"><h3>Riwayat persetujuan</h3>'+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
@@ -1560,7 +1615,14 @@ const V = {
   },
   galeri:function(){
     return pageHeader('Galeri kegiatan','Dokumentasi kegiatan yang tercatat di SIMA.')+
-      (S.gallery.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.gallery.map(x=>'<div class="card !p-0 overflow-hidden"><div class="h-40 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan</div><div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(x.keterangan||'Tanpa keterangan')+'</p></div></div>').join('')+'</div>':emptyCard('Belum ada foto kegiatan.'));
+      (S.gallery.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.gallery.map(x=>
+        '<div class="card !p-0 overflow-hidden">'+
+          (x.thumb_url
+            ? '<img src="'+esc(x.thumb_url)+'" alt="'+esc(x.file_name||x.proker?.nama||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
+            : '<div class="h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan</div>')+
+          '<div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+esc(x.file_name||x.keterangan||'Foto kegiatan')+'</p><p class="text-xs text-slate-500">'+dateTimeID(x.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(x.uploader?.nama||x.diunggah_oleh||'-')+'</p></div>'+
+        '</div>'
+      ).join('')+'</div>':emptyCard('Belum ada foto kegiatan.'));
   },
   laporan:function(){
     return pageHeader('Laporan akhir','Pantau laporan akhir kegiatan.')+
@@ -2202,6 +2264,82 @@ document.addEventListener('click', async e => {
     await loadProkerDetail();
     toast('Dokumen berhasil dihapus.');
     return render();
+  }
+
+  const activityPhotoUpload=e.target.closest('[data-activity-photo-upload]');
+  if(activityPhotoUpload){
+    if(!sb)return toast('Supabase belum tersedia.');
+    const prokerId=activityPhotoUpload.dataset.prokerId||S.selectedProkerId;
+    const input=$('#activity-photo-input');
+    const files=[...(input?.files||[])];
+    if(!prokerId)return toast('Proker tidak ditemukan.');
+    if(!files.length)return toast('Pilih foto kegiatan terlebih dahulu.');
+
+    const currentCount=Number(S.detail?.photos?.length||0);
+    const remaining=Math.max(0,5-currentCount);
+    if(!remaining)return toast('Maksimal 5 foto kegiatan sudah tercapai.');
+    if(files.length>remaining)return toast('Foto yang dipilih melebihi sisa slot. Maksimal '+remaining+' foto lagi.');
+
+    const allowed=['image/jpeg','image/png','image/webp','image/gif'];
+    for(const file of files){
+      if(!allowed.includes(file.type))return toast('Format '+file.name+' tidak didukung. Gunakan JPG, PNG, WEBP, atau GIF.');
+      if(file.size>10*1024*1024)return toast('Foto '+file.name+' melebihi batas 10 MB.');
+    }
+
+    const totalIncoming=files.reduce((sum,file)=>sum+file.size,0);
+    const quota=await loadStorageStatus(totalIncoming);
+    if(quota && !quota.can_upload){
+      return toast('Penyimpanan SIMA tidak cukup untuk foto yang dipilih.');
+    }
+
+    const proker=S.detail?.proker;
+    if(!proker?.organisasi_id)return toast('Organisasi Proker tidak ditemukan.');
+    if(!['selesai','lpj_diajukan','lpj_disetujui'].includes(proker.status)){
+      return toast('Foto kegiatan baru dapat diunggah setelah kegiatan selesai.');
+    }
+
+    activityPhotoUpload.disabled=true;
+    try{
+      const lpjDoc=S.detail?.docs?.find(x=>x.jenis==='laporan_akhir')||null;
+      const bucket=sb.storage.from('activity-photos');
+
+      for(const file of files){
+        const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+        const path=proker.organisasi_id+'/'+prokerId+'/foto/'+Date.now()+'_'+crypto.randomUUID()+'_'+safeName;
+
+        const up=await bucket.upload(path,file,{upsert:false,contentType:file.type});
+        if(up.error)throw new Error('Upload '+file.name+' gagal: '+up.error.message);
+
+        const dbResult=await sb.from('foto_kegiatan').insert({
+          proker_id:prokerId,
+          dokumen_id:lpjDoc?.id||null,
+          drive_file_id:null,
+          thumb_path:path,
+          ukuran_byte:file.size,
+          urutan:null,
+          keterangan:null,
+          diunggah_oleh:S.user.id,
+          file_name:file.name,
+          mime_type:file.type,
+          uploaded_at:new Date().toISOString()
+        }).select('id').single();
+
+        if(dbResult.error){
+          await bucket.remove([path]);
+          throw new Error('Metadata '+file.name+' gagal disimpan: '+dbResult.error.message);
+        }
+      }
+
+      await loadProkerDetail();
+      await loadGallery();
+      toast(files.length===1?'Foto kegiatan berhasil diunggah.':files.length+' foto kegiatan berhasil diunggah.');
+      return render({force:true});
+    }catch(error){
+      console.error('Activity photo upload failed:',error);
+      return toast(error?.message||'Upload foto kegiatan gagal.');
+    }finally{
+      activityPhotoUpload.disabled=false;
+    }
   }
 
   const docUpload=e.target.closest('[data-doc-upload]');
