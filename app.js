@@ -142,21 +142,21 @@ function syncSpecialAccountRole() {
   jabEl.disabled=false;
 
   if(role==='pembimbing'){
+    const hmjs=allOrgs.filter(o=>o.tipe==='HMJ');
     const currentOrg=orgEl.value;
-    setOrgOptions(allOrgs,'Pilih organisasi yang dibimbing');
-    if(allOrgs.some(o=>String(o.id)===String(currentOrg)))orgEl.value=currentOrg;
+    setOrgOptions(hmjs,'Pilih HMJ yang dibimbing');
+    if(hmjs.some(o=>String(o.id)===String(currentOrg)))orgEl.value=currentOrg;
 
     const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
     jabEl.innerHTML=org
-      ? '<option value="reviewer">Reviewer</option>'
-      : '<option value="">Pilih organisasi terlebih dahulu</option>';
-    jabEl.value=org?'reviewer':'';
+      ? '<option value="pembimbing_hmj">Pembimbing HMJ</option>'
+      : '<option value="">Pilih HMJ terlebih dahulu</option>';
+    jabEl.value=org?'pembimbing_hmj':'';
     jabEl.disabled=true;
 
-    const units=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'')&&u.jenis==='program_studi');
     unitLabel.textContent='Unit kerja';
-    setUnitOptions(units,org?'Pilih unit kerja':'Pilih organisasi terlebih dahulu',true,true);
-    if(units.length===1)unitEl.value=units[0].id;
+    setUnitOptions([],'Tidak menggunakan unit kerja',true,false);
+    unitEl.value='';
     return;
   }
 
@@ -193,6 +193,17 @@ function canAccessView(view) {
 
 function roleLabel(role) {
   return ROLE_LABEL[role] || 'Peran tidak dikenal';
+}
+
+function reviewStageLabel(stage) {
+  return ({
+    pembimbing_hmj:'Pembimbing HMJ',
+    bem:'BEM',
+    wakil_rektor:'Wakil Rektor',
+    hmj_from_bem:'HMJ · tindak lanjut revisi BEM',
+    hmj_from_pembimbing:'HMJ · tindak lanjut Pembimbing',
+    bem_from_wakil_rektor:'BEM · tindak lanjut Wakil Rektor'
+  })[stage] || '';
 }
 
 const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Perlu revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Sedang berjalan','ok'], selesai:['Kegiatan selesai','bl'], lpj_diajukan:['LPJ menunggu review','wa'], lpj_disetujui:['LPJ disetujui','ok'], tidak_terlaksana:['Tidak terlaksana','er'], arsip:['Diarsipkan',''], digabung:['Digabung',''] };
@@ -383,15 +394,13 @@ async function loadProker() {
   if (!sb) return;
 
   const isWakil=S.user.peran==='wakil_rektor';
+  const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+  const selectFields='id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,review_stage,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada';
+
   const ownQuery = (S.orgId && !isWakil)
-    ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
-      .eq('organisasi_id', S.orgId)
-      .order('tanggal_mulai',{ascending:true})
+    ? sb.from('proker').select(selectFields).eq('organisasi_id',S.orgId).order('tanggal_mulai',{ascending:true})
     : (isWakil
-      ? sb.from('proker')
-        .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
-        .order('tanggal_mulai',{ascending:true})
+      ? sb.from('proker').select(selectFields).order('tanggal_mulai',{ascending:true})
       : Promise.resolve({data:[],error:null}));
 
   const {data:collabRows,error:collabError}=(!isWakil && S.orgId)
@@ -402,30 +411,50 @@ async function loadProker() {
 
   const collabIds=[...new Set((collabRows||[]).map(x=>x.proker_id).filter(Boolean))];
   const collabQuery=collabIds.length
-    ? sb.from('proker')
-      .select('id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
-      .in('id',collabIds)
-      .order('tanggal_mulai',{ascending:true})
+    ? sb.from('proker').select(selectFields).in('id',collabIds).order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
 
-  const [{data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError}] = await Promise.all([ownQuery,collabQuery]);
+  let bemHmjQuery=Promise.resolve({data:[],error:null});
+  if(activeOrg?.tipe==='BEM' && !isWakil){
+    const hmjs=(S.organizations||[]).filter(o=>o.tipe==='HMJ' && String(o.induk_organisasi_id||'')===String(S.orgId||''));
+    const hmjIds=hmjs.map(o=>o.id);
+    if(hmjIds.length){
+      bemHmjQuery=sb.from('proker')
+        .select(selectFields)
+        .in('organisasi_id',hmjIds)
+        .eq('review_stage','bem')
+        .order('tanggal_mulai',{ascending:true});
+    }
+  }
+
+  const [
+    {data:ownRows,error:ownError},
+    {data:collabProkers,error:collabProkerError},
+    {data:bemHmjRows,error:bemHmjError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery]);
+
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
+  if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
 
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
+  const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
+
   const map=new Map();
-  [...own,...collab].forEach(x=>map.set(x.id,x));
+  [...own,...collab,...childHmjs].forEach(x=>map.set(x.id,x));
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
   const orgIds=[...new Set(rows.map(x=>x.organisasi_id).filter(Boolean))];
   const totals=Object.fromEntries(ids.map(id=>[id,{ajuan:0,cair:0}]));
+
   const [orgRes,budgetRes,payoutRes]=await Promise.all([
     orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):{data:[]},
     ids.length?sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id',ids):{data:[]},
     ids.length?sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id',ids):{data:[]}
   ]);
+
   const orgMap=Object.fromEntries((orgRes.data||[]).map(o=>[o.id,o]));
   (budgetRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].ajuan+=Number(x.subtotal||0);});
   (payoutRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].cair+=Number(x.jumlah||0);});
@@ -439,7 +468,6 @@ async function loadProker() {
     cair:totals[p.id]?.cair||0
   }));
 }
-
 async function loadNotifications({silent=false}={}) {
   if (!sb || !S.user.id) return;
 
@@ -531,7 +559,7 @@ async function loadProkerDetail() {
   if (!sb || !S.selectedProkerId) return;
 
   const { data:proker, error } = await sb.from('proker')
-    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
+    .select('id,organisasi_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,review_stage,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada')
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
@@ -607,16 +635,39 @@ async function loadUndangan() {
 async function loadInbox() {
   S.inbox=[];
   if(!sb)return;
-  let q=sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').order('id',{ascending:false});
-  if(S.orgId)q=q.eq('organisasi_id',S.orgId);
-  const {data,error}=await q;
-  if(error)return toast('Gagal memuat inbox: '+error.message);
-  const ids=[...new Set((data||[]).map(x=>x.proker_id).filter(Boolean))];
-  const pm=ids.length?(await sb.from('proker').select('id,nama,status').in('id',ids)).data||[]:[];
-  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
-  S.inbox=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
-}
 
+  const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+  let rows=[];
+
+  if(activeOrg?.tipe==='BEM'){
+    const hmjs=(S.organizations||[]).filter(o=>o.tipe==='HMJ' && String(o.induk_organisasi_id||'')===String(S.orgId||''));
+    const hmjIds=hmjs.map(o=>o.id);
+    const [ownRes,hmjRes]=await Promise.all([
+      sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false}),
+      hmjIds.length
+        ? sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').in('organisasi_id',hmjIds).eq('tahap','bem').order('id',{ascending:false})
+        : Promise.resolve({data:[],error:null})
+    ]);
+    if(ownRes.error)return toast('Gagal memuat inbox: '+ownRes.error.message);
+    if(hmjRes.error)return toast('Gagal memuat inbox HMJ: '+hmjRes.error.message);
+    rows=[...(ownRes.data||[]),...(hmjRes.data||[])];
+  }else if(S.orgId){
+    const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false});
+    if(error)return toast('Gagal memuat inbox: '+error.message);
+    rows=data||[];
+  }else if(S.user.peran==='wakil_rektor'){
+    const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').order('id',{ascending:false});
+    if(error)return toast('Gagal memuat inbox: '+error.message);
+    rows=data||[];
+  }
+
+  const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
+  const pm=ids.length
+    ? (await sb.from('proker').select('id,nama,status,review_stage').in('id',ids)).data||[]
+    : [];
+  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
+  S.inbox=rows.map(x=>({...x,proker:pmap[x.proker_id]}));
+}
 async function loadGallery() {
   S.gallery=[];
   if(!sb)return;
@@ -1618,21 +1669,46 @@ const V = {
     const wakilReadOnly = S.user.peran==='wakil_rektor' && p.organisasi?.tipe!=='BEM';
     const canEdit=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
-    const canReview=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
-    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReview&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
-    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReview&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
+    const canReviewStage=!readOnlyCollaborator && (
+      (p.review_stage==='pembimbing_hmj' && S.user.peran==='pembimbing' && S.permissions?.has('dokumen.review'))
+      || (p.review_stage==='bem' && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has('dokumen.review'))
+      || (p.review_stage==='wakil_rektor' && S.user.peran==='wakil_rektor')
+      || (!p.review_stage && canReviewLegacy)
+    );
+    const canReview=canReviewLegacy||canReviewStage;
+    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReviewLegacy&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
     if(p.status==='direncanakan'&&(canCreate||canEdit)) actions=proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
-    else if(p.status==='revisi'&&(canCreate||canEdit)) actions=proposal?.file_path ? action('resubmit','Ajukan ulang') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+    else if(p.status==='revisi'&&(canCreate||canEdit)){
+      if(p.organisasi?.tipe==='HMJ' && p.review_stage==='hmj_from_bem'){
+        actions=proposal?.file_path
+          ? '<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari BEM. HMJ dapat konsultasi ulang ke Pembimbing atau langsung melewati Pembimbing.</p><div class="flex flex-wrap gap-2 mt-3">'+action('resubmit_hmj_consult','Konsultasikan ke Pembimbing')+action('resubmit_hmj_skip','Lewati Pembimbing')+'</div></div>'
+          : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }else if(p.organisasi?.tipe==='HMJ' && p.review_stage==='hmj_from_pembimbing'){
+        actions=proposal?.file_path ? action('resubmit','Ajukan ulang ke Pembimbing') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }else if(p.organisasi?.tipe==='BEM' && p.review_stage==='bem_from_wakil_rektor'){
+        actions=proposal?.file_path ? action('resubmit','Ajukan kembali ke Wakil Rektor') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }else{
+        actions=proposal?.file_path ? action('resubmit','Ajukan ulang') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }
+    }
     else if(p.status==='disetujui'&&canEdit) actions=action('start','Mulai pelaksanaan');
     else if(p.status==='berjalan'&&canEdit) actions=action('finish','Tandai selesai');
     else if(p.status==='selesai'&&canEdit) actions=lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>';
-    else if(isProposalReview) actions='<div class="w-full"><label>Komentar review</label>'+
-      ((S.user.peran==='wakil_rektor'&&p.organisasi?.tipe==='BEM'&&p.sumber_dana_kode==='KAMPUS')?
-        '<label class="mt-3">Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
-        :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
-      '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Minta revisi','d')+action('approve','Setujui','')+'</div></div>';
+    else if(isProposalReview){
+      const targetLabel=reviewStageLabel(p.review_stage);
+      actions='<div class="w-full"><p class="text-sm text-slate-600 mb-3">Tahap saat ini: <b>'+esc(targetLabel||'Review internal')+'</b></p><label>Komentar review</label>'+
+        ((S.user.peran==='wakil_rektor'&&['BEM','HMJ'].includes(p.organisasi?.tipe)&&p.review_stage==='wakil_rektor'&&p.sumber_dana_kode==='KAMPUS')?
+          '<label class="mt-3">Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
+          :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
+        '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+
+          action('revise',p.review_stage==='pembimbing_hmj'?'Kembalikan ke HMJ':p.review_stage==='bem'?'Kembalikan ke HMJ':'Minta revisi','d')+
+          action('approve',p.review_stage==='pembimbing_hmj'?'Setujui & teruskan ke BEM':p.review_stage==='bem'?'Setujui & teruskan ke Wakil Rektor':'Setujui','')+
+        '</div></div>';
+    }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
 
     const steps=[
@@ -1648,10 +1724,11 @@ const V = {
     return pageHeader(
       p.nama,
       S.user.peran==='wakil_rektor'
-        ? (p.organisasi?.tipe==='BEM' && ['proposal_diajukan','lpj_diajukan'].includes(p.status)
-          ? 'Pengajuan BEM · Wakil Rektor dapat review, setujui, atau revisi.'
+        ? (['proposal_diajukan','lpj_diajukan'].includes(p.status)
+          ? 'Pengajuan · Wakil Rektor dapat review, setujui, atau revisi.'
           : 'Pemantauan semua organisasi · akses hanya baca.')
-        : (readOnlyCollaborator?'Dokumentasi kolaborator · akses hanya baca.':'Alur tindak lanjut program kerja.'),
+        : (readOnlyCollaborator?'Dokumentasi kolaborator · akses hanya baca.':'Alur tindak lanjut program kerja.')+
+          (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
       '<div class="card mb-4 workflow-steps"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
@@ -2584,31 +2661,14 @@ document.addEventListener('click', async e => {
     const approvedBudgetEl=$('#approved-budget');
     const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
     let data,error;
-    if(action==='approve'){
-      const rpc=await sb.rpc('approve_proker',{
-        p_proker_id:prokerId,
-        p_anggaran_disetujui:approvedBudget,
-        p_comment:comment
-      });
-      data=Array.isArray(rpc.data)?rpc.data[0]:rpc.data;
-      error=rpc.error;
-    }else if(action==='revise'){
-      const rpc=await sb.rpc('revise_proker',{
-        p_proker_id:prokerId,
-        p_comment:comment
-      });
-      data=Array.isArray(rpc.data)?rpc.data[0]:rpc.data;
-      error=rpc.error;
-    }else{
-      const rpc=await sb.rpc('transition_proker',{
-        p_proker_id:prokerId,
-        p_action:action,
-        p_comment:comment,
-        p_anggaran_disetujui:approvedBudget
-      });
-      data=rpc.data;
-      error=rpc.error;
-    }
+    const rpc=await sb.rpc('transition_proker',{
+      p_proker_id:prokerId,
+      p_action:action,
+      p_comment:comment,
+      p_anggaran_disetujui:approvedBudget
+    });
+    data=rpc.data;
+    error=rpc.error;
     if(error)return toast('Tindakan gagal: '+(error.message||error.details||error.hint||'Tidak dapat memproses alur proker.'));
     if(data?.status)toast('Status proker diperbarui menjadi: '+(ST[data.status]?.[0]||data.status));
     S.selectedProkerId=prokerId;
