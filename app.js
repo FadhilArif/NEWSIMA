@@ -702,7 +702,7 @@ async function loadProkerDetail() {
 
   const [orgRes, docs, kolab, decisions, photoRows] = await Promise.all([
     proker.organisasi_id
-      ? sb.from('organisasi').select('id,nama,tipe,periode_id').eq('id',proker.organisasi_id).maybeSingle()
+      ? sb.from('organisasi').select('id,nama,tipe,periode_id,induk_organisasi_id').eq('id',proker.organisasi_id).maybeSingle()
       : Promise.resolve({data:null}),
     sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at').eq('proker_id',S.selectedProkerId).order('jenis'),
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
