@@ -1670,8 +1670,19 @@ async function initAuth() {
       console.warn('Sesi lokal tidak dapat dipulihkan:', error.message);
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
     } else if (data?.session?.user) {
-      // Let Supabase manage refresh. Do not manually refresh the same session.
-      await hydrateUser(data.session.user);
+      // Validate the persisted access token before hydrating the application.
+      // If Auth rejects it, clear the local session instead of rendering a
+      // blank identity with stale UI state.
+      const { data:userCheck, error:userCheckError } = await sb.auth.getUser();
+      if (userCheckError || !userCheck?.user) {
+        console.warn('Session tersimpan tidak valid:', userCheckError?.message || 'Auth user tidak tersedia.');
+        await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+        S.authLost=true;
+        $('#app').hidden=true;
+        $('#login').hidden=false;
+      } else {
+        await hydrateUser(userCheck.user);
+      }
     } else {
       S.authLost=true;
       $('#app').hidden=true;
