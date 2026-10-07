@@ -103,7 +103,7 @@ declare
   v_org uuid;
   v_kind text;
 begin
-  select d.proker_id, d.organisasi_id, d.jenis
+  select d.proker_id, d.organisasi_id, d.jenis::text
     into v_proker_id, v_org, v_kind
   from public.dokumen d
   where d.id = new.dokumen_id;
@@ -119,7 +119,7 @@ begin
       v_owner,
       v_org,
       case
-        when v_kind = 'laporan_akhir'::public.jenis_dok
+        when v_kind = 'laporan_akhir'
           then 'LPJ "' || coalesce(v_name,'program kerja') || '" mendapat keputusan: ' || new.keputusan || '.'
         else
           'Proposal "' || coalesce(v_name,'program kerja') || '" mendapat keputusan: ' || new.keputusan || '.'
