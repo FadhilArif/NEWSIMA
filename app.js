@@ -804,8 +804,23 @@ function restoreView(view){
   return true;
 }
 
+function htmlCacheKey(view){
+  return [view,S.orgId||'global',S.structureOrgId||'',S.tab||'',S.q||''].join('|');
+}
+function getHtmlCache(view){
+  const cached=S.htmlCache?.[htmlCacheKey(view)];
+  return cached && Date.now()-cached.at<S.htmlCacheTtl ? cached.html : null;
+}
+function setHtmlCache(view,html){
+  S.htmlCache[htmlCacheKey(view)]={at:Date.now(),html};
+}
+function clearHtmlCache(){
+  S.htmlCache={};
+}
+
 function clearViewCache(){
   S.viewCache={};
+  clearHtmlCache();
 }
 
 async function loadViewData(view){
@@ -946,6 +961,8 @@ function resetClientState() {
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
 S.viewCache={};
 S.viewCacheTtl=15000;
+S.htmlCache={};
+S.htmlCacheTtl=12000;
   $('#fl')?.reset();
   $('#v')?.replaceChildren();
   $('#nav')?.replaceChildren();
@@ -1612,13 +1629,29 @@ async function render(options={}) {
   if(!root)return;
 
   const view=S.view;
-  const keys=VIEW_CACHE_KEYS[view];
+  const cacheable=!['form','review','plafon','akun','organisasi','unit_kerja','periode','jabatan','audit','profil','koordinator','cair'].includes(view);
+  const cachedHtml=cacheable&&!options.force?getHtmlCache(view):null;
   const hadContent=!!root.innerHTML.trim();
-  const cached=keys ? restoreView(view) : false;
 
-  // Keep the current screen visible while data is fetched.
-  // Only the very first load gets a skeleton.
-  if(hadContent || cached){
+  if(cachedHtml){
+    root.innerHTML=cachedHtml;
+    root.classList.remove('view-initial-loading');
+    root.classList.add('view-refreshing');
+    renderShell();
+
+    loadViewData(view).then(()=>{
+      if(token!==S.renderToken||S.view!==view)return;
+      const fresh=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+      setHtmlCache(view,fresh);
+      root.innerHTML=fresh;
+      root.classList.remove('view-refreshing','view-initial-loading');
+      renderShell();
+      document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
+    }).catch(error=>console.warn('Background refresh gagal:',error));
+    return;
+  }
+
+  if(hadContent){
     root.classList.add('view-refreshing');
   }else{
     root.innerHTML='<div class="page-loading" aria-label="Memuat halaman"><div class="loading-shimmer w-40"></div><div class="loading-shimmer w-64"></div><div class="loading-panel"></div></div>';
@@ -1626,29 +1659,6 @@ async function render(options={}) {
   }
 
   try{
-    if(cached && !options.force){
-      const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
-      root.innerHTML=storageAdminBanner()+viewFn();
-      root.classList.remove('view-initial-loading','view-refreshing');
-      if(view==='form')pesertaRow(true);
-      document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
-      renderShell();
-
-      // Refresh read-only/list views in the background without flashing the UI.
-      if(keys && !['review','plafon','koordinator'].includes(view)){
-        const refreshView=view;
-        loadViewData(refreshView).then(()=>{
-          if(S.view===refreshView && token===S.renderToken){
-            const fn=V[refreshView]||(()=>emptyCard('Modul tidak tersedia.'));
-            root.innerHTML=storageAdminBanner()+fn();
-            renderShell();
-            document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
-          }
-        }).catch(error=>console.warn('Background refresh gagal:',error));
-      }
-      return;
-    }
-
     await loadViewData(view);
   }catch(error){
     console.error(error);
@@ -1664,7 +1674,9 @@ async function render(options={}) {
 
   if(token!==S.renderToken)return;
   const viewFn=V[view]||(()=>emptyCard('Modul tidak tersedia.'));
-  root.innerHTML=storageAdminBanner()+viewFn();
+  const html=storageAdminBanner()+viewFn();
+  if(cacheable)setHtmlCache(view,html);
+  root.innerHTML=html;
   root.classList.remove('view-initial-loading','view-refreshing');
   if(view==='form')pesertaRow(true);
   renderShell();
@@ -1937,7 +1949,7 @@ document.addEventListener('click', async e => {
   if(go)return navigate(go.dataset.go);
 
   const tab=e.target.closest('[data-tab]');
-  if(tab){S.tab=tab.dataset.tab;return render();}
+  if(tab){S.tab=tab.dataset.tab;clearHtmlCache();return render();}
 
   if(e.target.id==='tp'){pesertaRow();return hitung();}
   if(e.target.closest('[data-del]')){e.target.closest('.peserta')?.remove();return hitung();}
@@ -2123,6 +2135,7 @@ document.addEventListener('focusout', e => {
 document.addEventListener('input', e => {
   if(e.target.id==='q'){
     S.q=e.target.value;
+    clearHtmlCache();
     clearTimeout(S.searchTimer);
     S.searchTimer=setTimeout(()=>render(),220);
   }
