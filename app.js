@@ -1208,7 +1208,7 @@ async function loadViewData(view){
       await Promise.all([loadProkerDetail(),loadSources()]);
       break;
     case 'form':
-      await loadSources();
+      await Promise.all([loadSources(),loadOrganizations()]);
       break;
     case 'undangan':
       await loadUndangan();
@@ -1831,8 +1831,8 @@ const V = {
       '<div class="card bg-slate-50 border border-slate-200 mb-4"><div class="f2"><div><label>Sumber dana *</label><select id="f-sumber" name="sumber_dana_kode" required>'+sourceOptions+'</select></div><div><label>Total anggaran</label><input id="f-anggaran" name="anggaran_total" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(totalBudget)+'"><small>Hanya nominal dengan sumber <b>Kampus</b> yang diajukan ke Wakil Rektor dan mengurangi plafon kampus.</small></div></div><div id="f-sumber-detail-wrap" class="mt-3 '+detailClass+'"><label>Detail sumber dana *</label><input id="f-sumber-detail" name="sumber_dana_detail" value="'+esc(edit?.sumber_dana_detail||'')+'" placeholder="Contoh: sponsor perusahaan / bantuan alumni"><small>Wajib diisi untuk sumber dana Lain-lain.</small></div><p id="f-sumber-note" class="sub mt-3"></p></div>'+
       (isEdit
         ? '<div class="card bg-amber-50 border border-amber-200 mb-4"><p class="text-sm text-amber-900"><b>Mode edit:</b> data kegiatan, sumber dana, anggaran, dan kolaborator dapat diperbarui selama Proker masih direncanakan atau perlu revisi.</p></div>'+
-          '<div class="card border border-slate-200 mb-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Kolaborator</h3><p class="sub mb-0">Tambahkan organisasi susulan, ubah porsi plafon, atau hapus kolaborator yang tidak lagi terlibat. Kolaborator baru akan menerima undangan.</p></div><span class="chip bl">Bisa diubah</span></div><div id="kb" class="mt-4"><div id="ps"></div><button type="button" class="btn w mt-3" id="tp">+ Tambah organisasi</button><p class="sub mt-2" id="tt"></p></div></div>'
-        : '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label><div id="kb" hidden><label>Pembagian porsi anggaran antar organisasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah peserta</button><p class="sub" id="tt"></p></div>')+
+          '<div class="card border border-slate-200 mb-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Kolaborator</h3><p class="sub mb-0">Tambahkan organisasi susulan atau hapus organisasi yang tidak lagi terlibat. Rincian anggaran kolaborator dijelaskan di proposal, bukan di sini.</p></div><span class="chip bl">Bisa diubah</span></div><div id="kb" class="mt-4"><div id="ps"></div><button type="button" class="btn w mt-3" id="tp">+ Tambah organisasi</button><p class="sub mt-2" id="tt"></p></div></div>'
+        : '<label>Penyelenggara</label><label><input type="radio" name="pengajuan" value="mandiri" checked style="width:auto"> Mandiri</label><label><input type="radio" name="pengajuan" value="kolaboratif" style="width:auto"> Kolaboratif</label><div id="kb" hidden><label>Organisasi yang diajak kolaborasi</label><div id="ps"></div><button type="button" class="btn w" id="tp">+ Tambah organisasi</button><p class="sub">Pilih BEM, UKM, atau HMJ lain. Rincian anggaran kolaborasi dicantumkan dalam proposal.</p></div>')+
       '<p class="err" id="fe"></p><div class="flex gap-2 mt-4"><button class="btn s" type="button" data-go="'+(isEdit?'review':'proker')+'">Batal</button><button class="btn">'+(isEdit?'Simpan perubahan':'Simpan draft')+'</button></div></form>';
   },
   review:function(){
@@ -1963,7 +1963,7 @@ const V = {
   },
   undangan:function(){
     return pageHeader('Undangan kolaborasi',S.user.peran==='wakil_rektor'?'Pantauan undangan kolaborasi · akses hanya baca.':'Kelola undangan organisasi untuk program kerja.')+
-      (S.undangan.length?'<div class="grid gap-3">'+S.undangan.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Program kerja')+'</h3><p class="sub mb-1">'+dateID(x.proker?.tanggal_mulai)+'</p><p class="text-sm">Porsi: <b>'+rp(x.porsi_plafon)+'</b></p></div><div class="flex gap-2"><span class="chip '+(x.status==='bergabung'?'ok':x.status==='menolak'?'er':'wa')+'">'+esc(x.status)+'</span>'+(x.status==='diundang' && S.user.peran!=='wakil_rektor'?'<button class="btn w" data-collab-action="bergabung" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Terima</button><button class="btn d" data-collab-action="menolak" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Tolak</button>':'')+'</div></div></div>').join('')+'</div>':emptyCard('Belum ada undangan.'));
+      (S.undangan.length?'<div class="grid gap-3">'+S.undangan.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Program kerja')+'</h3><p class="sub mb-1">'+dateID(x.proker?.tanggal_mulai)+'</p><p class="text-sm text-slate-600">Kolaborasi organisasi</p></div><div class="flex gap-2"><span class="chip '+(x.status==='bergabung'?'ok':x.status==='menolak'?'er':'wa')+'">'+esc(x.status)+'</span>'+(x.status==='diundang' && S.user.peran!=='wakil_rektor'?'<button class="btn w" data-collab-action="bergabung" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Terima</button><button class="btn d" data-collab-action="menolak" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Tolak</button>':'')+'</div></div></div>').join('')+'</div>':emptyCard('Belum ada undangan.'));
   },
   inbox:function(){
     return pageHeader('Inbox review','Dokumen yang tersedia untuk ditinjau.')+
@@ -2364,12 +2364,21 @@ async function render(options={}) {
   }
 }
 function pesertaRow(reset, initialRows=[]) {
-  const box=$('#ps'); if(!box)return;
+  const box=$('#ps');
+  if(!box)return;
   if(reset)box.innerHTML='';
+
   const rows=initialRows.length?initialRows:[{}];
+  const ownerId=String(S.detail?.proker?.organisasi_id||S.orgId||'');
+
+  // Collaboration is organization-only. Budget details belong in the proposal.
   const options=(S.organizations||[])
-    .filter(o=>String(o.id)!==String(S.detail?.proker?.organisasi_id||S.orgId))
-    .map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>')
+    .filter(o=>
+      ['BEM','UKM','HMJ'].includes(o.tipe) &&
+      String(o.id)!==ownerId
+    )
+    .sort((a,b)=>String(a.nama).localeCompare(String(b.nama),'id'))
+    .map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+' · '+esc(o.tipe)+'</option>')
     .join('');
 
   rows.forEach(row=>{
@@ -2380,18 +2389,20 @@ function pesertaRow(reset, initialRows=[]) {
 
     box.insertAdjacentHTML('beforeend',
       '<div class="peserta flex flex-col sm:flex-row gap-2 sm:items-center">'+
-        '<select aria-label="Organisasi peserta" data-org-id class="flex-1"><option value="">Pilih organisasi peserta</option>'+options+'</select>'+
-        '<input type="text" inputmode="numeric" autocomplete="off" data-money="porsi" placeholder="Rp 0" aria-label="Porsi plafon" value="'+esc(formatMoney(row.porsi_plafon||0))+'">'+
-        '<span class="chip bl text-center">'+esc(statusLabel)+'</span>'+
-        '<button type="button" class="btn d" data-del aria-label="Hapus peserta">×</button>'+
+        '<select aria-label="Organisasi kolaborator" data-org-id class="flex-1">'+
+          '<option value="">Pilih organisasi kolaborator</option>'+options+
+        '</select>'+
+        '<span class="chip bl text-center whitespace-nowrap">'+esc(statusLabel)+'</span>'+
+        '<button type="button" class="btn d" data-del aria-label="Hapus kolaborator">×</button>'+
       '</div>'
     );
 
     const item=box.lastElementChild;
     const sel=item?.querySelector('[data-org-id]');
-    if(sel&&row.organisasi_id)sel.value=row.organisasi_id;
+    if(sel && row.organisasi_id)sel.value=row.organisasi_id;
   });
 }
+
 
 function parseMoney(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0,value) : 0;
@@ -2438,16 +2449,9 @@ function syncMoneyInput(el) {
 }
 
 
-function totalPorsi() {
-  return [...document.querySelectorAll('[data-money="porsi"]')].reduce((a,i)=>a+parseMoney(i.value),0);
-}
+function totalPorsi() { return 0; }
+function hitung() { return true; }
 
-function hitung() {
-  const dk=parseMoney($('#f-anggaran')?.value);
-  const tp=totalPorsi();
-  if($('#tt'))$('#tt').textContent=`Porsi peserta ${rp(tp)} dari ${rp(dk)}. Beban penyelenggara utama ${rp(Math.max(dk-tp,0))}.`;
-  return tp<=dk;
-}
 
 // --- Fungsi CSV ---
 function parseCSVLine(line) {
@@ -3147,30 +3151,39 @@ document.addEventListener('submit', async e => {
     if(!f.tempat)errors.push('Lokasi wajib diisi.');
     const pesertaRows=[...document.querySelectorAll('.peserta')];
     const validPeserta=pesertaRows.filter(row=>row.querySelector('select[data-org-id]')?.value);
-    if(kolab&&!validPeserta.length)errors.push('Tambahkan minimal satu organisasi peserta.');
+    const selectedCollabIds=validPeserta
+      .map(row=>row.querySelector('select[data-org-id]')?.value||'')
+      .filter(Boolean);
+
+    const duplicateCollab=new Set(selectedCollabIds).size!==selectedCollabIds.length;
+    if(duplicateCollab)errors.push('Organisasi kolaborator tidak boleh dipilih lebih dari sekali.');
+
+    const invalidCollab=selectedCollabIds.some(id=>{
+      const org=(S.organizations||[]).find(o=>String(o.id)===String(id));
+      return !org || !['BEM','UKM','HMJ'].includes(org.tipe) ||
+        String(org.id)===String(orgId);
+    });
+    if(invalidCollab)errors.push('Kolaborator hanya boleh BEM, UKM, atau HMJ lain.');
+
+    if(kolab&&!validPeserta.length)errors.push('Tambahkan minimal satu organisasi kolaborator.');
     if(errors.length){$('#fe').textContent=errors.join(' ');return;}
     const anggaranDiajukan=sourceCode==='KAMPUS'?totalAnggaran:0;
     if(!source)return toast('Pilih sumber dana.');
     if(source.wajib_rincian&&!String(f.sumber_dana_detail||'').trim())errors.push('Detail sumber dana wajib diisi untuk Lain-lain.');
     if(sourceCode==='TANPA_DANA'&&totalAnggaran!==0)errors.push('Proker tanpa dana harus bernilai Rp 0.');
-    if(kolab&&!hitung())errors.push('Total porsi kolaborator melebihi pengajuan anggaran kampus.');
     if(S.editProkerId){
       const target=S.detail?.proker;
       if(!target||String(target.id)!==String(S.editProkerId))return toast('Proker yang diedit tidak ditemukan.');
 
       const collabRows=[...document.querySelectorAll('#ps .peserta')]
         .map(row=>({
-          organisasi_id:row.querySelector('[data-org-id]')?.value||null,
-          porsi_plafon:parseMoney(row.querySelector('[data-money="porsi"]')?.value||0)
+          organisasi_id:row.querySelector('[data-org-id]')?.value||null
         }))
         .filter(x=>x.organisasi_id);
 
       const ids=collabRows.map(x=>String(x.organisasi_id));
       if(new Set(ids).size!==ids.length){
         return toast('Organisasi kolaborator tidak boleh dipilih lebih dari sekali.');
-      }
-      if(collabRows.reduce((sum,x)=>sum+x.porsi_plafon,0)>totalAnggaran){
-        return toast('Total porsi kolaborator tidak boleh melebihi total anggaran Proker.');
       }
 
       const {data,error}=await sb.rpc('update_proker_draft_with_collaborators',{
@@ -3203,7 +3216,7 @@ document.addEventListener('submit', async e => {
       const collabRows=[...document.querySelectorAll('.peserta')].map(row=>({
         proker_id:data.id,
         organisasi_id:row.querySelector('select[data-org-id]')?.value||null,
-        porsi_plafon:parseMoney(row.querySelector('[data-money="porsi"]')?.value),
+        porsi_plafon:0,
         status:'diundang'
       })).filter(x=>x.organisasi_id);
       if(collabRows.length){
