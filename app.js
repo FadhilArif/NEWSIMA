@@ -106,6 +106,7 @@ function syncSpecialAccountRole() {
     if(nimEl){
       nimEl.required=required;
       nimEl.disabled=hidden;
+      nimEl.hidden=hidden;
       if(hidden)nimEl.value='';
     }
   };
