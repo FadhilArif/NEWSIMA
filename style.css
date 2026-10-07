@@ -183,3 +183,49 @@ input,select,textarea,button{max-width:100%;box-sizing:border-box}
   .workflow-steps>div{flex-basis:135px}
   .bn button{font-size:10px}
 }
+
+/* Smooth page loading / no-refresh feel. */
+#v{position:relative;min-height:180px;transition:opacity .18s ease,filter .18s ease}
+#v.view-refreshing{opacity:.78}
+#v.view-refreshing::before{
+  content:"";
+  position:absolute;
+  top:-1px;
+  left:0;
+  right:0;
+  height:2px;
+  background:linear-gradient(90deg,transparent 0%,#0B3AB5 35%,#6D8BFF 50%,#0B3AB5 65%,transparent 100%);
+  background-size:200% 100%;
+  animation:simaLoadingLine 1.05s linear infinite;
+  z-index:5;
+  border-radius:999px;
+}
+.page-loading{display:grid;gap:10px;padding:4px 0}
+.loading-shimmer,.loading-panel{
+  position:relative;
+  overflow:hidden;
+  background:#eef1f7;
+  border-radius:12px;
+}
+.loading-shimmer{height:18px}
+.loading-shimmer.w-40{width:40%}
+.loading-shimmer.w-64{width:64%}
+.loading-panel{height:230px;width:100%}
+.loading-shimmer::after,.loading-panel::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);
+  animation:simaShimmer 1.15s ease-in-out infinite;
+}
+@keyframes simaShimmer{
+  100%{transform:translateX(100%)}
+}
+@keyframes simaLoadingLine{
+  0%{background-position:200% 0}
+  100%{background-position:-200% 0}
+}
+@media(prefers-reduced-motion:reduce){
+  #v.view-refreshing::before,.loading-shimmer::after,.loading-panel::after{animation:none}
+}
