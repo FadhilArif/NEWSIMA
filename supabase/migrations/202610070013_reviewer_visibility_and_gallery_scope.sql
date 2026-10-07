@@ -66,10 +66,8 @@ for select to authenticated
 using (
   private.is_admin_or_rektor()
   or (
-    coalesce(
-      (select p.peran from public.profiles p where p.id=auth.uid()),
-      ''::public.peran_akun
-    ) <> 'pembimbing'::public.peran_akun
+    (select p.peran from public.profiles p where p.id=auth.uid())
+      is distinct from 'pembimbing'::public.peran_akun
     and organisasi_id in (select private.user_org_ids())
   )
   or (
