@@ -1642,10 +1642,30 @@ async function render(options={}) {
   const view=S.view;
   const cacheable=!['form','review','plafon','akun','organisasi','unit_kerja','periode','jabatan','audit','profil','koordinator','cair'].includes(view);
   const cachedHtml=cacheable&&!options.force?getHtmlCache(view):null;
+  const dataCached=cacheable&&!options.force&&!cachedHtml&&restoreView(view);
   const hadContent=!!root.innerHTML.trim();
 
   if(cachedHtml){
     root.innerHTML=cachedHtml;
+    root.classList.remove('view-initial-loading');
+    root.classList.add('view-refreshing');
+    renderShell();
+
+    loadViewData(view).then(()=>{
+      if(token!==S.renderToken||S.view!==view)return;
+      const fresh=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+      setHtmlCache(view,fresh);
+      root.innerHTML=fresh;
+      root.classList.remove('view-refreshing','view-initial-loading');
+      renderShell();
+      document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
+    }).catch(error=>console.warn('Background refresh gagal:',error));
+    return;
+  }
+
+  if(dataCached){
+    const instant=storageAdminBanner()+(V[view]||(()=>emptyCard('Modul tidak tersedia.')))();
+    root.innerHTML=instant;
     root.classList.remove('view-initial-loading');
     root.classList.add('view-refreshing');
     renderShell();
