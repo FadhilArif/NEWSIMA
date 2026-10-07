@@ -1543,8 +1543,8 @@ async function render() {
   const viewFn = V[S.view] || (() => emptyCard('Modul tidak tersedia.'));
   root.innerHTML = storageAdminBanner() + viewFn();
   if (S.view === 'form') pesertaRow(true);
-  document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
   renderShell();
+  document.querySelectorAll('[data-money]').forEach(syncMoneyInput);
   if(S.view==='akun')syncSpecialAccountRole();
 
   if(S.view==='koordinator'){
@@ -1571,8 +1571,11 @@ function pesertaRow(reset) {
 }
 
 function parseMoney(value) {
-  const digits=String(value??'').replace(/\\D/g,'');
-  return digits ? Number(digits) : 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0,value) : 0;
+  const digits=String(value??'').replace(/[^\d]/g,'');
+  if(!digits)return 0;
+  const n=Number(digits);
+  return Number.isFinite(n) ? Math.max(0,n) : 0;
 }
 
 function formatMoney(value) {
@@ -1583,30 +1586,34 @@ function syncMoneyInput(el) {
   if(!el)return;
   const raw=String(el.value||'');
   const caret=Math.max(0,Math.min(Number(el.selectionStart??raw.length),raw.length));
-  const digitsBefore=(raw.slice(0,caret).match(/\\d/g)||[]).length;
-  const digits=raw.replace(/\\D/g,'');
-  const formatted=digits ? 'Rp '+Number(digits).toLocaleString('id-ID') : '';
+  const digitsBefore=(raw.slice(0,caret).match(/\d/g)||[]).length;
+  const digits=raw.replace(/[^\d]/g,'');
+  if(!digits){
+    if(raw!==''){
+      el.value='';
+      requestAnimationFrame(()=>{try{el.setSelectionRange(0,0);}catch(_){}});
+    }
+    return;
+  }
+
+  const formatted='Rp '+Number(digits).toLocaleString('id-ID');
   if(raw===formatted)return;
   el.value=formatted;
 
-  let target=formatted.length;
-  if(digitsBefore===0){
-    target=2;
-  }else{
+  let target=2;
+  if(digitsBefore>0){
     let seen=0;
-    target=2;
-    for(const ch of formatted.slice(2)){
-      target++;
-      if(/\\d/.test(ch)){
+    for(let i=2;i<formatted.length;i++){
+      target=i+1;
+      if(/\d/.test(formatted[i])){
         seen++;
         if(seen>=digitsBefore)break;
       }
     }
   }
-  requestAnimationFrame(()=>{
-    try{el.setSelectionRange(target,target);}catch(_){}
-  });
+  requestAnimationFrame(()=>{try{el.setSelectionRange(target,target);}catch(_){}});
 }
+
 
 function totalPorsi() {
   return [...document.querySelectorAll('[data-money="porsi"]')].reduce((a,i)=>a+parseMoney(i.value),0);
@@ -1972,6 +1979,21 @@ document.addEventListener('click', async e => {
     if(error)return toast('Review gagal: '+(error.message||'Tidak dapat memproses review.'));
     toast('Review tersimpan.');
     return render();
+  }
+});
+
+document.addEventListener('focusin', e => {
+  if(e.target.matches('[data-money]')){
+    const value=parseMoney(e.target.value);
+    e.target.value=value ? formatMoney(value) : '';
+    requestAnimationFrame(()=>{try{e.target.setSelectionRange(e.target.value.length,e.target.value.length);}catch(_){}});
+  }
+});
+
+document.addEventListener('focusout', e => {
+  if(e.target.matches('[data-money]')){
+    const value=parseMoney(e.target.value);
+    e.target.value=value ? formatMoney(value) : 'Rp 0';
   }
 });
 
