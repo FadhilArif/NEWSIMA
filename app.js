@@ -181,7 +181,7 @@ function canAccessView(view) {
   // Wakil Rektor is a campus-wide observer with review authority only for BEM.
   // The actual approve/revise authorization is enforced server-side.
   if (role === 'wakil_rektor') {
-    return new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','plafon','profil']).has(view);
+    return new Set(['beranda','proker','review','undangan','galeri','laporan','struktur','inbox','plafon','profil']).has(view);
   }
 
   const permission = VIEW_PERMISSION[view];
