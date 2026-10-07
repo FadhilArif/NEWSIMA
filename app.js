@@ -92,6 +92,85 @@ function positionLabel(code) {
   return POSITION_LABELS[code] || code || 'Anggota';
 }
 
+function syncSpecialAccountRole() {
+  const roleEl=$('#an-peran'), orgEl=$('#an-org'), jabEl=$('#an-jabatan'), unitEl=$('#an-unit'), unitLabel=$('#an-unit-label');
+  if(!roleEl||!orgEl||!jabEl||!unitEl)return;
+  const role=roleEl.value;
+  const allOrgs=S.organizations||[];
+  const bems=allOrgs.filter(o=>o.tipe==='BEM');
+  const globalUnits=(S.units||[]).filter(u=>!u.organisasi_id);
+  const setOrgOptions=(items,placeholder='Pilih organisasi')=>{
+    const current=orgEl.value;
+    orgEl.innerHTML='<option value="">'+esc(placeholder)+'</option>'+items.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+' · '+esc(o.tipe)+'</option>').join('');
+    if(items.some(o=>String(o.id)===String(current)))orgEl.value=current;
+  };
+  const setUnitOptions=(items,placeholder,disabled=true,required=false)=>{
+    unitEl.innerHTML='<option value="">'+esc(placeholder)+'</option>'+items.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
+    unitEl.disabled=disabled;
+    unitEl.required=required;
+  };
+
+  if(role==='staf_keuangan'){
+    orgEl.innerHTML='<option value="">Tidak ada organisasi</option>';
+    orgEl.value='';
+    orgEl.disabled=true;
+    jabEl.innerHTML='<option value="">Tidak ada jabatan</option>';
+    jabEl.value='';
+    jabEl.disabled=true;
+    unitLabel.textContent='Unit kerja';
+    const tu=globalUnits.find(u=>u.jenis==='tata_usaha');
+    setUnitOptions(tu?[tu]:[],'Tata Usaha',true,true);
+    if(tu)unitEl.value=tu.id;
+    return;
+  }
+
+  if(role==='wakil_rektor'){
+    setOrgOptions(bems,'BEM wajib');
+    orgEl.disabled=true;
+    if(bems.length)orgEl.value=bems[0].id;
+    jabEl.innerHTML='<option value="">Wakil Rektor</option><option value="wakil_rektor">Wakil Rektor</option>';
+    jabEl.value='wakil_rektor';
+    jabEl.disabled=true;
+    unitLabel.textContent='Unit kerja';
+    const rektorat=globalUnits.find(u=>u.jenis==='rektorat');
+    setUnitOptions(rektorat?[rektorat]:[],'Rektorat',true,true);
+    if(rektorat)unitEl.value=rektorat.id;
+    return;
+  }
+
+  orgEl.disabled=false;
+  jabEl.disabled=false;
+
+  if(role==='pembimbing'){
+    const currentOrg=orgEl.value;
+    setOrgOptions(allOrgs,'Pilih organisasi yang dibimbing');
+    if(allOrgs.some(o=>String(o.id)===String(currentOrg)))orgEl.value=currentOrg;
+
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
+    jabEl.innerHTML=org
+      ? '<option value="reviewer">Reviewer</option>'
+      : '<option value="">Pilih organisasi terlebih dahulu</option>';
+    jabEl.value=org?'reviewer':'';
+    jabEl.disabled=true;
+
+    const units=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'')&&u.jenis==='program_studi');
+    unitLabel.textContent='Unit kerja';
+    setUnitOptions(units,org?'Pilih unit kerja':'Pilih organisasi terlebih dahulu',true,true);
+    if(units.length===1)unitEl.value=units[0].id;
+    return;
+  }
+
+  // Normal student/user account behavior.
+  const positions=(S.positions||[]).filter(j=>Array.isArray(j.berlaku_tipe) && j.berlaku_tipe.includes((S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''))?.tipe));
+  jabEl.innerHTML='<option value="">'+(orgEl.value?'Pilih jabatan':'Pilih organisasi dulu')+'</option>'+positions.map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
+  jabEl.value='';
+  unitEl.innerHTML='<option value="">Pilih jabatan terlebih dahulu</option>';
+  unitEl.disabled=true;
+  unitEl.required=false;
+  unitLabel.textContent='Unit kerja';
+}
+
+
 function canAccessView(view) {
   const role = S.user?.peran || '';
 
@@ -612,7 +691,7 @@ async function loadStructureCatalog() {
 async function loadAccounts() {
   S.accounts=[];
   if(!sb || S.user.peran!=='admin')return;
-  const {data,error}=await sb.from('profiles').select('id,nama,email,nim,peran,aktif,wajib_ganti_sandi').order('nama');
+  const {data,error}=await sb.from('profiles').select('id,nama,email,nim,peran,aktif,wajib_ganti_sandi,unit_kerja_id').order('nama');
   if(error)return toast('Gagal memuat akun: '+error.message);
 
   const ids=(data||[]).map(x=>x.id);
@@ -1389,6 +1468,7 @@ async function render() {
   root.innerHTML = storageAdminBanner() + viewFn();
   if (S.view === 'form') pesertaRow(true);
   renderShell();
+  if(S.view==='akun')syncSpecialAccountRole();
 
   if(S.view==='koordinator'){
     document.querySelectorAll('[data-koordinator-form]').forEach(async form=>{
@@ -1806,8 +1886,24 @@ document.addEventListener('change', async e => {
     await loadPermissionsForOrganization(S.orgId);
     return render();
   }
+  if(e.target.id==='an-peran'){
+    syncSpecialAccountRole();
+    return;
+  }
+
+  if(e.target.id==='an-org'){
+    if($('#an-peran')?.value==='pembimbing'){
+      syncSpecialAccountRole();
+      return;
+    }
+  }
+
   if(['an-org','an-jabatan','p-org','p-jabatan'].includes(e.target.id)){
     const prefix=e.target.id.startsWith('p-')?'p':'an';
+    if(prefix==='an' && ['pembimbing','wakil_rektor','staf_keuangan'].includes($('#an-peran')?.value)){
+      syncSpecialAccountRole();
+      return;
+    }
     const orgEl=$('#'+prefix+'-org');
     const jabEl=$('#'+prefix+'-jabatan');
     const unitEl=$('#'+prefix+'-unit');
