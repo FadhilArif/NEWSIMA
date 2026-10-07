@@ -2,12 +2,19 @@
 const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
 const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
 const SECURE_LOGIN_FUNCTION = 'secure-login';
+
+// Versioned storage key isolates the current SIMA auth state from sessions
+// created by older builds. This is important when the same browser is used
+// to switch between many accounts.
+const AUTH_STORAGE_KEY = 'sima.auth.v2';
+
 const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
   ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: false
+        detectSessionInUrl: false,
+        storageKey: AUTH_STORAGE_KEY
       }
     })
   : null;
@@ -1580,9 +1587,10 @@ async function hydrateUser(authUser) {
 
 async function logout() {
   if (sb) {
-    const { error } = await sb.auth.signOut();
+    const { error } = await sb.auth.signOut({ scope:'local' });
     if (error) return toast('Gagal keluar: ' + error.message);
   }
+  clearLegacyAuthStorage();
   resetClientState();
   $('#app').hidden = true;
   $('#login').hidden = false;
@@ -1654,6 +1662,25 @@ function previewAvatar(file) {
   reader.readAsDataURL(file);
 }
 
+function clearLegacyAuthStorage() {
+  try {
+    const currentKey=AUTH_STORAGE_KEY;
+    const removable=[];
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);
+      if(!key)continue;
+      // Previous SIMA builds used Supabase's default project-scoped auth key.
+      // Do not touch the current versioned key.
+      if(key!==currentKey && (key.startsWith('sb-') || key.includes('sima.auth'))) {
+        removable.push(key);
+      }
+    }
+    removable.forEach(key=>localStorage.removeItem(key));
+  } catch (error) {
+    console.warn('Legacy auth storage cleanup skipped:',error);
+  }
+}
+
 async function initAuth() {
   if (!sb) {
     $('#login').hidden = false;
@@ -1664,6 +1691,7 @@ async function initAuth() {
   }
 
   try {
+    clearLegacyAuthStorage();
     const { data, error } = await sb.auth.getSession();
 
     if (error) {
@@ -3209,8 +3237,9 @@ document.addEventListener('submit', async e => {
     try{
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
 
-      // Fully detach the previous browser session before creating a new one.
+      // Fully detach every locally persisted SIMA session before creating a new one.
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+      clearLegacyAuthStorage();
 
       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
       const payload=await response.json().catch(()=>({}));
