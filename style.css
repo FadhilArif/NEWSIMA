@@ -115,3 +115,71 @@ body{min-height:100vh}
 .proker-table{overflow-x:auto;max-width:100%}
 .proker-table table{min-width:820px}
 .workflow-steps{min-width:0}
+
+/* Robust responsive layout: never let grid columns squeeze the application to a tiny sliver. */
+html,body{width:100%;min-width:0;overflow-x:hidden}
+#app{width:100%;min-width:0}
+#app>main{width:100%;min-width:0;max-width:none}
+#app>aside{min-width:0}
+.card,.g3,.row2,.f2,.peserta,.top,.ctx{min-width:0}
+.g3,.row2,.f2{grid-template-columns:minmax(0,1fr)}
+.g3{grid-auto-columns:minmax(0,1fr)}
+.f2>* .peserta>*{min-width:0}
+input,select,textarea,button{max-width:100%;box-sizing:border-box}
+.tabs{min-width:0}
+.tabs button{max-width:100%}
+.overflow-x-auto{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+@media (min-width:1025px){
+  #app{display:grid;grid-template-columns:minmax(220px,240px) minmax(0,1fr)}
+  #app>aside{display:flex}
+  #app>main{padding:20px 28px 96px}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .row2{grid-template-columns:minmax(0,2fr) minmax(280px,1fr)}
+  .f2{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (max-width:1024px){
+  #app{display:block!important}
+  #app>aside{display:none!important}
+  #app>main{width:100%;padding:16px 16px 88px;overflow-x:hidden}
+  .top{flex-wrap:wrap}
+  .ctx{flex:1 1 auto;max-width:calc(100% - 96px);min-width:0}
+  .ctx select{min-width:0;max-width:100%}
+  .g3,.row2,.f2{grid-template-columns:1fr!important}
+  .g3{gap:10px}
+  .row2{gap:10px}
+  .f2{gap:10px}
+  .peserta{grid-template-columns:minmax(0,1fr) 130px 36px}
+  .proker-table table{min-width:760px}
+  .workflow-steps{overflow-x:auto;display:flex!important;flex-wrap:nowrap}
+  .workflow-steps>div{flex:0 0 150px}
+}
+
+@media (max-width:600px){
+  #app>main{padding:12px 10px 84px}
+  .top{gap:8px;margin-bottom:12px}
+  .ctx{order:2;flex:1 0 100%;max-width:100%;min-width:0}
+  .sp{display:none}
+  .g3,.row2,.f2{grid-template-columns:1fr!important}
+  .card{padding:13px;border-radius:13px}
+  .k{padding:12px}
+  .tabs{overflow-x:auto;flex-wrap:nowrap;margin:8px -2px 10px;padding:2px 2px 6px}
+  .tabs button{flex:0 0 auto;white-space:nowrap}
+  .bar2{width:100%}
+  .bar2 input{width:100%}
+  .peserta{grid-template-columns:1fr;gap:7px}
+  .peserta .btn{width:100%}
+  .proker-table table{min-width:700px}
+  table{min-width:680px}
+}
+
+@media (max-width:380px){
+  #app>main{padding:10px 8px 82px}
+  .card{padding:11px}
+  .k{padding:10px}
+  .btn{padding:9px 12px}
+  input,select,textarea{padding:9px 10px}
+  .workflow-steps>div{flex-basis:135px}
+  .bn button{font-size:10px}
+}
