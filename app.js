@@ -1419,6 +1419,97 @@ function renderNotificationPanel() {
     ).join('') + '</div>' : '<div class="p-8 text-center text-sm text-slate-500">Belum ada notifikasi.</div>');
 }
 
+function openDeleteProkerModal(proker) {
+  return new Promise(resolve=>{
+    const existing=$('#deleteProkerModal');
+    if(existing)existing.remove();
+
+    const modal=document.createElement('div');
+    modal.id='deleteProkerModal';
+    modal.className='fixed inset-0 z-[120] bg-slate-950/70 p-4 sm:p-6 flex items-center justify-center';
+    modal.innerHTML=
+      '<div class="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden">'+
+        '<div class="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-4">'+
+          '<div>'+
+            '<p class="text-xs font-semibold uppercase tracking-wide text-red-600">Penghapusan permanen</p>'+
+            '<h2 class="text-xl font-bold mt-1 text-slate-900">Hapus Proker?</h2>'+
+          '</div>'+
+          '<button type="button" data-delete-close class="h-9 w-9 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 text-xl" aria-label="Tutup">×</button>'+
+        '</div>'+
+        '<div class="p-5 space-y-4">'+
+          '<div class="rounded-2xl border border-red-200 bg-red-50 p-4">'+
+            '<p class="font-semibold text-red-800">'+esc(proker?.nama||'Proker')+'</p>'+
+            '<p class="text-sm text-red-700 mt-1">Tindakan ini akan menghapus Proker beserta dokumen, riwayat persetujuan, rincian anggaran, relasi kolaborator, dokumentasi, dan data terkait.</p>'+
+            '<p class="text-sm font-semibold text-red-800 mt-2">Penghapusan bersifat permanen dan tidak dapat dibatalkan.</p>'+
+          '</div>'+
+          '<div>'+
+            '<label class="font-semibold">Ketik <span class="text-red-600">HAPUS</span> untuk melanjutkan</label>'+
+            '<input id="delete-proker-confirm-input" autocomplete="off" spellcheck="false" class="mt-2 uppercase" placeholder="Ketik HAPUS">'+
+            '<p id="delete-proker-confirm-help" class="text-xs text-slate-500 mt-2">Tombol hapus akan aktif setelah Anda mengetik HAPUS dengan tepat.</p>'+
+          '</div>'+
+        '</div>'+
+        '<div class="px-5 py-4 border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">'+
+          '<button type="button" data-delete-cancel class="btn">Batal</button>'+
+          '<button type="button" data-delete-confirm class="btn d" disabled>Hapus permanen</button>'+
+        '</div>'+
+      '</div>';
+
+    const cleanup=value=>{
+      modal.remove();
+      resolve(!!value);
+    };
+
+    const input=modal.querySelector('#delete-proker-confirm-input');
+    const confirmBtn=modal.querySelector('[data-delete-confirm]');
+
+    const updateState=()=>{
+      const ok=String(input?.value||'').trim().toUpperCase()==='HAPUS';
+      if(confirmBtn)confirmBtn.disabled=!ok;
+      const help=modal.querySelector('#delete-proker-confirm-help');
+      if(help){
+        help.textContent=ok
+          ? 'Konfirmasi valid. Penghapusan akan dilakukan permanen.'
+          : 'Tombol hapus akan aktif setelah Anda mengetik HAPUS dengan tepat.';
+        help.className=ok
+          ? 'text-xs text-red-600 mt-2 font-semibold'
+          : 'text-xs text-slate-500 mt-2';
+      }
+    };
+
+    modal.addEventListener('input',e=>{
+      if(e.target===input)updateState();
+    });
+
+    modal.addEventListener('click',e=>{
+      if(e.target===modal || e.target.closest('[data-delete-close]') || e.target.closest('[data-delete-cancel]')){
+        cleanup(false);
+        return;
+      }
+      if(e.target.closest('[data-delete-confirm]')){
+        updateState();
+        if(!confirmBtn.disabled)cleanup(true);
+      }
+    });
+
+    modal.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){
+        e.preventDefault();
+        cleanup(false);
+      }
+      if(e.key==='Enter' && document.activeElement===input){
+        updateState();
+        if(!confirmBtn.disabled){
+          e.preventDefault();
+          cleanup(true);
+        }
+      }
+    });
+
+    document.body.append(modal);
+    requestAnimationFrame(()=>input?.focus());
+  });
+}
+
 function closeActivityGallery() {
   const modal=$('#activityGalleryModal');
   if(modal)modal.remove();
@@ -2850,22 +2941,9 @@ document.addEventListener('click', async e => {
       return toast('Proker pada tahap ini tidak dapat dihapus.');
     }
 
-    const firstConfirm=window.confirm(
-      'PERINGATAN PENGHAPUSAN PERMANEN\\n\\n'+
-      'Proker: "'+(p.nama||'ini')+'"\\n'+
-      'Status: '+(ST[p.status]?.[0]||p.status)+'\\n\\n'+
-      'Penghapusan akan menghilangkan Proker beserta dokumen, riwayat persetujuan, rincian anggaran, relasi kolaborator, dan data terkait.\\n\\n'+
-      'Tindakan ini tidak dapat dibatalkan.\\n\\n'+
-      'Lanjutkan?'
-    );
-    if(!firstConfirm)return;
+    const confirmed=await openDeleteProkerModal(p);
+    if(!confirmed)return;
 
-    const secondConfirm=window.confirm(
-      'KONFIRMASI TERAKHIR\\n\\n'+
-      'Anda benar-benar ingin menghapus "'+(p.nama||'ini')+'" secara permanen?\\n\\n'+
-      'Klik OK hanya jika Anda yakin.'
-    );
-    if(!secondConfirm)return;
     const {data,error}=await sb.rpc('delete_proker_draft',{p_proker_id:id});
     if(error)return toast('Proker tidak dapat dihapus: '+(error.message||'Terjadi kesalahan.'));
     const paths=(data||[]).map(x=>x.file_path).filter(Boolean);
