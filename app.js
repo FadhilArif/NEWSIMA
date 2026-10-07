@@ -1350,7 +1350,10 @@ const V = {
     const org=(S.organizations||[]).find(o=>String(o.id)===String(edit?.organisasi_id));
     const title=isEdit?'Edit program kerja':'Form proposal program kerja';
     const desc=isEdit?'Perbarui data proker yang masih direncanakan atau sedang dalam revisi.':'Lengkapi data kegiatan sebelum menjadi draft.';
-    const funding=Array.isArray(S.sources)&&S.sources.length?S.sources:[{kode:'KAMPUS',nama:'Kampus',wajib_rincian:false,hitung_plafon:true},{kode:'PRODI',nama:'Prodi',wajib_rincian:false,hitung_plafon:false},{kode:'PRIBADI',nama:'Pribadi',wajib_rincian:false,hitung_plafon:false},{kode:'TANPA_DANA',nama:'Tanpa dana',wajib_rincian:false,hitung_plafon:false},{kode:'LAIN_LAIN',nama:'Lain-lain',wajib_rincian:true,hitung_plafon:false}];
+    const allowedFunding=new Set(['KAMPUS','PRODI','PRIBADI','TANPA_DANA','LAIN_LAIN']);
+    const funding=(S.sources||[]).filter(x=>allowedFunding.has(x.kode)).length
+      ? (S.sources||[]).filter(x=>allowedFunding.has(x.kode))
+      : [{kode:'KAMPUS',nama:'Kampus',wajib_rincian:false,hitung_plafon:true},{kode:'PRODI',nama:'Prodi',wajib_rincian:false,hitung_plafon:false},{kode:'PRIBADI',nama:'Pribadi',wajib_rincian:false,hitung_plafon:false},{kode:'TANPA_DANA',nama:'Tanpa dana',wajib_rincian:false,hitung_plafon:false},{kode:'LAIN_LAIN',nama:'Lain-lain',wajib_rincian:true,hitung_plafon:false}];
     const currentFunding=edit?.sumber_dana_kode||'KAMPUS';
     const totalBudget=formatMoney(edit?.anggaran_total??edit?.anggaran_diajukan??0);
     const detailClass=currentFunding==='LAIN_LAIN'?'':'hidden';
