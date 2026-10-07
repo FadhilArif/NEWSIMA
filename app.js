@@ -1925,6 +1925,10 @@ const V = {
       ['lpj_disetujui','Selesai administrasi']
     ];
     const currentIndex=Math.max(steps.findIndex(x=>x[0]===p.status),0);
+    const collaboratorBanner=readOnlyCollaborator
+      ? '<div class="card mb-4 border border-blue-200 bg-blue-50"><p class="text-sm text-blue-800"><b>Mode lihat saja.</b> Anda merupakan kolaborator yang sudah bergabung. Anda dapat melihat perkembangan Proker, dokumen, riwayat persetujuan, dan dokumentasi kegiatan, tetapi tidak dapat melakukan perubahan atau tindakan workflow.</p></div>'
+      : '';
+
     return pageHeader(
       p.nama,
       S.user.peran==='wakil_rektor'
@@ -1935,7 +1939,7 @@ const V = {
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
-      '<div class="card mb-4 workflow-steps"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
+      collaboratorBanner+      '<div class="card mb-4 workflow-steps"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
         ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
