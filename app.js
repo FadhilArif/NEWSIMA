@@ -2299,9 +2299,11 @@ document.addEventListener('click', async e => {
     }
 
     activityPhotoUpload.disabled=true;
+    const bucket=sb.storage.from('activity-photos');
+    const uploadedPaths=[];
+    const insertedIds=[];
     try{
       const lpjDoc=S.detail?.docs?.find(x=>x.jenis==='laporan_akhir')||null;
-      const bucket=sb.storage.from('activity-photos');
 
       for(const file of files){
         const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
@@ -2309,6 +2311,7 @@ document.addEventListener('click', async e => {
 
         const up=await bucket.upload(path,file,{upsert:false,contentType:file.type});
         if(up.error)throw new Error('Upload '+file.name+' gagal: '+up.error.message);
+        uploadedPaths.push(path);
 
         const dbResult=await sb.from('foto_kegiatan').insert({
           proker_id:prokerId,
@@ -2325,9 +2328,9 @@ document.addEventListener('click', async e => {
         }).select('id').single();
 
         if(dbResult.error){
-          await bucket.remove([path]);
           throw new Error('Metadata '+file.name+' gagal disimpan: '+dbResult.error.message);
         }
+        if(dbResult.data?.id)insertedIds.push(dbResult.data.id);
       }
 
       await loadProkerDetail();
@@ -2336,7 +2339,13 @@ document.addEventListener('click', async e => {
       return render({force:true});
     }catch(error){
       console.error('Activity photo upload failed:',error);
-      return toast(error?.message||'Upload foto kegiatan gagal.');
+      if(insertedIds.length){
+        await sb.from('foto_kegiatan').delete().in('id',insertedIds);
+      }
+      if(uploadedPaths.length){
+        await bucket.remove(uploadedPaths);
+      }
+      return toast(error?.message||'Upload foto kegiatan gagal. Tidak ada foto dari batch ini yang disimpan.');
     }finally{
       activityPhotoUpload.disabled=false;
     }
