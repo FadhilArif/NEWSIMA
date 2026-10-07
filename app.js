@@ -705,11 +705,12 @@ async function loadAccounts() {
   const om=Object.fromEntries((oRes.data||[]).map(x=>[x.id,x]));
   const um=Object.fromEntries((uRes.data||[]).map(x=>[x.id,x]));
   const mm={};
+  const profileUnits=Object.fromEntries((uRes.data||[]).map(x=>[x.id,x]));
   (mRes.data||[]).forEach(m=>{
     if(!mm[m.akun_id])mm[m.akun_id]=[];
     mm[m.akun_id].push({...m,jabatanInfo:m.jabatan_id?jm[m.jabatan_id]:null,organisasiInfo:m.organisasi_id?om[m.organisasi_id]:null,unitInfo:m.unit_id?um[m.unit_id]:null});
   });
-  S.accounts=(data||[]).map(a=>({...a,memberships:mm[a.id]||[]}));
+  S.accounts=(data||[]).map(a=>({...a,memberships:mm[a.id]||[],unitInfo:a.unit_kerja_id?profileUnits[a.unit_kerja_id]:null}));
 }
 
 async function loadSources() {
@@ -1436,7 +1437,7 @@ const V = {
           (x.aktif?'<button class="btn" data-account-action="deactivate" data-account-id="'+esc(x.id)+'">Nonaktifkan</button>':'<button class="btn" data-account-action="activate" data-account-id="'+esc(x.id)+'">Aktifkan</button>')+
           '<button class="btn" data-account-action="delete" data-account-id="'+esc(x.id)+'">Hapus akun</button>'+
           '</div>';
-        return '<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):'Belum ditetapkan')+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td><td>'+actionButtons+'</td></tr>';
+        return '<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):(x.unitInfo?'<div class="mb-2"><b>Unit kerja:</b> '+esc(x.unitInfo.nama)+'</div>':'Belum ditetapkan'))+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td><td>'+actionButtons+'</td></tr>';
       }).join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Disimpan hanya di memori halaman.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
