@@ -2026,7 +2026,17 @@ document.addEventListener('submit', async e => {
     const input={nama:$('#an-nama').value.trim(),email:$('#an-email').value.trim().toLowerCase(),nim:$('#an-nim').value.trim(),peran:$('#an-peran').value,organisasi_id:$('#an-org').value||null,jabatan_kode:$('#an-jabatan').value||null,unit_id:$('#an-unit').value||null};
     try{
       const {data,error}=await sb.functions.invoke('admin-create-user',{body:input});
-      if(error||!data?.ok)return toast(data?.error||error?.message||'Gagal membuat akun.');
+      if(error){
+        let detail='';
+        try{
+          if(error.context && typeof error.context.json==='function'){
+            const body=await error.context.json();
+            detail=body?.detail||body?.error||'';
+          }
+        }catch(_){}
+        return toast(detail||error.message||'Gagal membuat akun.');
+      }
+      if(!data?.ok)return toast(data?.error||'Gagal membuat akun.');
       S.revealedCredential={id:data.id,nama:input.nama,email:input.email,password:data.temporary_password};
       toast('Akun dibuat. Password sementara ditampilkan di panel akun.');
       e.target.reset();return render();
