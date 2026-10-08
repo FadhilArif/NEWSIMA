@@ -3920,28 +3920,20 @@ document.addEventListener('submit', async e => {
        S.intentionalSignOut=false;
        clearLegacyAuthStorage();
 
-       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
-      const payload=await response.json().catch(()=>({}));
-      if(response.status===429){
-        const retry=Number(payload.retry_after||response.headers.get('Retry-After')||900);
-        return $('#le').textContent='Terlalu banyak percobaan. Coba lagi dalam '+Math.max(1,Math.ceil(retry/60))+' menit.';
-      }
-      if(!response.ok){
-        $('#le').textContent=payload.error==='RATE_LIMIT_UNAVAILABLE'?'Sistem keamanan login sedang tidak tersedia. Coba lagi nanti.':'Email atau kata sandi salah.';
-        return;
-      }
-      if(!payload.session?.access_token||!payload.session?.refresh_token)return $('#le').textContent='Sesi login tidak valid.';
-      const {data,error}=await sb.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});
-      if(!error&&data.session)S.lastKnownSession=data.session;
-      if(error||!data.session?.user){
-        await sb.auth.signOut({ scope:'local' }).catch(()=>{});
-        return $('#le').textContent='Gagal membuat sesi akun.';
-      }
-
-      $('#le').textContent='';
-      $('#pw').value='';
-      await hydrateUser(data.session.user);
-    }catch(error){console.error(error);$('#le').textContent='Login tidak dapat diproses. Periksa secure-login Edge Function.';}
+       // Authenticate directly through Supabase Auth.
+       // The browser talks to the first-party Auth API instead of a custom
+       // Edge Function, removing the shared login CORS failure point.
+       const {data,error}=await sb.auth.signInWithPassword({email,password});
+       if(error||!data?.session?.user){
+         console.error('Supabase Auth login failed:',error);
+         $('#le').textContent='Email atau kata sandi salah.';
+         return;
+       }
+       S.lastKnownSession=data.session;
+       $('#le').textContent='';
+       $('#pw').value='';
+       await hydrateUser(data.session.user);
+    }catch(error){console.error('Login error:',error);$('#le').textContent='Login tidak dapat diproses. Periksa koneksi ke Supabase.';}
     finally{if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Masuk';}}
     return;
   }
