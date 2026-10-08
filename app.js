@@ -2099,7 +2099,11 @@ const V = {
         actions=proposal?.file_path ? action('resubmit','Ajukan ulang ke Pembimbing') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else if(p.review_stage==='bem_from_wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.user.peran!=='wakil_rektor'){
         actions=proposal?.file_path
-          ? '<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari Wakil Rektor. BEM dapat mengirim kembali ke Wakil Rektor atau mengembalikan ke HMJ untuk perbaikan.</p><div class="flex flex-wrap gap-2 mt-3">'+action('resubmit','Kirim kembali ke Wakil Rektor')+action('revise','Kembalikan ke HMJ','d')+'</div></div>'
+          ? '<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari Wakil Rektor. BEM dapat mengirim kembali ke Wakil Rektor atau mengembalikan ke HMJ untuk perbaikan.</p>'+
+            '<label class="mt-3">Komentar revisi <span class="text-red-600">*</span></label>'+
+            '<textarea id="workflow-comment" rows="3" placeholder="Jelaskan bagian yang perlu diperbaiki sebelum dikembalikan ke HMJ."></textarea>'+
+            '<p class="text-xs text-slate-500 mt-1">Komentar wajib diisi jika memilih "Kembalikan ke HMJ".</p>'+
+            '<div class="flex flex-wrap gap-2 mt-3">'+action('resubmit','Kirim kembali ke Wakil Rektor')+action('revise','Kembalikan ke HMJ','d')+'</div></div>'
           : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else if(p.organisasi?.tipe==='BEM' && p.review_stage==='bem_from_wakil_rektor'){
         actions=proposal?.file_path ? action('resubmit','Ajukan kembali ke Wakil Rektor') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
@@ -2171,10 +2175,6 @@ const V = {
         (actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
         (((S.user.peran!=='wakil_rektor')&&(canEdit||S.user.peran==='admin')&&['draft','direncanakan','revisi'].includes(p.status))?
           '<div class="mt-4 pt-4 border-t border-slate-200">'+
-            '<div class="rounded-xl border border-red-200 bg-red-50 p-3 mb-3">'+
-              '<p class="text-sm font-semibold text-red-800">Peringatan penghapusan</p>'+
-              '<p class="text-xs text-red-700 mt-1">Hapus Proker akan menghapus data kegiatan beserta dokumen, riwayat persetujuan, rincian anggaran, relasi kolaborator, dan data terkait. Tindakan ini permanen dan tidak dapat dibatalkan.</p>'+
-            '</div>'+
             '<button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker secara permanen</button>'+
           '</div>':'')+
       '</div></div>'+
@@ -3155,6 +3155,11 @@ document.addEventListener('click', async e => {
     const prokerId=workflow.dataset.prokerId||S.selectedProkerId;
     if(!prokerId)return toast('Proker tidak ditemukan.');
     const comment=$('#workflow-comment')?.value?.trim()||null;
+    if(['revise','reject_lpj'].includes(action) && !comment){
+      const commentEl=$('#workflow-comment');
+      commentEl?.focus();
+      return toast('Komentar wajib diisi untuk tindakan revisi.');
+    }
     const approvedBudgetEl=$('#approved-budget');
     const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
     let data,error;
