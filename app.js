@@ -337,6 +337,10 @@ function reviewStageLabel(stage) {
     hmj_from_bem:'HMJ · tindak lanjut revisi BEM',
     hmj_from_pembimbing:'HMJ · tindak lanjut Pembimbing',
     hmj_from_pembimbing_approved:'HMJ · siap diteruskan ke BEM',
+    ukm_koordinator:'Koordinator UKM · review proposal',
+    ukm_presiden_bem:'Presiden BEM · review proposal',
+    ukm_koordinator_lpj:'Koordinator UKM · review LPJ',
+    ukm_presiden_bem_lpj:'Presiden BEM · review LPJ',
     pembimbing_hmj_lpj:'Pembimbing HMJ · review LPJ',
     hmj_from_pembimbing_lpj:'HMJ · LPJ siap diteruskan ke BEM',
     hmj_from_pembimbing_lpj_revision:'HMJ · LPJ perlu revisi',
@@ -346,6 +350,41 @@ function reviewStageLabel(stage) {
     hmj_from_wakil_rektor_lpj:'HMJ · tindak lanjut revisi LPJ Wakil Rektor',
     bem_from_wakil_rektor:'BEM · tindak lanjut Wakil Rektor'
   })[stage] || '';
+}
+
+function isUkmProker(p){
+  return p?.organisasi?.tipe==='UKM';
+}
+function isUkmCoordinatorReviewer(p){
+  if(!isUkmProker(p) || !['ukm_koordinator','ukm_koordinator_lpj'].includes(p?.review_stage)) return false;
+  return (S.coordinatorAssignments||[]).some(x=>String(x.organisasi_id)===String(p.organisasi_id) && String(x.akun_id)===String(S.user.id) && x.status==='aktif');
+}
+function isUkmPresidentReviewer(p){
+  if(!isUkmProker(p) || !['ukm_presiden_bem','ukm_presiden_bem_lpj'].includes(p?.review_stage)) return false;
+  const parentId=p.organisasi?.induk_organisasi_id;
+  if(!parentId) return false;
+  return (S.memberships||[]).some(m=>{
+    if(String(m.organisasi_id)!==String(parentId) || m.status!=='aktif' || !m.jabatan_id) return false;
+    const pos=(S.positions||[]).find(x=>String(x.id)===String(m.jabatan_id));
+    return pos?.kode==='presiden' && String(m.akun_id)===String(S.user.id);
+  });
+}
+function isUkmStageReviewer(p){
+  return isUkmCoordinatorReviewer(p) || isUkmPresidentReviewer(p) ||
+    (S.user.peran==='wakil_rektor' && ['wakil_rektor','wakil_rektor_lpj'].includes(p?.review_stage));
+}
+async function transitionWorkflow(p, action, comment=null, approvedBudget=null){
+  if(!sb) throw new Error('Supabase belum tersedia.');
+  const org=(S.organizations||[]).find(o=>String(o.id)===String(p?.organisasi_id||S.detail?.proker?.organisasi_id||S.orgId||''));
+  const ukm=org?.tipe==='UKM';
+  const actionsUkm=['submit','resubmit','approve','revise','start','finish','submit_lpj','approve_lpj','reject_lpj'];
+  const rpcName=ukm && actionsUkm.includes(action) ? 'transition_ukm_proker' : 'transition_proker';
+  return sb.rpc(rpcName,{
+    p_proker_id:p.id,
+    p_action:action,
+    p_comment:comment,
+    ...(rpcName==='transition_ukm_proker'||approvedBudget!==null ? {p_anggaran_disetujui:approvedBudget}: {})
+  });
 }
 
 const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Perlu revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Sedang berjalan','ok'], selesai:['Kegiatan selesai','bl'], lpj_diajukan:['LPJ menunggu review','wa'], lpj_disetujui:['LPJ disetujui','ok'], tidak_terlaksana:['Tidak terlaksana','er'], arsip:['Diarsipkan',''], digabung:['Digabung',''] };
@@ -538,6 +577,7 @@ async function loadContexts() {
 async function loadProker(_retry=false) {
   if (!sb) return;
   const requestContextSeq=S.contextSwitchSeq;
+  await loadCoordinatorAssignments().catch(()=>{});
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
@@ -599,15 +639,38 @@ async function loadProker(_retry=false) {
     }
   }
 
+  let ukmReviewQuery=Promise.resolve({data:[],error:null});
+  const coordUkmIds=(S.coordinatorAssignments||[])
+    .filter(x=>x.status==='aktif' && String(x.akun_id)===String(S.user.id))
+    .map(x=>x.organisasi_id);
+  const presidentUkmIds=(S.organizations||[])
+    .filter(o=>o.tipe==='UKM' && String(o.induk_organisasi_id||'')===String(S.orgId||''))
+    .filter(()=> (S.memberships||[]).some(m=>{
+      if(String(m.organisasi_id)!==String(S.orgId||'') || m.status!=='aktif' || !m.jabatan_id) return false;
+      const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
+      return pos?.kode==='presiden' && String(m.akun_id)===String(S.user.id);
+    }))
+    .map(o=>o.id);
+  const reviewerUkmIds=[...new Set([...coordUkmIds,...presidentUkmIds])];
+  if(!isWakil && reviewerUkmIds.length){
+    ukmReviewQuery=sb.from('proker')
+      .select(selectFields)
+      .in('organisasi_id',reviewerUkmIds)
+      .in('review_stage',['ukm_koordinator','ukm_presiden_bem','ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor','wakil_rektor_lpj'])
+      .order('tanggal_mulai',{ascending:true});
+  }
+
   const [
     {data:ownRows,error:ownError},
     {data:collabProkers,error:collabProkerError},
-    {data:bemHmjRows,error:bemHmjError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery]);
+    {data:bemHmjRows,error:bemHmjError},
+    {data:ukmReviewRows,error:ukmReviewError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,ukmReviewQuery]);
 
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
+  if(ukmReviewError)console.warn('Gagal memuat proker UKM yang menunggu review:',ukmReviewError.message);
 
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
@@ -2332,7 +2395,8 @@ const V = {
         S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review');
     };
     const isStageReviewerFor=(p)=>{
-      return isBemReviewerFor(p) ||
+      return isUkmStageReviewer(p) ||
+        isBemReviewerFor(p) ||
         (S.user.peran==='pembimbing' && ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review')) ||
         (S.user.peran==='wakil_rektor' && ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage));
     };
@@ -3781,12 +3845,8 @@ document.addEventListener('click', async e => {
     const approvedBudgetEl=$('#approved-budget');
     const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
     let data,error;
-    const rpc=await sb.rpc('transition_proker',{
-      p_proker_id:prokerId,
-      p_action:action,
-      p_comment:comment,
-      p_anggaran_disetujui:approvedBudget
-    });
+    const targetProker=S.detail?.proker||S.proker.find(x=>String(x.id)===String(prokerId))||{id:prokerId};
+    const rpc=await transitionWorkflow(targetProker,action,comment,approvedBudget);
     data=rpc.data;
     error=rpc.error;
     if(error)return toast('Tindakan gagal: '+(error.message||error.details||error.hint||'Tidak dapat memproses alur proker.'));
@@ -3816,7 +3876,8 @@ document.addEventListener('click', async e => {
     const k=($('#kk')?.value||'').trim()||null;
     const prokerId=S.selectedProkerId;
     if(!prokerId)return toast('Proker tidak ditemukan.');
-    const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:k});
+    const targetProker=S.detail?.proker||S.proker.find(x=>String(x.id)===String(prokerId))||{id:prokerId};
+    const {data,error}=await transitionWorkflow(targetProker,action,k,null);
     if(error)return toast('Review gagal: '+(error.message||'Tidak dapat memproses review.'));
     toast('Review tersimpan.');
     clearViewCache();return render();
