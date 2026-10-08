@@ -918,3 +918,34 @@ body.mobile-menu-open{overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .mobile-more-overlay,.mobile-more-sheet{transition:none}
 }
+
+@media(max-width:600px){
+  #profileMenu{
+    position:fixed!important;
+    top:68px!important;
+    left:12px!important;
+    right:12px!important;
+    width:auto!important;
+    margin:0!important;
+    max-height:calc(100vh - 84px);
+    overflow:auto!important;
+  }
+  #notifPanel{
+    position:fixed!important;
+    top:68px!important;
+    left:12px!important;
+    right:12px!important;
+    width:auto!important;
+    margin:0!important;
+    max-height:calc(100vh - 84px);
+  }
+  [data-koordinator-form]{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:8px!important;
+    width:100%;
+  }
+  [data-koordinator-form] .btn{
+    width:100%;
+  }
+}
