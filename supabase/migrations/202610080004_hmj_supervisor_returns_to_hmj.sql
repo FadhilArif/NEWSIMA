@@ -599,5 +599,7 @@ end;
 $function$
 
 
+;
+
 revoke all on function public.transition_proker(uuid,text,text,bigint) from public,anon;
 grant execute on function public.transition_proker(uuid,text,text,bigint) to authenticated;
