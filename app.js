@@ -711,14 +711,25 @@ async function loadProkerDetail() {
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
-  const docIdsResult = await sb.from('dokumen').select('id').eq('proker_id',S.selectedProkerId);
-  const docIds = (docIdsResult.data || []).map(x => x.id);
+  const docsResult = S.user.peran==='wakil_rektor'
+    ? await sb.rpc('get_wakil_rektor_review_documents',{p_proker_id:S.selectedProkerId})
+    : await sb.from('dokumen')
+        .select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at')
+        .eq('proker_id',S.selectedProkerId)
+        .order('jenis');
 
-  const [orgRes, docs, kolab, decisions, photoRows] = await Promise.all([
+  if(docsResult.error){
+    S.detail=null;
+    return toast('Gagal memuat dokumen proker: '+docsResult.error.message);
+  }
+
+  const docsRows=Array.isArray(docsResult.data)?docsResult.data:[];
+  const docIds=docsRows.map(x=>x.id);
+
+  const [orgRes, kolab, decisions, photoRows] = await Promise.all([
     proker.organisasi_id
       ? sb.from('organisasi').select('id,nama,tipe,periode_id,induk_organisasi_id').eq('id',proker.organisasi_id).maybeSingle()
       : Promise.resolve({data:null}),
-    sb.from('dokumen').select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at').eq('proker_id',S.selectedProkerId).order('jenis'),
     sb.from('proker_kolaborator').select('proker_id,organisasi_id,status,porsi_plafon,komentar').eq('proker_id',S.selectedProkerId),
     docIds.length
       ? sb.from('persetujuan').select('id,dokumen_id,versi_id,tahap,keputusan,komentar,oleh,sebagai,waktu').in('dokumen_id',docIds).order('waktu',{ascending:false})
@@ -751,7 +762,7 @@ async function loadProkerDetail() {
 
   S.detail = {
     proker:{...proker,organisasi:orgRes.data || null},
-    docs:docs.data || [],
+    docs:docsRows,
     kolaborator:kolab.data || [],
     keputusan:decisions.data || [],
     photos:photoWithUrls,
@@ -809,13 +820,18 @@ async function loadInbox() {
     if(hmjRes.error)return toast('Gagal memuat inbox HMJ: '+hmjRes.error.message);
     rows=[...(ownRes.data||[]),...(hmjRes.data||[])];
   }else if(S.user.peran==='wakil_rektor'){
-    // Wakil Rektor is campus-wide: include proposal and LPJ stages routed to WR.
-    const {data,error}=await sb.from('dokumen')
-      .select('id,organisasi_id,proker_id,jenis,status,tahap')
-      .in('tahap',['wakil_rektor','wakil_rektor_lpj'])
-      .order('id',{ascending:false});
+    // Use the reviewer RPC so RLS on the legacy dokumen table cannot hide
+    // an active proposal/LPJ from the campus-wide reviewer.
+    const {data,error}=await sb.rpc('get_wakil_rektor_review_documents',{p_proker_id:null});
     if(error)return toast('Gagal memuat inbox Wakil Rektor: '+error.message);
-    rows=data||[];
+    rows=(data||[]).map(x=>({
+      id:x.id,
+      organisasi_id:x.organisasi_id,
+      proker_id:x.proker_id,
+      jenis:x.jenis,
+      status:x.status,
+      tahap:x.tahap
+    }));
   }else if(S.orgId){
     const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false});
     if(error)return toast('Gagal memuat inbox: '+error.message);
