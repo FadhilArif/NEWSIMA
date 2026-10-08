@@ -506,10 +506,12 @@ async function loadProker() {
 
   let ownQuery;
   if(isPembimbing){
-    // Reviewer mode: only actionable HMJ submissions explicitly routed to this account.
+    // Pembimbing is a permanent read-only observer of the HMJ it supervises.
+    // Workflow actions are still exposed only when the current stage belongs
+    // to the Pembimbing.
     ownQuery=sb.from('proker')
       .select(selectFields)
-      .in('review_stage',['pembimbing_hmj','pembimbing_hmj_lpj'])
+      .eq('organisasi_id',S.orgId)
       .order('tanggal_mulai',{ascending:true});
   }else if(S.orgId && !isWakil){
     ownQuery=sb.from('proker')
