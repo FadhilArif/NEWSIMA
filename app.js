@@ -1423,12 +1423,26 @@ const chip = s => { const [t, c] = ST[s] || [s, '']; return `<span class="chip $
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const ICON = {
-  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m15 18-6-6 6-6"/><path d="M9 12h9"/></svg>',
-  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
-  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.2 3.3-5 7-5s6.1 1.8 7 5"/></svg>',
-  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-5"/></svg>',
-  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m14.5 6.5 3 3"/><path d="M4 20l4.3-.9L19 8.4a2.1 2.1 0 0 0 0-3l-.4-.4a2.1 2.1 0 0 0-3 0L4.9 15.7 4 20Z"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg>'
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/><path d="M9 12h9"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.2 3.3-5 7-5s6.1 1.8 7 5"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-5"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14.5 6.5 3 3"/><path d="M4 20l4.3-.9L19 8.4a2.1 2.1 0 0 0 0-3l-.4-.4a2.1 2.1 0 0 0-3 0L4.9 15.7 4 20Z"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>',
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
+  folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+  image:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 16-5-5-7 7"/></svg>',
+  file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.8M18 14c1.8.8 2.8 2.5 3 5"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V5l8-2v18M12 7h8v14M7 7h2M7 11h2M7 15h2M15 11h2M15 15h2M15 19h2"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h15a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13"/><path d="M16 13h5M17 13h.01"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .35 1.98l.05.05-1.7 1.7-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V20h-2.4v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05-1.7-1.7.05-.05A1.8 1.8 0 0 0 7.1 15a1.8 1.8 0 0 0-1.65-1.1H5.4v-2.4h.05A1.8 1.8 0 0 0 7.1 10a1.8 1.8 0 0 0-.35-1.98L6.7 7.97l1.7-1.7.05.05A1.8 1.8 0 0 0 10.43 6a1.8 1.8 0 0 0 1.1-1.65V4h2.4v.35A1.8 1.8 0 0 0 15 6a1.8 1.8 0 0 0 1.98-.35l.05-.05 1.7 1.7-.05.05A1.8 1.8 0 0 0 18.9 10a1.8 1.8 0 0 0 1.65 1.1h.05v2.4h-.05A1.8 1.8 0 0 0 19.4 15Z"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v5c0 5-3.2 8.5-8 10-4.8-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h17"/><path d="m7 15 4-5 3 3 5-7"/></svg>',
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>'
 };
 const icon = name => ICON[name] || '';
 
@@ -1684,15 +1698,23 @@ document.addEventListener('keydown',event=>{
 function renderProfileMenu() {
   const m = $('#profileMenu');
   if (!m) return;
+  const memberships=(S.memberships||[]).map(m=>{
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(m.organisasi_id));
+    return '<div class="profile-org-row"><span class="profile-org-dot"></span><span><b>'+esc(org?.nama||'Organisasi')+'</b><small>'+esc(m.jabatan||'Anggota')+'</small></span></div>';
+  }).join('');
   m.innerHTML =
-    '<div class="p-4 flex items-center gap-3 border-b border-slate-100">' +
-      avatarMarkup(S.user,'h-11 w-11') +
-      '<div class="min-w-0"><p class="font-bold text-sm truncate">' + esc(S.user.nama || 'Pengguna') + '</p>' +
-      '<p class="text-xs text-slate-500 truncate">' + esc(roleLabel(S.user.peran)) + ' · ' + esc(S.user.email || '') + '</p></div>' +
+    '<div class="profile-popover-head">' +
+      '<div class="profile-popover-avatar">' + avatarMarkup(S.user,'h-16 w-16') + '</div>' +
+      '<div class="min-w-0"><p class="profile-popover-name">' + esc(S.user.nama || 'Pengguna') + '</p>' +
+      '<p class="profile-popover-role">' + esc(roleLabel(S.user.peran)) + '</p>' +
+      '<p class="profile-popover-email">' + esc(S.user.email || '') + '</p></div>' +
     '</div>' +
-    '<div class="p-2">' +
-      '<button data-profile-action="profile" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-semibold">' + icon('user') + '<span>Profil & organisasi</span></button>' +
-      '<button data-profile-action="logout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 text-red-600 text-sm font-semibold">' + icon('logout') + '<span>Keluar dari akun</span></button>' +
+    '<div class="profile-popover-body">' +
+      '<div class="profile-popover-section"><span>ORGANISASI AKTIF</span>' + (memberships || '<p class="profile-empty">Belum ada organisasi.</p>') + '</div>' +
+      '<div class="profile-popover-actions">' +
+        '<button data-profile-action="profile" class="profile-action">' + icon('user') + '<span>Profil & organisasi</span></button>' +
+        '<button data-profile-action="logout" class="profile-action danger">' + icon('logout') + '<span>Keluar dari akun</span></button>' +
+      '</div>' +
     '</div>';
   m.querySelectorAll('svg').forEach(x => x.classList.add('w-5','h-5','shrink-0'));
 }
@@ -2116,11 +2138,12 @@ function renderShell() {
       const allowed = it.filter(([k]) => canAccessView(k));
       if (!allowed.length) return '';
       return '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
-        allowed.map(([k, t]) =>
-          '<button class="nav flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm transition ' +
-          (S.view === k ? 'bg-sima-50 text-sima-600 font-bold' : 'text-slate-600 hover:bg-slate-50') +
-          '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
-        ).join('');
+        allowed.map(([k, t]) => {
+          const navIcons={beranda:'home',proker:'folder',form:'plus',undangan:'mail',galeri:'image',laporan:'file',struktur:'building',inbox:'mail',rapat:'calendar',plafon:'wallet',cair:'wallet',anggota:'users',periode:'calendar',organisasi:'building',unit_kerja:'grid',akun:'users',jabatan:'settings',audit:'shield',koordinator:'users',profil:'user'};
+          return '<button class="nav" data-go="' + esc(k) + '">' +
+            '<span class="nav-ico">' + icon(navIcons[k]||'grid') + '</span><span class="nav-label">' + esc(t) + '</span>' +
+          '</button>';
+        }).join('');
     }).join('');
 
     const mobile = S.user.peran === 'admin'
@@ -2904,7 +2927,8 @@ async function render(options={}) {
   if(!root)return;
 
   const view=S.view;
-  const cacheable=!['form','review','plafon','akun','organisasi','unit_kerja','periode','jabatan','audit','profil','koordinator','cair'].includes(view);
+  // Reuse the last rendered screen immediately; refresh data in the background.
+  const cacheable=!['form','review'].includes(view);
   const cachedHtml=cacheable&&!options.force?getHtmlCache(view):null;
   const dataCached=cacheable&&!options.force&&!cachedHtml&&restoreView(view);
   const hadContent=!!root.innerHTML.trim();
