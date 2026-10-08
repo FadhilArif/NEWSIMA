@@ -191,3 +191,9 @@ $function$;
 
 revoke all on function public.add_penggunaan_dana(uuid,bigint,date,text) from public;
 grant execute on function public.add_penggunaan_dana(uuid,bigint,date,text) to authenticated;
+
+
+-- Writes are performed through add_penggunaan_dana() so the approved-budget
+-- ceiling and BPH membership checks cannot be bypassed by direct table writes.
+revoke insert, update, delete on table public.penggunaan_dana from authenticated;
+grant select on table public.penggunaan_dana to authenticated;
