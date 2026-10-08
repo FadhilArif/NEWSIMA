@@ -310,7 +310,9 @@ function reviewStageLabel(stage) {
     hmj_from_pembimbing_lpj:'HMJ · LPJ siap diteruskan ke BEM',
     hmj_from_pembimbing_lpj_revision:'HMJ · LPJ perlu revisi',
     bem_lpj:'BEM · review LPJ',
+    wakil_rektor_lpj:'Wakil Rektor · review LPJ',
     hmj_from_bem_lpj:'HMJ · tindak lanjut revisi LPJ BEM',
+    hmj_from_wakil_rektor_lpj:'HMJ · tindak lanjut revisi LPJ Wakil Rektor',
     bem_from_wakil_rektor:'BEM · tindak lanjut Wakil Rektor'
   })[stage] || '';
 }
@@ -1993,7 +1995,7 @@ const V = {
     const isStageReviewerFor=(p)=>{
       return isBemReviewerFor(p) ||
         (S.user.peran==='pembimbing' && ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review')) ||
-        (S.user.peran==='wakil_rektor' && p.review_stage==='wakil_rektor');
+        (S.user.peran==='wakil_rektor' && ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage));
     };
     const actionLabel=(p)=>{
       if(isStageReviewerFor(p)) return 'Review pengajuan';
@@ -2092,7 +2094,7 @@ const V = {
     );
     const canReview=canReviewLegacy||canReviewStage;
     const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor'].includes(p.review_stage);
-    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj'].includes(p.review_stage);
+    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj'].includes(p.review_stage);
     const isProposalReview=p.status==='proposal_diajukan'&&proposal&&isProposalStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const isLpjReview=p.status==='lpj_diajukan'&&lpj&&isLpjStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const pendingCollaborators=(d.kolaborator||[]).filter(x=>x.status!=='bergabung');
@@ -2118,6 +2120,14 @@ const V = {
       actions=!collabReady
         ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
         : (proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
+    }
+    else if(p.status==='revisi' && p.review_stage==='hmj_from_wakil_rektor_lpj' && (canCreate||canEdit)){
+      if(!collabReady) actions=collabGate+blockedAction('Menunggu konfirmasi kolaborator');
+      else if(lpj?.file_path){
+        actions='<div class="w-full"><p class="text-sm bg-amber-50 text-amber-800 rounded-xl p-3">Revisi dari Wakil Rektor. Perbaiki LPJ lalu ajukan kembali ke Pembimbing HMJ.</p><div class="flex flex-wrap gap-2 mt-3">'+action('submit_lpj','Ajukan ulang LPJ ke Pembimbing')+'</div></div>';
+      }else{
+        actions='<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang LPJ yang sudah diperbaiki terlebih dahulu.</p>';
+      }
     }
     else if(p.status==='revisi'&&(canCreate||canEdit)){
       if(!collabReady) actions=collabGate+blockedAction('Menunggu konfirmasi kolaborator');
@@ -2167,7 +2177,7 @@ const V = {
             '')+
         '</div></div>';
     }
-    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(p.review_stage==='pembimbing_hmj_lpj'?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='pembimbing_hmj_lpj'?'Setujui & kembalikan ke HMJ':'Setujui LPJ','')+'</div></div>';
+    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['pembimbing_hmj_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='pembimbing_hmj_lpj'?'Setujui & kembalikan ke HMJ':p.review_stage==='bem_lpj'?'Setujui & teruskan ke Wakil Rektor':'Setujui LPJ','')+'</div></div>';
 
     const steps=[
       ['direncanakan','Direncanakan'],
