@@ -2132,8 +2132,31 @@ const V = {
     const canReview=canReviewLegacy||canReviewStage;
     const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor'].includes(p.review_stage);
     const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj'].includes(p.review_stage);
-    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&isProposalStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
-    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&isLpjStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    // Reviewer visibility is determined by workflow stage. The backend RPC
+    // remains authoritative for self-review and authorization checks.
+    const isWakilProposalReview=
+      S.user.peran==='wakil_rektor' &&
+      p.status==='proposal_diajukan' &&
+      p.review_stage==='wakil_rektor' &&
+      !!proposal &&
+      canReviewStage;
+
+    const isProposalReview=
+      isWakilProposalReview ||
+      (p.status==='proposal_diajukan' &&
+       !!proposal &&
+       isProposalStage &&
+       canReviewStage &&
+       S.user.peran!=='wakil_rektor' &&
+       String(p.dibuat_oleh||'')!==String(S.user.id||''));
+
+    const isLpjReview=
+      p.status==='lpj_diajukan' &&
+      !!lpj &&
+      isLpjStage &&
+      canReviewStage &&
+      S.user.peran!=='wakil_rektor' &&
+      String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const pendingCollaborators=(d.kolaborator||[]).filter(x=>x.status!=='bergabung');
     const confirmedCollaborators=(d.kolaborator||[]).filter(x=>x.status==='bergabung');
     const collabReady=pendingCollaborators.length===0;
