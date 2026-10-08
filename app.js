@@ -274,6 +274,16 @@ function syncAdditionalAssignment() {
 
 
 
+function isBphBemBudgetViewer() {
+  const bphCodes = new Set(['presiden','wakil_presiden','sekretaris','bendahara']);
+  return (S.memberships || []).some(m => {
+    if (m.status !== 'aktif' || !m.jabatan_id) return false;
+    const org = (S.organizations || []).find(o => String(o.id) === String(m.organisasi_id));
+    const position = (S.positions || []).find(j => String(j.id) === String(m.jabatan_id));
+    return org?.tipe === 'BEM' && position?.aktif === true && bphCodes.has(position.kode);
+  });
+}
+
 function canAccessView(view) {
   const role = S.user?.peran || '';
 
@@ -290,6 +300,8 @@ function canAccessView(view) {
   if (role === 'wakil_rektor') {
     return new Set(['beranda','proker','review','undangan','galeri','laporan','struktur','inbox','plafon','profil']).has(view);
   }
+
+  if (view === 'plafon' && isBphBemBudgetViewer()) return true;
 
   const permission = VIEW_PERMISSION[view];
   if (permission && S.permissions?.has(permission)) return true;
@@ -1047,7 +1059,9 @@ async function loadBudgets() {
   S.approvedCampusProkers=[];
   if(!sb)return;
 
-  const canSeeCampusBudget=['admin','wakil_rektor'].includes(S.user.peran);
+  const canSeeCampusBudget =
+    ['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran) ||
+    isBphBemBudgetViewer();
   if(!canSeeCampusBudget){
     return;
   }
