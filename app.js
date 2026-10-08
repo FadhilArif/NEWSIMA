@@ -808,12 +808,16 @@ async function loadInbox() {
     if(ownRes.error)return toast('Gagal memuat inbox: '+ownRes.error.message);
     if(hmjRes.error)return toast('Gagal memuat inbox HMJ: '+hmjRes.error.message);
     rows=[...(ownRes.data||[]),...(hmjRes.data||[])];
+  }else if(S.user.peran==='wakil_rektor'){
+    // Wakil Rektor is campus-wide: include proposal and LPJ stages routed to WR.
+    const {data,error}=await sb.from('dokumen')
+      .select('id,organisasi_id,proker_id,jenis,status,tahap')
+      .in('tahap',['wakil_rektor','wakil_rektor_lpj'])
+      .order('id',{ascending:false});
+    if(error)return toast('Gagal memuat inbox Wakil Rektor: '+error.message);
+    rows=data||[];
   }else if(S.orgId){
     const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false});
-    if(error)return toast('Gagal memuat inbox: '+error.message);
-    rows=data||[];
-  }else if(S.user.peran==='wakil_rektor'){
-    const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').order('id',{ascending:false});
     if(error)return toast('Gagal memuat inbox: '+error.message);
     rows=data||[];
   }
