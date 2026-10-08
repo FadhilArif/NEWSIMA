@@ -212,9 +212,12 @@ Deno.serve(async (req) => {
         return json({ error: "UNIT_NOT_IN_ORGANIZATION" }, 400);
       }
 
-      if (position.cakupan === "divisi" && unit.jenis !== "divisi") {
+      if (position.unit_jenis_wajib && unit.jenis !== position.unit_jenis_wajib) {
         await adminClient.auth.admin.deleteUser(userId);
-        return json({ error: "DIVISION_POSITION_REQUIRES_DIVISION_UNIT" }, 400);
+        return json({
+          error: "POSITION_UNIT_TYPE_MISMATCH",
+          detail: `Jabatan ${position.nama} membutuhkan unit jenis ${position.unit_jenis_wajib}, bukan ${unit.jenis}.`
+        }, 400);
       }
     }
 
