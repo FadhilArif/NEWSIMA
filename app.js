@@ -2211,7 +2211,13 @@ const V = {
       ((['selesai','lpj_diajukan','lpj_disetujui'].includes(p.status))
         ? '<div class="card mt-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Foto kegiatan</h3><p class="sub mb-0">Dokumentasi kegiatan setelah pelaksanaan selesai. Maksimal 5 foto, maksimal 10 MB per foto.</p></div><span class="chip '+(d.photos.length>=5?'wa':'bl')+'">'+d.photos.length+'/5 foto</span></div>'+
           (((!readOnlyCollaborator)&&(canEdit||S.user.peran==='admin')&&d.photos.length<5)
-            ? '<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div class="flex flex-col sm:flex-row gap-2 sm:items-center"><input id="activity-photo-input" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" class="flex-1"><button class="btn" type="button" data-activity-photo-upload data-proker-id="'+esc(p.id)+'">Upload foto kegiatan</button></div><p class="text-xs text-slate-500 mt-2">Pilih 1–'+(5-d.photos.length)+' foto. Format JPG, PNG, WEBP, atau GIF.</p></div>'
+            ? '<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">'+
+  '<div class="flex flex-col lg:flex-row gap-2 lg:items-center"><input id="activity-photo-input" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" class="flex-1"><button class="btn" type="button" disabled data-activity-photo-upload data-proker-id="'+esc(p.id)+'">Upload '+(5-d.photos.length)+' foto sekaligus</button></div>'+
+  '<p class="text-xs text-slate-500 mt-2">Pilih hingga '+(5-d.photos.length)+' foto sekaligus. JPG, PNG, WEBP, atau GIF · maksimal 10 MB per foto.</p>'+
+  '<p id="activity-photo-selection-status" class="text-xs text-slate-500 mt-2">Belum ada foto dipilih.</p>'+
+  '<div id="activity-photo-preview" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3"></div>'+
+  '<div id="activity-photo-progress" class="hidden mt-4"><div class="flex items-center justify-between gap-3 mb-1"><span id="activity-photo-progress-text" class="text-xs text-slate-600">Menyiapkan upload...</span><span class="text-xs font-semibold text-slate-600">Batch upload</span></div><div class="h-2 rounded-full bg-slate-200 overflow-hidden"><div id="activity-photo-progress-bar" class="h-full rounded-full bg-sima-600 transition-all duration-200" style="width:0%"></div></div></div>'+
+  '</div>'
             : '')+
           (d.photos.length
             ? '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+d.photos.map(photo=>
@@ -2674,6 +2680,72 @@ function pesertaRow(reset, initialRows=[]) {
 }
 
 
+function revokeActivityPhotoPreviews() {
+  document.querySelectorAll('#activity-photo-preview img[data-object-url]').forEach(img=>{
+    const url=img.dataset.objectUrl;
+    if(url)URL.revokeObjectURL(url);
+  });
+}
+
+function renderActivityPhotoSelection(files) {
+  const preview=$('#activity-photo-preview');
+  const status=$('#activity-photo-selection-status');
+  const input=$('#activity-photo-input');
+  const uploadBtn=document.querySelector('[data-activity-photo-upload]');
+  if(!preview)return;
+
+  revokeActivityPhotoPreviews();
+  preview.innerHTML='';
+
+  const list=[...(files||[])];
+  const remaining=Math.max(0,5-Number(S.detail?.photos?.length||0));
+  if(!list.length){
+    if(status)status.textContent='Belum ada foto dipilih.';
+    if(uploadBtn)uploadBtn.disabled=true;
+    return;
+  }
+
+  const allowed=['image/jpeg','image/png','image/webp','image/gif'];
+  const invalid=list.filter(f=>!allowed.includes(f.type)||f.size>10*1024*1024);
+  const tooMany=list.length>remaining;
+  const valid=!invalid.length&&!tooMany&&remaining>0;
+
+  list.forEach(file=>{
+    const url=URL.createObjectURL(file);
+    preview.insertAdjacentHTML('beforeend',
+      '<div class="overflow-hidden rounded-xl border border-slate-200 bg-white">'+
+        '<img src="'+esc(url)+'" data-object-url="'+esc(url)+'" alt="'+esc(file.name)+'" class="w-full h-28 object-cover bg-slate-100">'+
+        '<div class="p-2"><p class="text-xs font-semibold truncate" title="'+esc(file.name)+'">'+esc(file.name)+'</p>'+
+        '<p class="text-[11px] text-slate-500">'+formatBytes(file.size)+'</p></div>'+
+      '</div>'
+    );
+  });
+
+  if(status){
+    status.textContent=tooMany
+      ? 'Terlalu banyak. Sisa slot hanya '+remaining+' foto.'
+      : invalid.length
+        ? 'Ada '+invalid.length+' file yang tidak memenuhi format atau batas 10 MB.'
+        : list.length+' foto siap diunggah.';
+    status.className=valid
+      ? 'text-xs text-emerald-600 mt-2'
+      : 'text-xs text-red-600 mt-2';
+  }
+  if(uploadBtn)uploadBtn.disabled=!valid;
+  if(input)input.setAttribute('aria-invalid',String(!valid));
+}
+
+function updateActivityPhotoProgress(done,total,message) {
+  const wrap=$('#activity-photo-progress');
+  const bar=$('#activity-photo-progress-bar');
+  const text=$('#activity-photo-progress-text');
+  if(!wrap||!bar||!text)return;
+  wrap.classList.remove('hidden');
+  const pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+  bar.style.width=pct+'%';
+  text.textContent=message||('Mengunggah '+done+' dari '+total+' foto ('+pct+'%)');
+}
+
 function parseMoney(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0,value) : 0;
   const digits=String(value??'').replace(/[^\d]/g,'');
@@ -3023,57 +3095,74 @@ document.addEventListener('click', async e => {
     }
 
     activityPhotoUpload.disabled=true;
+    if(input)input.disabled=true;
+
     const bucket=sb.storage.from('activity-photos');
     const uploadedPaths=[];
-    const insertedIds=[];
+    const uploadedRecords=[];
+    let completed=0;
+
     try{
       const lpjDoc=S.detail?.docs?.find(x=>x.jenis==='laporan_akhir')||null;
+      updateActivityPhotoProgress(0,files.length,'Memulai upload '+files.length+' foto...');
 
-      for(const file of files){
+      const uploadResults=await Promise.all(files.map(async(file,index)=>{
         const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-        const path=proker.organisasi_id+'/'+prokerId+'/foto/'+Date.now()+'_'+crypto.randomUUID()+'_'+safeName;
+        const path=proker.organisasi_id+'/'+prokerId+'/foto/'+Date.now()+'_'+index+'_'+crypto.randomUUID()+'_'+safeName;
 
         const up=await bucket.upload(path,file,{upsert:false,contentType:file.type});
         if(up.error)throw new Error('Upload '+file.name+' gagal: '+up.error.message);
-        uploadedPaths.push(path);
 
-        const dbResult=await sb.from('foto_kegiatan').insert({
+        uploadedPaths.push(path);
+        completed+=1;
+        updateActivityPhotoProgress(completed,files.length,'Mengunggah '+completed+' dari '+files.length+' foto...');
+
+        return {
           proker_id:prokerId,
           dokumen_id:lpjDoc?.id||null,
           drive_file_id:null,
           thumb_path:path,
           ukuran_byte:file.size,
-          urutan:null,
+          urutan:currentCount+index+1,
           keterangan:null,
           diunggah_oleh:S.user.id,
           file_name:file.name,
           mime_type:file.type,
           uploaded_at:new Date().toISOString()
-        }).select('id').single();
+        };
+      }));
 
-        if(dbResult.error){
-          throw new Error('Metadata '+file.name+' gagal disimpan: '+dbResult.error.message);
-        }
-        if(dbResult.data?.id)insertedIds.push(dbResult.data.id);
+      updateActivityPhotoProgress(files.length,files.length,'Menyimpan metadata foto...');
+      const dbResult=await sb.from('foto_kegiatan')
+        .insert(uploadResults)
+        .select('id');
+
+      if(dbResult.error){
+        throw new Error('Metadata foto gagal disimpan: '+dbResult.error.message);
       }
 
+      updateActivityPhotoProgress(files.length,files.length,files.length+' foto berhasil diunggah.');
       await loadProkerDetail();
       await loadGallery();
-      toast(files.length===1?'Foto kegiatan berhasil diunggah.':files.length+' foto kegiatan berhasil diunggah.');
+
+      toast(files.length+' foto kegiatan berhasil diunggah sekaligus.');
+      revokeActivityPhotoPreviews();
       return render({force:true});
     }catch(error){
-      console.error('Activity photo upload failed:',error);
-      if(insertedIds.length){
-        await sb.from('foto_kegiatan').delete().in('id',insertedIds);
-      }
+      console.error('Activity photo batch upload failed:',error);
+
       if(uploadedPaths.length){
-        await bucket.remove(uploadedPaths);
+        await bucket.remove(uploadedPaths).catch(cleanupError=>
+          console.warn('Gagal membersihkan file foto batch:',cleanupError)
+        );
       }
-      return toast(error?.message||'Upload foto kegiatan gagal. Tidak ada foto dari batch ini yang disimpan.');
-    }finally{
+
+      if(input)input.disabled=false;
       activityPhotoUpload.disabled=false;
+      return toast(error?.message||'Upload foto kegiatan gagal. Tidak ada foto dari batch ini yang disimpan.');
     }
   }
+
 
   const docUpload=e.target.closest('[data-doc-upload]');
   if(docUpload){
@@ -3264,6 +3353,11 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('change', async e => {
+  if(e.target.id==='activity-photo-input'){
+    renderActivityPhotoSelection(e.target.files);
+    return;
+  }
+
   if(e.target.id==='f-sumber'){
     const source=(S.sources||[]).find(x=>x.kode===e.target.value);
     const detailWrap=$('#f-sumber-detail-wrap');
