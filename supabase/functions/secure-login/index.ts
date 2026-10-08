@@ -3,31 +3,17 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const PRIMARY_ORIGIN = "https://fadhilarif.github.io";
 const VERCEL_ORIGIN_PATTERN = /^https:\/\/newsima(?:-[a-z0-9-]+)*\.vercel\.app$/i;
 
-function resolveAllowedOrigin(origin: string | null) {
-  if (!origin) return PRIMARY_ORIGIN;
-  if (origin === PRIMARY_ORIGIN) return origin;
-
-  try {
-    const url = new URL(origin);
-    if (url.protocol === "https:" && VERCEL_ORIGIN_PATTERN.test(url.origin)) {
-      return origin;
-    }
-  } catch (_) {}
-
-  return "";
-}
-
-function corsHeaders(req: Request) {
-  const origin = resolveAllowedOrigin(req.headers.get("origin"));
-  const headers: Record<string,string> = {
+function corsHeaders(_req: Request) {
+  // secure-login does not use cookies or credentialed browser auth.
+  // Wildcard CORS is therefore valid here and avoids preview-domain drift
+  // when Vercel generates a new NEWSIMA deployment URL.
+  return {
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
     "Content-Type": "application/json",
-    "Vary": "Origin",
   };
-
-  if (origin) headers["Access-Control-Allow-Origin"] = origin;
-  return headers;
 }
 
 function json(req: Request, body: unknown, status = 200, extra: Record<string,string> = {}) {
