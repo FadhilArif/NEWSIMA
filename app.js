@@ -1921,74 +1921,6 @@ async function mapWithConcurrency(items,limit,worker){
   return results;
 }
 
-async function recoverUnexpectedSignOut(){
-  if(!sb||S.intentionalSignOut||!S.user?.id)return false;
-  if(S.authRecoveryTimer){
-    clearTimeout(S.authRecoveryTimer);
-    S.authRecoveryTimer=null;
-  }
-
-  const tryRestore=async()=>{
-    try{
-      const current=await sb.auth.getSession();
-      if(current.data?.session?.user){
-        S.lastKnownSession=current.data.session;
-        if(S.authLost)await hydrateUser(current.data.session.user);
-        return true;
-      }
-
-      if(S.lastKnownSession?.refresh_token){
-        const restored=await sb.auth.setSession({
-          access_token:S.lastKnownSession.access_token,
-          refresh_token:S.lastKnownSession.refresh_token
-        });
-        if(!restored.error&&restored.data?.session?.user){
-          S.lastKnownSession=restored.data.session;
-          S.authLost=false;
-          await hydrateUser(restored.data.session.user);
-          return true;
-        }
-      }
-
-      const recovered=await recoverAuthSession('unexpected_signed_out');
-      if(recovered.ok&&recovered.session?.user){
-        S.lastKnownSession=recovered.session;
-        S.authLost=false;
-        await hydrateUser(recovered.session.user);
-        return true;
-      }
-    }catch(error){
-      console.warn('Pemulihan SIGNED_OUT gagal:',error);
-    }
-    return false;
-  };
-
-  S.authRecoveryTimer=setTimeout(async()=>{
-    S.authRecoveryTimer=null;
-    const restored=await tryRestore();
-    if(restored)return;
-
-    // If an upload is still active, do not destroy the working UI. Give the
-    // upload queue a chance to finish before treating this as a true logout.
-    if(S.uploadLockPromise){
-      await Promise.race([
-        S.uploadLockPromise.catch(()=>{}),
-        new Promise(resolve=>setTimeout(resolve,4000))
-      ]).catch(()=>{});
-      if(await tryRestore())return;
-    }
-
-    if(!S.intentionalSignOut){
-      resetClientState();
-      $('#app').hidden=true;
-      $('#login').hidden=false;
-      $('#le').textContent='Sesi akun tidak dapat dipulihkan. Silakan masuk kembali.';
-    }
-  },1200);
-
-  return true;
-}
-
 async function recoverAuthSession(reason='unknown'){
   if(!sb)return {ok:false,reason:'no_client'};
   if(S.authRecoveryPromise)return S.authRecoveryPromise;
@@ -2095,17 +2027,11 @@ async function initAuth() {
         hydrateUser(session.user).catch(error=>console.warn('Hydrate setelah auth event gagal:',error));
       }
     } else if (event === 'SIGNED_OUT') {
-      if(S.intentionalSignOut){
-        resetClientState();
-        $('#app').hidden=true;
-        $('#login').hidden=false;
-        $('#le').textContent='';
-        return;
-      }
-      // Do not immediately erase the application state. A transient Auth
-      // refresh failure/rate-limit can emit SIGNED_OUT while a valid refresh
-      // token is still recoverable.
-      recoverUnexpectedSignOut();
+      if(S.intentionalSignOut)return;
+      resetClientState();
+      $('#app').hidden=true;
+      $('#login').hidden=false;
+      $('#le').textContent='Sesi akun berakhir. Silakan masuk kembali.';
     }
   });
 }
