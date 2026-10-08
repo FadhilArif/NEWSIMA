@@ -1,16 +1,17 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsHeaders as supabaseCorsHeaders } from "npm:@supabase/supabase-js@^2/cors";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://fadhilarif.github.io".replaceAll(" ", ""),
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+function corsHeaders() {
+  return {
+    ...supabaseCorsHeaders,
+    "Content-Type": "application/json",
+  };
+}
 
 function json(body: unknown, status = 200, extra: Record<string,string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, ...extra },
+    headers: { ...corsHeaders(), ...extra },
   });
 }
 
@@ -49,7 +50,7 @@ const adminClient = createClient(supabaseUrl, serviceKey, {
 });
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: supabaseCorsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   if (!supabaseUrl || !publishableKey || !serviceKey) {
     return json({ error: "SERVER_NOT_CONFIGURED" }, 500);
@@ -106,6 +107,7 @@ Deno.serve(async (req) => {
       Number(emailLimit?.retry_after || 0),
     );
     return json(
+      req,
       { error: "RATE_LIMITED", retry_after: retryAfter || 900 },
       429,
       { "Retry-After": String(retryAfter || 900) },
