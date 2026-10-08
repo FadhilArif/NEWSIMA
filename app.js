@@ -2716,7 +2716,7 @@ function renderActivityPhotoSelection(files) {
       '<div class="overflow-hidden rounded-xl border border-slate-200 bg-white">'+
         '<img src="'+esc(url)+'" data-object-url="'+esc(url)+'" alt="'+esc(file.name)+'" class="w-full h-28 object-cover bg-slate-100">'+
         '<div class="p-2"><p class="text-xs font-semibold truncate" title="'+esc(file.name)+'">'+esc(file.name)+'</p>'+
-        '<p class="text-[11px] text-slate-500">'+formatBytes(file.size)+'</p></div>'+
+        '<p class="text-[11px] text-slate-500">'+(file.size/1024/1024).toFixed(2)+' MB</p></div>'+
       '</div>'
     );
   });
