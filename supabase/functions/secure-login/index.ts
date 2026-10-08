@@ -107,7 +107,6 @@ Deno.serve(async (req) => {
       Number(emailLimit?.retry_after || 0),
     );
     return json(
-      req,
       { error: "RATE_LIMITED", retry_after: retryAfter || 900 },
       429,
       { "Retry-After": String(retryAfter || 900) },
