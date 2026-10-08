@@ -301,6 +301,12 @@ function reviewStageLabel(stage) {
     wakil_rektor:'Wakil Rektor',
     hmj_from_bem:'HMJ · tindak lanjut revisi BEM',
     hmj_from_pembimbing:'HMJ · tindak lanjut Pembimbing',
+    hmj_from_pembimbing_approved:'HMJ · siap diteruskan ke BEM',
+    pembimbing_hmj_lpj:'Pembimbing HMJ · review LPJ',
+    hmj_from_pembimbing_lpj:'HMJ · LPJ siap diteruskan ke BEM',
+    hmj_from_pembimbing_lpj_revision:'HMJ · LPJ perlu revisi',
+    bem_lpj:'BEM · review LPJ',
+    hmj_from_bem_lpj:'HMJ · tindak lanjut revisi LPJ BEM',
     bem_from_wakil_rektor:'BEM · tindak lanjut Wakil Rektor'
   })[stage] || '';
 }
@@ -503,7 +509,7 @@ async function loadProker() {
     // Reviewer mode: only actionable HMJ submissions explicitly routed to this account.
     ownQuery=sb.from('proker')
       .select(selectFields)
-      .eq('review_stage','pembimbing_hmj')
+      .in('review_stage',['pembimbing_hmj','pembimbing_hmj_lpj'])
       .order('tanggal_mulai',{ascending:true});
   }else if(S.orgId && !isWakil){
     ownQuery=sb.from('proker')
@@ -555,7 +561,7 @@ async function loadProker() {
       bemHmjQuery=sb.from('proker')
         .select(selectFields)
         .in('organisasi_id',hmjIds)
-        .in('review_stage',['bem','bem_from_wakil_rektor'])
+        .in('review_stage',['bem','bem_from_wakil_rektor','bem_lpj'])
         .order('tanggal_mulai',{ascending:true});
     }
   }
@@ -777,8 +783,8 @@ async function loadInbox() {
     // Reviewer inbox: only proposals currently routed to this Pembimbing.
     const {data,error}=await sb.from('dokumen')
       .select('id,organisasi_id,proker_id,jenis,status,tahap')
-      .eq('jenis','proposal')
-      .eq('tahap','pembimbing_hmj')
+      .in('jenis',['proposal','laporan_akhir'])
+      .in('tahap',['pembimbing_hmj','pembimbing_hmj_lpj'])
       .order('id',{ascending:false});
     if(error)return toast('Gagal memuat inbox Pembimbing: '+error.message);
     rows=data||[];
@@ -788,7 +794,7 @@ async function loadInbox() {
     const [ownRes,hmjRes]=await Promise.all([
       sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false}),
       hmjIds.length
-        ? sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').in('organisasi_id',hmjIds).in('tahap',['bem','bem_from_wakil_rektor']).order('id',{ascending:false})
+        ? sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').in('organisasi_id',hmjIds).in('tahap',['bem','bem_from_wakil_rektor','bem_lpj']).order('id',{ascending:false})
         : Promise.resolve({data:[],error:null})
     ]);
     if(ownRes.error)return toast('Gagal memuat inbox: '+ownRes.error.message);
@@ -1967,14 +1973,14 @@ const V = {
     const f=S.proker.filter(p=>(S.tab==='semua'||p.status===S.tab)&&((p.nama||'').toLowerCase().includes(S.q.toLowerCase())||(p.ketua||'').toLowerCase().includes(S.q.toLowerCase())));
     const tabs=[['semua','Semua'],['direncanakan','Direncanakan'],['revisi','Perlu revisi'],['proposal_diajukan','Menunggu review'],['disetujui','Disetujui'],['berjalan','Berjalan'],['selesai','Selesai'],['lpj_diajukan','LPJ review'],['lpj_disetujui','LPJ disetujui']];
     const isBemReviewerFor=(p)=>{
-      return ['bem','bem_from_wakil_rektor'].includes(p.review_stage) &&
+      return ['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
         p.organisasi?.tipe==='HMJ' &&
         String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
         S.permissions?.has('dokumen.review');
     };
     const isStageReviewerFor=(p)=>{
       return isBemReviewerFor(p) ||
-        (S.user.peran==='pembimbing' && p.review_stage==='pembimbing_hmj' && S.permissions?.has('dokumen.review')) ||
+        (S.user.peran==='pembimbing' && ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review')) ||
         (S.user.peran==='wakil_rektor' && p.review_stage==='wakil_rektor');
     };
     const actionLabel=(p)=>{
@@ -2042,14 +2048,14 @@ const V = {
     const proposal=d.docs.find(x=>x.jenis==='proposal');
     const lpj=d.docs.find(x=>x.jenis==='laporan_akhir');
     const isBemReviewerForStage=
-      ['bem','bem_from_wakil_rektor'].includes(p.review_stage) &&
+      ['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
       p.organisasi?.tipe==='HMJ' &&
       String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
       S.permissions?.has('dokumen.review');
 
     const isPembimbingReviewerForStage=
       S.user.peran==='pembimbing' &&
-      p.review_stage==='pembimbing_hmj' &&
+      ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) &&
       S.permissions?.has('dokumen.review');
 
     const isWakilReviewerForStage=
@@ -2067,14 +2073,16 @@ const V = {
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
     const canReviewStage=!readOnlyCollaborator && (
-      (p.review_stage==='pembimbing_hmj' && S.user.peran==='pembimbing' && S.permissions?.has('dokumen.review'))
-      || (['bem','bem_from_wakil_rektor'].includes(p.review_stage) && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has('dokumen.review'))
+      (['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.user.peran==='pembimbing' && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review'))
+      || (['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review'))
       || (p.review_stage==='wakil_rektor' && S.user.peran==='wakil_rektor')
       || (!p.review_stage && canReviewLegacy)
     );
     const canReview=canReviewLegacy||canReviewStage;
-    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
-    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&canReviewLegacy&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor'].includes(p.review_stage);
+    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj'].includes(p.review_stage);
+    const isProposalReview=p.status==='proposal_diajukan'&&proposal&&isProposalStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
+    const isLpjReview=p.status==='lpj_diajukan'&&lpj&&isLpjStage&&canReviewStage&&String(p.dibuat_oleh||'')!==String(S.user.id||'');
     const pendingCollaborators=(d.kolaborator||[]).filter(x=>x.status!=='bergabung');
     const confirmedCollaborators=(d.kolaborator||[]).filter(x=>x.status==='bergabung');
     const collabReady=pendingCollaborators.length===0;
@@ -2084,7 +2092,17 @@ const V = {
       : '';
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
-    if(p.status==='direncanakan'&&(canCreate||canEdit)){
+    if(p.status==='proposal_diajukan' && p.review_stage==='hmj_from_pembimbing_approved' && (canCreate||canEdit)){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : action('forward_hmj_to_bem','Teruskan ke BEM');
+    }
+    else if(p.status==='lpj_diajukan' && ['hmj_from_pembimbing_lpj'].includes(p.review_stage) && (canCreate||canEdit)){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : action('forward_lpj_to_bem','Teruskan LPJ ke BEM');
+    }
+    else if(p.status==='direncanakan'&&(canCreate||canEdit)){
       actions=!collabReady
         ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
         : (proposal?.file_path ? action('submit','Ajukan proposal') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload proposal terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
@@ -2123,21 +2141,21 @@ const V = {
         '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+
           action('revise',
             p.review_stage==='pembimbing_hmj'
-              ? 'Kembalikan ke HMJ'
+              ? 'Kembalikan untuk revisi'
               : p.review_stage==='bem'
                 ? 'Kembalikan ke HMJ'
                 : 'Minta revisi',
             'd')+
           action('approve',
             p.review_stage==='pembimbing_hmj'
-              ? 'Setujui & teruskan ke BEM'
+              ? 'Setujui & kembalikan ke HMJ'
               : p.review_stage==='bem'
                 ? 'Setujui & teruskan ke Wakil Rektor'
                 : 'Setujui',
             '')+
         '</div></div>';
     }
-    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan untuk revisi','d')+action('approve_lpj','Setujui LPJ','')+'</div></div>';
+    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(p.review_stage==='pembimbing_hmj_lpj'?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='pembimbing_hmj_lpj'?'Setujui & kembalikan ke HMJ':'Setujui LPJ','')+'</div></div>';
 
     const steps=[
       ['direncanakan','Direncanakan'],
