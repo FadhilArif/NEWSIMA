@@ -2,6 +2,10 @@
 const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
 const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
 const SECURE_LOGIN_FUNCTION = 'secure-login';
+const SUPABASE_PROJECT_REF = (()=>{try{return new URL(SUPABASE_URL).hostname.split('.')[0]||'';}catch(_){return '';}})();
+const SUPABASE_STORAGE_URL = SUPABASE_PROJECT_REF ? 'https://'+SUPABASE_PROJECT_REF+'.storage.supabase.co' : '';
+const RESUMABLE_UPLOAD_THRESHOLD = 6 * 1024 * 1024;
+const UPLOAD_RETRY_DELAYS = [0,3000,5000,10000,20000];
 
 // Auth is intentionally isolated per browser tab.
 // Each tab gets its own storage key as well as its own sessionStorage, so
@@ -1843,6 +1847,45 @@ function clearLegacyAuthStorage() {
   }
 }
 
+async function getUploadAccessToken(){
+  if(S.lastKnownSession?.access_token)return S.lastKnownSession.access_token;
+  if(!sb)throw new Error('Supabase belum tersedia.');
+  const {data,error}=await sb.auth.getSession();
+  if(error||!data?.session?.access_token)throw new Error('Sesi akun tidak tersedia. Silakan masuk kembali.');
+  S.lastKnownSession=data.session;
+  return data.session.access_token;
+}
+
+async function uploadStorageFile(bucketName,path,file,options={}){
+  if(!sb)throw new Error('Supabase belum tersedia.');
+  const contentType=options.contentType||file.type||'application/octet-stream';
+  const onProgress=typeof options.onProgress==='function'?options.onProgress:null;
+  if(file.size<=RESUMABLE_UPLOAD_THRESHOLD || !window.tus || !SUPABASE_STORAGE_URL){
+    const up=await sb.storage.from(bucketName).upload(path,file,{upsert:false,contentType});
+    if(up.error)throw up.error;
+    onProgress?.(file.size,file.size);
+    return up;
+  }
+  const accessToken=await getUploadAccessToken();
+  return await new Promise((resolve,reject)=>{
+    let settled=false;
+    const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
+    const upload=new window.tus.Upload(file,{
+      endpoint:SUPABASE_STORAGE_URL+'/storage/v1/upload/resumable',
+      retryDelays:UPLOAD_RETRY_DELAYS,
+      headers:{authorization:'Bearer '+accessToken,'x-upsert':'false'},
+      metadata:{bucketName,objectName:path,contentType,cacheControl:'3600'},
+      chunkSize:RESUMABLE_UPLOAD_THRESHOLD,
+      uploadDataDuringCreation:true,
+      removeFingerprintOnSuccess:true,
+      onError:error=>finish(reject,error||new Error('Resumable upload gagal.')),
+      onProgress:(uploaded,total)=>onProgress?.(uploaded,total),
+      onSuccess:()=>finish(resolve,{data:{path},error:null})
+    });
+    upload.start();
+  });
+}
+
 async function withUploadLock(label,task){
   const previous=S.uploadLockPromise||Promise.resolve();
   let releaseResolve;
@@ -1967,19 +2010,9 @@ async function recoverAuthSession(reason='unknown'){
         }
       }
 
-      const refreshRes=await sb.auth.refreshSession();
-      if(refreshRes.error){
-        const status=Number(refreshRes.error.status||0);
-        const rateLimited=status===429 ||
-          /rate.?limit|too many/i.test(refreshRes.error.message||'');
-        if(rateLimited)return {ok:false,rateLimited:true,reason:'refresh_rate_limited'};
-        return {ok:false,reason:refreshRes.error.message||'refresh_failed'};
-      }
-
-      if(refreshRes.data?.session?.user){
-        return {ok:true,session:refreshRes.data.session};
-      }
-      return {ok:false,reason:'refresh_returned_no_session'};
+      // The Supabase client owns refresh scheduling. Never create a second
+      // manual refresh loop here; that can hit the token endpoint rate limit.
+      return {ok:false,reason:'no_active_session'};
     }catch(error){
       console.warn('Auth recovery gagal:',reason,error);
       return {ok:false,reason:error?.message||'recovery_exception'};
@@ -3430,8 +3463,13 @@ document.addEventListener('click', async e => {
         const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
         const path=proker.organisasi_id+'/'+prokerId+'/foto/'+Date.now()+'_'+index+'_'+crypto.randomUUID()+'_'+safeName;
 
-        const up=await bucket.upload(path,file,{upsert:false,contentType:file.type});
-        if(up.error)throw new Error('Upload '+file.name+' gagal: '+up.error.message);
+        await uploadStorageFile('activity-photos',path,file,{
+          contentType:file.type,
+          onProgress:(uploaded,total)=>{
+            const percent=total ? Math.round(uploaded/total*100) : 100;
+            updateActivityPhotoProgress(completed,files.length,'Mengunggah foto '+(index+1)+'/'+files.length+' ('+percent+'%)...');
+          }
+        });
 
         uploadedPaths.push(path);
         completed+=1;
@@ -3521,8 +3559,11 @@ document.addEventListener('click', async e => {
     const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
     const path=proker.organisasi_id+'/'+prokerId+'/'+kind+'/'+Date.now()+'_'+safeName;
     const bucket=sb.storage.from('documents');
-    const up=await bucket.upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
-    if(up.error)return toast('Upload dokumen gagal: '+up.error.message);
+    try{
+      await uploadStorageFile('documents',path,file,{contentType:file.type||'application/octet-stream'});
+    }catch(uploadError){
+      return toast('Upload dokumen gagal: '+(uploadError?.message||'Tidak dapat mengunggah file.'));
+    }
 
     const existing=S.detail.docs.find(x=>x.jenis===kind);
     let dbResult;
@@ -3852,19 +3893,14 @@ document.addEventListener('submit', async e => {
     if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memverifikasi...';}
     try{
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
+       // Replace the current tab session exactly once. Avoid duplicate
+       // signOut/clear cycles that can race Auth auto-refresh.
+       S.intentionalSignOut=true;
+       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+       S.intentionalSignOut=false;
+       clearLegacyAuthStorage();
 
-      // Fully detach the previous account from this tab before creating a new session.
-      S.intentionalSignOut=true;
-      await sb.auth.signOut({ scope:'local' }).catch(()=>{});
-      S.intentionalSignOut=false;
-      clearLegacyAuthStorage();
-      AUTH_STORAGE.removeItem(AUTH_STORAGE_KEY);
-
-      S.intentionalSignOut=true;
-      await sb.auth.signOut({ scope:'local' }).catch(()=>{});
-      S.intentionalSignOut=false;
-
-      const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
+       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
       const payload=await response.json().catch(()=>({}));
       if(response.status===429){
         const retry=Number(payload.retry_after||response.headers.get('Retry-After')||900);
@@ -3876,6 +3912,7 @@ document.addEventListener('submit', async e => {
       }
       if(!payload.session?.access_token||!payload.session?.refresh_token)return $('#le').textContent='Sesi login tidak valid.';
       const {data,error}=await sb.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});
+      if(!error&&data.session)S.lastKnownSession=data.session;
       if(error||!data.session?.user){
         await sb.auth.signOut({ scope:'local' }).catch(()=>{});
         return $('#le').textContent='Gagal membuat sesi akun.';
