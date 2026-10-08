@@ -764,7 +764,10 @@ async function loadProkerDetail() {
     proker:{...proker,organisasi:orgRes.data || null},
     docs:docsRows,
     kolaborator:kolab.data || [],
-    keputusan:decisions.data || [],
+    keputusan:(decisions.data||[]).map(x=>({
+      ...x,
+      dokumen_jenis:docsRows.find(d=>String(d.id)===String(x.dokumen_id))?.jenis||null
+    })),
     photos:photoWithUrls,
     budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
@@ -2503,7 +2506,7 @@ const V = {
         ? '<div class="row2"><div class="card"><div class="flex items-center justify-between gap-3"><h3>Kolaborator</h3><span class="chip '+(collabReady?'ok':'wa')+'">'+confirmedCollaborators.length+'/'+d.kolaborator.length+' dikonfirmasi</span></div>'+
           d.kolaborator.map(x=>{const o=(S.organizations||[]).find(org=>String(org.id)===String(x.organisasi_id));return '<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm font-semibold">'+esc(o?.nama||'Organisasi kolaborator')+'</p><p class="text-xs text-slate-500">'+esc(x.status==='bergabung'?'Sudah bergabung':x.status==='menolak'?'Menolak undangan':'Menunggu konfirmasi')+'</p></div>';}).join('')+
           '</div><div class="card"><h3>Riwayat persetujuan</h3>'
-        : '<div class="row2"><div class="card"><h3>Kolaborator</h3><p class="sub">Tidak ada kolaborator.</p></div><div class="card"><h3>Riwayat persetujuan</h3>')+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p><p class="text-xs text-slate-500">'+dateID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
+        : '<div class="row2"><div class="card"><h3>Kolaborator</h3><p class="sub">Tidak ada kolaborator.</p></div><div class="card"><h3>Riwayat persetujuan</h3>')+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p>'+(x.dokumen_jenis?'<span class="chip bl">'+esc(x.dokumen_jenis==='laporan_akhir'?'LPJ':'Proposal')+'</span>':'')+'</div><p class="text-xs text-slate-500">'+dateTimeID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
     return pageHeader('Undangan kolaborasi',S.user.peran==='wakil_rektor'?'Pantauan undangan kolaborasi · akses hanya baca.':'Kelola undangan organisasi untuk program kerja.')+
