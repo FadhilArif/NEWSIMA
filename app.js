@@ -2411,6 +2411,20 @@ const V = {
     }
     else if(p.status==='disetujui'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : action('start','Mulai pelaksanaan');
     else if(p.status==='berjalan'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : action('finish','Tandai selesai');
+    else if(p.status==='selesai' && p.review_stage==='hmj_from_bem_lpj' && (canCreate||canEdit)){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : (lpj?.file_path
+          ? action('forward_lpj_to_bem','Kirim kembali LPJ ke BEM')
+          : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
+    }
+    else if(p.status==='selesai' && ['hmj_from_pembimbing_lpj_revision','hmj_from_wakil_rektor_lpj'].includes(p.review_stage) && (canCreate||canEdit)){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : (lpj?.file_path
+          ? action('submit_lpj','Ajukan ulang LPJ ke Pembimbing')
+          : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
+    }
     else if(p.status==='selesai'&&canEdit) actions=!collabReady ? collabGate+blockedAction('Menunggu konfirmasi kolaborator') : (lpj?.file_path ? action('submit_lpj','Ajukan LPJ') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload LPJ terlebih dahulu. Setelah file tersedia, tombol pengajuan akan muncul.</p>');
     else if(isProposalReview){
       const targetLabel=reviewStageLabel(p.review_stage);
