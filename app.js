@@ -1692,7 +1692,10 @@ function openActivityGallery(prokerId) {
 }
 
 document.addEventListener('keydown',event=>{
-  if(event.key==='Escape')closeActivityGallery();
+  if(event.key==='Escape'){
+    closeActivityGallery();
+    closeMobileMoreMenu();
+  }
 });
 
 function renderProfileMenu() {
@@ -2118,6 +2121,73 @@ function getTempSb() {
 }
 
 // --- Fungsi Render ---
+function mobileMenuItems() {
+  const navIcons={beranda:'home',proker:'folder',form:'plus',undangan:'mail',galeri:'image',laporan:'file',anggota:'users',struktur:'building',koordinator:'users',inbox:'mail',rapat:'calendar',plafon:'wallet',cair:'wallet',periode:'calendar',organisasi:'building',unit_kerja:'grid',akun:'users',jabatan:'settings',audit:'shield',profil:'user'};
+  const groups = MENU
+    .filter(([group]) => !(S.user.peran !== 'admin' && group === 'Admin'))
+    .map(([group, items]) => [group, items.filter(([k]) => canAccessView(k))])
+    .filter(([,items]) => items.length);
+  return {groups,navIcons};
+}
+
+function closeMobileMoreMenu() {
+  const panel=$('#mobileMoreMenu');
+  if(panel){
+    panel.classList.remove('open');
+    document.body.classList.remove('mobile-menu-open');
+    setTimeout(()=>panel.remove(),180);
+  }
+}
+
+function openMobileMoreMenu() {
+  closeMobileMoreMenu();
+  const {groups,navIcons}=mobileMenuItems();
+  const overlay=document.createElement('div');
+  overlay.id='mobileMoreMenu';
+  overlay.className='mobile-more-overlay';
+  overlay.innerHTML=
+    '<div class="mobile-more-backdrop" data-mobile-more-close></div>'+
+    '<section class="mobile-more-sheet" role="dialog" aria-modal="true" aria-label="Menu lainnya">'+
+      '<div class="mobile-more-grab"></div>'+
+      '<div class="mobile-more-head">'+
+        '<div><p class="mobile-more-kicker">NAVIGASI</p><h2>Menu lainnya</h2></div>'+
+        '<button type="button" class="mobile-more-close" data-mobile-more-close aria-label="Tutup">×</button>'+
+      '</div>'+
+      '<div class="mobile-more-scroll">'+
+        groups.map(([group,items])=>
+          '<section class="mobile-more-group"><p class="mobile-more-group-title">'+esc(group)+'</p>'+
+          '<div class="mobile-more-list">'+
+          items.map(([k,label])=>
+            '<button type="button" class="mobile-more-item '+(S.view===k?'active':'')+'" data-mobile-more-go="'+esc(k)+'">'+
+              '<span class="mobile-more-icon">'+icon(navIcons[k]||'grid')+'</span>'+
+              '<span class="mobile-more-label">'+esc(label)+'</span>'+
+              (S.view===k?'<span class="mobile-more-active-dot"></span>':'')+
+            '</button>'
+          ).join('')+
+          '</div></section>'
+        ).join('')+
+        '<section class="mobile-more-group"><p class="mobile-more-group-title">Akun</p>'+
+          '<div class="mobile-more-list"><button type="button" class="mobile-more-item '+(S.view==='profil'?'active':'')+'" data-mobile-more-go="profil">'+
+            '<span class="mobile-more-icon">'+icon('user')+'</span><span class="mobile-more-label">Profil & organisasi</span>'+
+            (S.view==='profil'?'<span class="mobile-more-active-dot"></span>':'')+
+          '</button></div></section>'+
+      '</div>'+
+    '</section>';
+
+  overlay.addEventListener('click',e=>{
+    if(e.target.closest('[data-mobile-more-close]')){closeMobileMoreMenu();return;}
+    const item=e.target.closest('[data-mobile-more-go]');
+    if(item){
+      const view=item.dataset.mobileMoreGo;
+      closeMobileMoreMenu();
+      requestAnimationFrame(()=>navigate(view));
+    }
+  });
+  document.body.append(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('open'));
+  document.body.classList.add('mobile-menu-open');
+}
+
 function renderShell() {
   if (!$('#app') || !$('#nav') || !$('#bn') || !$('#cx') || !$('#notifBtn') || !$('#backBtn')) return;
   if(S.authLost && !S.user.id){
@@ -2146,17 +2216,21 @@ function renderShell() {
         }).join('');
     }).join('');
 
-    const mobile = S.user.peran === 'admin'
-      ? []
-      : [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
-        .filter(([k]) => canAccessView(k));
-    $('#bn').innerHTML = mobile.map(([k,t]) =>
-      '<button class="' +
-      (k === 'form'
-        ? 'fab bg-sima-600 text-white w-11 h-11 rounded-full text-xl -mt-5 shadow-lg'
-        : 'px-2 py-2 text-[11px] ' + (S.view === k ? 'text-sima-600 font-bold' : 'text-slate-500')) +
-      '" data-go="' + esc(k) + '" aria-label="' + esc(t) + '">' + esc(t) + '</button>'
-    ).join('');
+    const mobile = [
+      ['beranda','Beranda','home'],
+      ['proker','Proker','folder'],
+      ['form','Tambah','plus'],
+      ['inbox','Review','mail'],
+      ['__more__','Lainnya','grid']
+    ].filter(([k]) => k==='__more__' || canAccessView(k));
+    $('#bn').innerHTML = mobile.map(([k,t,ico]) => {
+      if(k==='__more__'){
+        return '<button class="bn-more" type="button" data-mobile-more aria-label="Menu lainnya"><span class="bn-icon">'+icon(ico)+'</span><span> Lainnya</span></button>';
+      }
+      const active=S.view===k;
+      return '<button class="'+(k==='form'?'bn-plus':'bn-item '+(active?'on':''))+'" type="button" data-go="'+esc(k)+'" aria-label="'+esc(t)+'">'+
+        '<span class="bn-icon">'+icon(ico)+'</span><span>'+esc(t)+'</span></button>';
+    }).join('');
   }
 
   $('#cx').innerHTML = (S.ctxs || []).map((ctx, i) =>
@@ -3923,6 +3997,7 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('click', e => {
+  if(e.target.closest('[data-mobile-more]')){openMobileMoreMenu();return;}
   if(!e.target.closest('#notifWrap'))$('#notifPanel').hidden=true;
   if(!e.target.closest('#profileWrap'))$('#profileMenu').hidden=true;
 });
