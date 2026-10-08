@@ -3972,14 +3972,45 @@ document.addEventListener('submit', async e => {
     e.preventDefault();
     if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
     const role=$('#an-peran').value;
+    const orgId=$('#an-org').value||null;
+    const jabatanKode=$('#an-jabatan').value||null;
+    const unitId=$('#an-unit').value||null;
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(orgId||''));
+    const position=(S.positions||[]).find(j=>String(j.kode)===String(jabatanKode||''));
+    const unit=(S.units||[]).find(u=>String(u.id)===String(unitId||''));
+
+    // Validate the same organization → position → unit contract that the
+    // server enforces. This prevents a stale/mismatched UI state from sending
+    // a ministry account through the old "division position" path.
+    if(orgId && jabatanKode){
+      if(!org)return toast('Organisasi yang dipilih tidak ditemukan. Muat ulang data organisasi.');
+      if(!position)return toast('Jabatan yang dipilih tidak ditemukan. Muat ulang data jabatan.');
+      if(!Array.isArray(position.berlaku_tipe) || !position.berlaku_tipe.includes(org.tipe)){
+        return toast('Jabatan '+(position.nama||jabatanKode)+' tidak berlaku untuk organisasi '+(org.nama||org.tipe)+'.');
+      }
+      if(position.unit_wajib && !unitId){
+        return toast('Jabatan '+(position.nama||jabatanKode)+' membutuhkan unit '+(position.unit_jenis_wajib||'yang sesuai')+'. Pilih unit terlebih dahulu.');
+      }
+      if(unitId){
+        if(!unit)return toast('Unit yang dipilih tidak ditemukan. Muat ulang struktur organisasi.');
+        if(String(unit.organisasi_id)!==String(orgId)){
+          return toast('Unit yang dipilih bukan milik organisasi tersebut.');
+        }
+        if(position.unit_jenis_wajib && unit.jenis!==position.unit_jenis_wajib){
+          const label=position.unit_jenis_wajib==='kementerian'?'Kementerian':'Divisi';
+          return toast('Jabatan '+(position.nama||jabatanKode)+' membutuhkan '+label+'. Unit yang dipilih adalah '+(unit.jenis||'tidak dikenal')+'.');
+        }
+      }
+    }
+
     const input={
       nama:$('#an-nama').value.trim(),
       email:$('#an-email').value.trim().toLowerCase(),
       nim:['user','mahasiswa'].includes(role)?($('#an-nim').value.trim()||null):null,
       peran:role,
-      organisasi_id:$('#an-org').value||null,
-      jabatan_kode:$('#an-jabatan').value||null,
-      unit_id:$('#an-unit').value||null
+      organisasi_id:orgId,
+      jabatan_kode:jabatanKode,
+      unit_id:unitId
     };
     try{
       const {data,error}=await sb.functions.invoke('admin-create-user',{body:input});
