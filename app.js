@@ -329,7 +329,7 @@ const S = {
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
   contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
-  uploadLockPromise:Promise.resolve(),lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null
+  uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null
 }
 
 const MENU = [
@@ -1743,7 +1743,10 @@ async function logout() {
   S.intentionalSignOut=true;
   if (sb) {
     const { error } = await sb.auth.signOut({ scope:'local' });
-    if (error) return toast('Gagal keluar: ' + error.message);
+    if (error) {
+      S.intentionalSignOut=false;
+      return toast('Gagal keluar: ' + error.message);
+    }
   }
   clearLegacyAuthStorage();
   AUTH_STORAGE.removeItem(AUTH_STORAGE_KEY);
@@ -1856,7 +1859,7 @@ async function withUploadLock(label,task){
     return await task();
   }finally{
     releaseResolve();
-    if(S.uploadLockPromise===current)S.uploadLockPromise=Promise.resolve();
+    if(S.uploadLockPromise===current)S.uploadLockPromise=null;
   }
 }
 
@@ -2025,6 +2028,7 @@ async function initAuth() {
       console.warn('Sesi lokal tidak dapat dipulihkan:', error.message);
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
     } else if (data?.session?.user) {
+      S.lastKnownSession=data.session;
       // Validate the persisted access token before hydrating the application.
       // If Auth rejects it, clear the local session instead of rendering a
       // blank identity with stale UI state.
