@@ -1,0 +1,18 @@
+alter table public.persetujuan
+  drop constraint if exists persetujuan_tahap_check;
+
+alter table public.persetujuan
+  add constraint persetujuan_tahap_check
+  check (
+    tahap = any(array[
+      'menteri',
+      'koordinator',
+      'bph',
+      'pembimbing',
+      'pembimbing_hmj',
+      'pembimbing_hmj_lpj',
+      'bem',
+      'bem_lpj',
+      'wakil_rektor'
+    ])
+  );
