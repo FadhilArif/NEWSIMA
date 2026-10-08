@@ -3,10 +3,11 @@ const SUPABASE_URL = window.SIMA_CONFIG?.SUPABASE_URL || '';
 const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG?.SUPABASE_PUBLISHABLE_KEY || '';
 const SECURE_LOGIN_FUNCTION = 'secure-login';
 
-// Versioned storage key isolates the current SIMA auth state from sessions
-// created by older builds. This is important when the same browser is used
-// to switch between many accounts.
-const AUTH_STORAGE_KEY = 'sima.auth.v2';
+// Auth is intentionally isolated per browser tab.
+// This prevents several SIMA accounts/tabs from sharing one refresh-token
+// stream and exhausting the Supabase /auth/v1/token rate limit.
+const AUTH_STORAGE_KEY = 'sima.auth.tab.v3';
+const AUTH_STORAGE = window.sessionStorage;
 
 const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
   ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -14,7 +15,8 @@ const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
-        storageKey: AUTH_STORAGE_KEY
+        storageKey: AUTH_STORAGE_KEY,
+        storage: AUTH_STORAGE
       }
     })
   : null;
@@ -1690,6 +1692,7 @@ async function logout() {
     if (error) return toast('Gagal keluar: ' + error.message);
   }
   clearLegacyAuthStorage();
+  AUTH_STORAGE.removeItem(AUTH_STORAGE_KEY);
   resetClientState();
   $('#app').hidden = true;
   $('#login').hidden = false;
@@ -1764,15 +1767,20 @@ function previewAvatar(file) {
 function clearLegacyAuthStorage() {
   try {
     const currentKey=AUTH_STORAGE_KEY;
-    const removable=[];
-    const legacyKeys=[
+    const legacyLocalKeys=[
       'sb-xmlkuhmrpqurljlvmwfl-auth-token',
-      'sima.auth.v1'
+      'sima.auth.v1',
+      'sima.auth.v2'
     ];
-    legacyKeys.forEach(key=>{
-      if(key!==currentKey && localStorage.getItem(key)!==null) removable.push(key);
+    legacyLocalKeys.forEach(key=>{
+      localStorage.removeItem(key);
     });
-    removable.forEach(key=>localStorage.removeItem(key));
+
+    // Clean any abandoned v1/v2 session in the current tab, but never touch
+    // the active v3 tab session.
+    ['sima.auth.v1','sima.auth.v2'].forEach(key=>{
+      if(key!==currentKey) AUTH_STORAGE.removeItem(key);
+    });
   } catch (error) {
     console.warn('Legacy auth storage cleanup skipped:',error);
   }
@@ -3507,9 +3515,10 @@ document.addEventListener('submit', async e => {
     try{
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
 
-      // Fully detach every locally persisted SIMA session before creating a new one.
+      // Fully detach the previous account from this tab before creating a new session.
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
       clearLegacyAuthStorage();
+      AUTH_STORAGE.removeItem(AUTH_STORAGE_KEY);
 
       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
       const payload=await response.json().catch(()=>({}));
