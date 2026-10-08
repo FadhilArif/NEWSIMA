@@ -41,7 +41,7 @@ const adminClient = createClient(supabaseUrl, serviceKey, {
 });
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: supabaseCorsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 
   const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
