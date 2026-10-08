@@ -2317,13 +2317,22 @@ const V = {
        S.user.peran!=='wakil_rektor' &&
        String(p.dibuat_oleh||'')!==String(S.user.id||''));
 
-    const isLpjReview=
+    // LPJ has a final campus-level reviewer too. Do not reuse the old
+    // owner/self-review exclusion for the active Wakil Rektor stage.
+    const isWakilLpjReview=
+      isWakilReviewerForStage &&
       p.status==='lpj_diajukan' &&
-      !!lpj &&
-      isLpjStage &&
-      canReviewStage &&
-      S.user.peran!=='wakil_rektor' &&
-      String(p.dibuat_oleh||'')!==String(S.user.id||'');
+      p.review_stage==='wakil_rektor_lpj' &&
+      !!lpj;
+
+    const isLpjReview=
+      isWakilLpjReview ||
+      (p.status==='lpj_diajukan' &&
+       !!lpj &&
+       isLpjStage &&
+       canReviewStage &&
+       S.user.peran!=='wakil_rektor' &&
+       String(p.dibuat_oleh||'')!==String(S.user.id||''));
     const pendingCollaborators=(d.kolaborator||[]).filter(x=>x.status!=='bergabung');
     const confirmedCollaborators=(d.kolaborator||[]).filter(x=>x.status==='bergabung');
     const collabReady=pendingCollaborators.length===0;
