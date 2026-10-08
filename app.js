@@ -327,7 +327,8 @@ const S = {
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
-  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null
+  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
+  contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null
 }
 
 const MENU = [
@@ -502,7 +503,7 @@ async function loadContexts() {
 }
 
 
-async function loadProker() {
+async function loadProker(_retry=false) {
   if (!sb) return;
 
   const isWakil=S.user.peran==='wakil_rektor';
@@ -540,18 +541,9 @@ async function loadProker() {
     : {data:[],error:null};
 
   if(collabError){
-    const status=Number(collabError.status||0);
-    if(status===401){
-      const {data:userCheck,error:userCheckError}=await sb.auth.getUser();
-      if(userCheckError || !userCheck?.user){
-        console.warn('Session benar-benar tidak valid:',userCheckError?.message||collabError.message);
-        await sb.auth.signOut({scope:'local'}).catch(()=>{});
-        resetClientState();
-        $('#app').hidden=true;
-        $('#login').hidden=false;
-        $('#le').textContent='Sesi akun berakhir. Silakan masuk kembali.';
-        return;
-      }
+    const recovered=await handleTransientAuthError(collabError,'loadProker.collaboration');
+    if(recovered.retry){
+      if(!_retry)return loadProker(true);
     }
     console.warn('Gagal memuat kolaborasi:',collabError.message);
   }
@@ -1841,6 +1833,71 @@ function clearLegacyAuthStorage() {
   } catch (error) {
     console.warn('Legacy auth storage cleanup skipped:',error);
   }
+}
+
+async function recoverAuthSession(reason='unknown'){
+  if(!sb)return {ok:false,reason:'no_client'};
+  if(S.authRecoveryPromise)return S.authRecoveryPromise;
+
+  S.authRecoveryPromise=(async()=>{
+    try{
+      const sessionRes=await sb.auth.getSession();
+      if(sessionRes.error){
+        const status=Number(sessionRes.error.status||0);
+        if(status===429)return {ok:false,rateLimited:true,reason:'get_session_rate_limited'};
+        return {ok:false,reason:sessionRes.error.message||'get_session_failed'};
+      }
+
+      const session=sessionRes.data?.session;
+      if(session?.user){
+        const expiresAt=Number(session.expires_at||0)*1000;
+        if(!expiresAt || expiresAt>Date.now()+30000){
+          return {ok:true,session};
+        }
+      }
+
+      const refreshRes=await sb.auth.refreshSession();
+      if(refreshRes.error){
+        const status=Number(refreshRes.error.status||0);
+        const rateLimited=status===429 ||
+          /rate.?limit|too many/i.test(refreshRes.error.message||'');
+        if(rateLimited)return {ok:false,rateLimited:true,reason:'refresh_rate_limited'};
+        return {ok:false,reason:refreshRes.error.message||'refresh_failed'};
+      }
+
+      if(refreshRes.data?.session?.user){
+        return {ok:true,session:refreshRes.data.session};
+      }
+      return {ok:false,reason:'refresh_returned_no_session'};
+    }catch(error){
+      console.warn('Auth recovery gagal:',reason,error);
+      return {ok:false,reason:error?.message||'recovery_exception'};
+    }finally{
+      S.authRecoveryPromise=null;
+    }
+  })();
+
+  return S.authRecoveryPromise;
+}
+
+async function handleTransientAuthError(error,context='request'){
+  const status=Number(error?.status||error?.code||0);
+  if(status!==401)return {retry:false,sessionValid:true};
+
+  const recovered=await recoverAuthSession(context);
+  if(recovered.ok)return {retry:true,sessionValid:true};
+
+  if(recovered.rateLimited){
+    toast('Auth sedang dibatasi sementara. Sesi tidak dikeluarkan; coba lagi sesaat.');
+    return {retry:false,sessionValid:true,rateLimited:true};
+  }
+
+  const sessionRes=await sb.auth.getSession().catch(()=>({data:{session:null},error:null}));
+  if(sessionRes?.data?.session?.user){
+    return {retry:true,sessionValid:true};
+  }
+
+  return {retry:false,sessionValid:false};
 }
 
 async function initAuth() {
@@ -3542,11 +3599,28 @@ document.addEventListener('change', async e => {
   }
 
   if(e.target.id==='cx'){
-    S.ctx=Number(e.target.value);
-    S.orgId=S.ctxs[S.ctx]?.orgId||null;
+    const seq=++S.contextSwitchSeq;
+    const nextCtx=Number(e.target.value);
+    const nextOrgId=S.ctxs[nextCtx]?.orgId||null;
+
+    S.ctx=nextCtx;
+    S.orgId=nextOrgId;
     S.selectedProkerId=null;
-    await loadPermissionsForOrganization(S.orgId);
-    return render();
+    if(S.view==='review')S.view='proker';
+
+    if(S.contextSwitchTimer)clearTimeout(S.contextSwitchTimer);
+
+    await new Promise(resolve=>{
+      S.contextSwitchTimer=setTimeout(resolve,180);
+    });
+
+    if(seq!==S.contextSwitchSeq)return;
+
+    clearViewCache();
+    await loadPermissionsForOrganization(nextOrgId);
+
+    if(seq!==S.contextSwitchSeq)return;
+    return render({force:true});
   }
   if(e.target.id==='an-peran'){
     syncSpecialAccountRole();
