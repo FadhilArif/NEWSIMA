@@ -195,5 +195,6 @@ grant execute on function public.add_penggunaan_dana(uuid,bigint,date,text) to a
 
 -- Writes are performed through add_penggunaan_dana() so the approved-budget
 -- ceiling and BPH membership checks cannot be bypassed by direct table writes.
-revoke insert, update, delete on table public.penggunaan_dana from authenticated;
+revoke all on table public.penggunaan_dana from anon;
+revoke all on table public.penggunaan_dana from authenticated;
 grant select on table public.penggunaan_dana to authenticated;
