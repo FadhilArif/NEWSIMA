@@ -2111,35 +2111,47 @@ const V = {
 
     const isWakilReviewerForStage=
       S.user.peran==='wakil_rektor' &&
-      p.review_stage==='wakil_rektor';
+      ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage);
 
     const isStageReviewer=
       isBemReviewerForStage ||
       isPembimbingReviewerForStage ||
       isWakilReviewerForStage;
 
-    const readOnlyCollaborator=!!d.readOnlyCollaborator && !isStageReviewer;
-    const wakilReadOnly = S.user.peran==='wakil_rektor' && !isWakilReviewerForStage;
+    // A Wakil Rektor is never downgraded to collaborator/read-only mode while
+    // the workflow is explicitly routed to the Wakil Rektor.
+    const readOnlyCollaborator=
+      !!d.readOnlyCollaborator &&
+      !isStageReviewer;
+
+    const wakilReadOnly=
+      S.user.peran==='wakil_rektor' &&
+      !isWakilReviewerForStage;
     const canEdit=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
-    const canReviewStage=!readOnlyCollaborator && (
-      (['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.user.peran==='pembimbing' && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review'))
-      || (['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) && S.user.peran!=='wakil_rektor' && p.organisasi?.tipe==='HMJ' && S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review'))
-      || (p.review_stage==='wakil_rektor' && S.user.peran==='wakil_rektor')
-      || (!p.review_stage && canReviewLegacy)
-    );
+    const canReviewStage=
+      isWakilReviewerForStage ||
+      (!readOnlyCollaborator && (
+        (['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) &&
+          S.user.peran==='pembimbing' &&
+          S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review'))
+        || (['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
+          S.user.peran!=='wakil_rektor' &&
+          p.organisasi?.tipe==='HMJ' &&
+          S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review'))
+        || (!p.review_stage && canReviewLegacy)
+      ));
     const canReview=canReviewLegacy||canReviewStage;
     const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor'].includes(p.review_stage);
     const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj'].includes(p.review_stage);
     // Reviewer visibility is determined by workflow stage. The backend RPC
     // remains authoritative for self-review and authorization checks.
     const isWakilProposalReview=
-      S.user.peran==='wakil_rektor' &&
+      isWakilReviewerForStage &&
       p.status==='proposal_diajukan' &&
       p.review_stage==='wakil_rektor' &&
-      !!proposal &&
-      canReviewStage;
+      !!proposal;
 
     const isProposalReview=
       isWakilProposalReview ||
@@ -2166,7 +2178,29 @@ const V = {
       : '';
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
-    if(p.status==='proposal_diajukan' && p.review_stage==='hmj_from_pembimbing_approved' && (canCreate||canEdit)){
+
+    if(isWakilProposalReview){
+      const targetLabel=reviewStageLabel(p.review_stage);
+      actions='<div class="w-full">'+
+        '<div class="rounded-xl border border-sima-100 bg-sima-50 p-3 mb-3">'+
+          '<p class="text-sm font-semibold text-sima-800">Pengajuan sudah sampai di Wakil Rektor.</p>'+
+          '<p class="text-xs text-sima-700 mt-1">Ini adalah tahap tindakan aktif. Wakil Rektor dapat menyetujui atau mengembalikan untuk revisi.</p>'+
+        '</div>'+
+        '<p class="text-sm text-slate-600 mb-3">Tahap saat ini: <b>'+esc(targetLabel||'Wakil Rektor')+'</b></p>'+
+        ((p.sumber_dana_kode==='KAMPUS')
+          ? '<label>Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
+          : (p.sumber_dana_kode
+            ? '<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode)+' · Dana ini tidak mengurangi plafon kampus.</p>'
+            : ''))+
+        '<label class="mt-3">Komentar review</label>'+
+        '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea>'+
+        '<div class="flex flex-wrap gap-2 mt-3">'+
+          action('revise','Kembalikan untuk revisi','d')+
+          action('approve','Setujui')+
+        '</div>'+
+      '</div>';
+    }
+    else if(p.status==='proposal_diajukan' && p.review_stage==='hmj_from_pembimbing_approved' && (canCreate||canEdit)){
       actions=!collabReady
         ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
         : action('forward_hmj_to_bem','Teruskan ke BEM');
@@ -2262,12 +2296,14 @@ const V = {
         : (readOnlyCollaborator
         ? 'Dokumentasi kolaborator · akses hanya baca.'
         : isStageReviewer
-          ? 'Pengajuan HMJ · BEM dapat review, setujui, atau revisi.'
+          ? (S.user.peran==='pembimbing' ? 'Pengajuan HMJ · Pembimbing dapat review, setujui, atau revisi.'
+             : S.user.peran==='wakil_rektor' ? 'Pengajuan · Wakil Rektor dapat review, setujui, atau revisi.'
+             : 'Pengajuan HMJ · BEM dapat review, setujui, atau revisi.')
           : 'Alur tindak lanjut program kerja.')+
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
-      collaboratorBanner+      '<div class="card mb-4 workflow-steps"><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">'+steps.map((s,i)=>'<div class="rounded-xl p-3 '+(i<currentIndex?'bg-emerald-50 text-emerald-700':i===currentIndex?'bg-sima-50 text-sima-700':'bg-slate-50 text-slate-400')+'"><div class="text-[11px] font-bold">'+(i+1)+'</div><div class="text-xs mt-1 font-semibold">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
+      collaboratorBanner+      '<div class="card mb-4 workflow-steps"><div class="workflow-steps-track">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'"><div class="workflow-step-number">'+(i+1)+'</div><div class="workflow-step-label">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
         ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
