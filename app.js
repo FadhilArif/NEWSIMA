@@ -853,16 +853,48 @@ async function loadGallery() {
   const pmap=Object.fromEntries((prokerRows.data||[]).map(x=>[x.id,x]));
   const umap=Object.fromEntries((userRows.data||[]).map(x=>[x.id,x]));
 
+  // Resolve the uploader's organization from active memberships.
+  // Prefer the membership matching the Proker organization (important for
+  // users who belong to more than one organization).
+  let membershipRows=[];
+  let membershipError=null;
+  if(userIds.length){
+    const res=await sb.from('keanggotaan')
+      .select('akun_id,organisasi_id,status')
+      .in('akun_id',userIds)
+      .eq('status','aktif');
+    membershipRows=Array.isArray(res.data)?res.data:[];
+    membershipError=res.error||null;
+  }
+  if(membershipError){
+    console.warn('Gagal memuat organisasi pengunggah foto:',membershipError.message);
+  }
+
+  const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
+  const uploaderOrgRows=uploaderOrgIds.length
+    ? ((await sb.from('organisasi').select('id,nama,tipe').in('id',uploaderOrgIds)).data||[])
+    : [];
+  const uploaderOrgMap=Object.fromEntries(uploaderOrgRows.map(x=>[x.id,x]));
+  const membershipsByUser=new Map();
+  membershipRows.forEach(row=>{
+    if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);
+    membershipsByUser.get(row.akun_id).push(row);
+  });
+
   const hydrated=await Promise.all(rows.map(async x=>{
     let thumb_url='';
     if(x.thumb_path){
       const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
       thumb_url=signed.data?.signedUrl||'';
     }
+
+    const memberships=membershipsByUser.get(x.diunggah_oleh)||[];
+    const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[x.proker_id]?.organisasi_id||'')) || memberships[0] || null;
     return {
       ...x,
       proker:pmap[x.proker_id]||null,
       uploader:umap[x.diunggah_oleh]||null,
+      uploader_organization:preferred ? (uploaderOrgMap[preferred.organisasi_id]||null) : null,
       thumb_url
     };
   }));
@@ -1564,6 +1596,7 @@ function openActivityGallery(prokerId) {
                   '<p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p>'+
                   '<p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p>'+
                   '<p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p>'+
+                  '<p class="text-xs text-sima-700 font-semibold mt-1">Organisasi: '+esc(photo.uploader_organization?.nama||'Tidak terdeteksi')+'</p>'+
                 '</div>'+
               '</div>'
             ).join('')+
@@ -2249,7 +2282,7 @@ const V = {
                   (photo.thumb_url
                     ? '<img src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
                     : '<div class="w-full h-48 bg-slate-100 grid place-items-center text-slate-400 text-sm">Pratinjau tidak tersedia</div>')+
-                  '<div class="p-3"><p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p></div>'+
+                  '<div class="p-3"><p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p><p class="text-xs text-sima-700 font-semibold mt-1">Organisasi: '+esc(photo.uploader_organization?.nama||'Tidak terdeteksi')+'</p></div>'+
                 '</div>'
               ).join('')+'</div>'
             : '<div class="mt-4 rounded-2xl border border-dashed border-slate-300 p-6 text-center"><p class="sub">Belum ada foto kegiatan.</p></div>')+
@@ -2276,9 +2309,16 @@ const V = {
           S.gallery.map(x=>
             '<button type="button" class="card !p-0 overflow-hidden text-left group hover:-translate-y-0.5 transition" data-gallery-proker="'+esc(x.proker_id)+'">'+
               (x.cover?.thumb_url
-                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105"><span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>'
-                : '<div class="relative h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>')+
-              '<div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateID(x.proker?.tanggal_mulai||'')+(x.proker?.tanggal_selesai?' – '+dateID(x.proker.tanggal_selesai):'')+'</p><p class="text-xs text-slate-400 mt-1">Klik untuk melihat dokumentasi kegiatan</p></div>'+
+                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105">'+
+                    '<div class="absolute top-3 left-3 max-w-[75%]"><span class="chip bl bg-white/95">'+esc(x.cover.uploader_organization?.nama||'Organisasi pengunggah tidak terdeteksi')+'</span></div>'+
+                    '<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>'
+                : '<div class="relative h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan'+
+                    '<div class="absolute top-3 left-3 max-w-[75%]"><span class="chip bl bg-white/95">'+esc(x.cover?.uploader_organization?.nama||'Organisasi pengunggah tidak terdeteksi')+'</span></div>'+
+                    '<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>')+
+              '<div class="p-4"><p class="font-semibold">'+esc(x.proker?.nama||'Kegiatan')+'</p>'+
+                '<p class="text-xs text-slate-500 mt-1">'+dateID(x.proker?.tanggal_mulai||'')+(x.proker?.tanggal_selesai?' – '+dateID(x.proker.tanggal_selesai):'')+'</p>'+
+                '<p class="text-xs text-slate-500 mt-1">Organisasi pengunggah: <b>'+esc(x.cover?.uploader_organization?.nama||'Tidak terdeteksi')+'</b></p>'+
+                '<p class="text-xs text-slate-400 mt-1">Klik untuk melihat dokumentasi kegiatan</p></div>'+
             '</button>'
           ).join('')+
           '</div>'
