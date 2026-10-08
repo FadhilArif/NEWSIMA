@@ -1257,7 +1257,8 @@ async function loadClubMembers() {
 }
 
 async function loadStructureCatalog() {
-  await Promise.all([loadOrganizations(),loadJabatanAndUnits(),loadOrganizationRelations(),loadCoordinatorAssignments(),loadClubMembers()]);
+  await loadOrganizations();
+  await Promise.all([loadJabatanAndUnits(),loadOrganizationRelations(),loadCoordinatorAssignments(),loadClubMembers()]);
 }
 
 async function loadAccounts() {
@@ -1391,7 +1392,8 @@ async function loadViewData(view){
       await loadPeriods();
       break;
     case 'organisasi':
-      await Promise.all([loadOrganizations(),loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
+      await loadOrganizations();
+      await Promise.all([loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
       break;
     case 'unit_kerja':
       await loadStructureCatalog();
@@ -1406,7 +1408,8 @@ async function loadViewData(view){
       await loadJabatanAndUnits();
       break;
     case 'koordinator':
-      await Promise.all([loadOrganizations(),loadCoordinatorAssignments()]);
+      await loadOrganizations();
+      await loadCoordinatorAssignments();
       break;
     case 'profil':
       await loadMemberships();
@@ -3095,13 +3098,33 @@ async function render(options={}) {
     document.querySelectorAll('[data-koordinator-form]').forEach(async form=>{
       const ukmId=form.dataset.koordinatorForm;
       const select=form.querySelector('select[name="akun_id"]');
+      const button=form.querySelector('button[type="submit"]');
       if(!select || S.user.peran==='admin')return;
-      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
-      const candidates=data?.candidates||[];
-      if(!error&&data?.ok){
-        select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
-      }else{
+      try{
+        const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
+        const candidates=data?.candidates||[];
+        if(!error&&data?.ok){
+          select.disabled=false;
+          select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
+          if(!candidates.length){
+            select.innerHTML='<option value="">Belum ada anggota BEM aktif</option>';
+            select.disabled=true;
+            if(button)button.disabled=true;
+          }
+        }else{
+          const reason=data?.error||error?.message||'Gagal memuat kandidat.';
+          select.innerHTML='<option value="">Gagal memuat kandidat</option>';
+          select.disabled=true;
+          if(button)button.disabled=true;
+          console.error('UKM coordinator candidates failed:',{ukmId,reason});
+          toast('Kandidat koordinator gagal dimuat: '+reason);
+        }
+      }catch(error){
         select.innerHTML='<option value="">Gagal memuat kandidat</option>';
+        select.disabled=true;
+        if(button)button.disabled=true;
+        console.error('UKM coordinator candidate exception:',error);
+        toast('Kandidat koordinator gagal dimuat.');
       }
     });
   }
@@ -4322,12 +4345,31 @@ document.addEventListener('submit', async e => {
 
   if(e.target.matches('form[data-koordinator-form]')){
     e.preventDefault();
-    const ukmId=e.target.dataset.koordinatorForm;
-    const accountId=e.target.querySelector('select[name="akun_id"]')?.value;
+    const form=e.target;
+    const ukmId=form.dataset.koordinatorForm;
+    const select=form.querySelector('select[name="akun_id"]');
+    const button=form.querySelector('button[type="submit"]');
+    const accountId=select?.value;
     if(!accountId)return toast('Pilih anggota BEM terlebih dahulu.');
-    const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
-    if(error||!data?.ok)return toast('Gagal menunjuk koordinator: '+(data?.error||error?.message||'Terjadi kesalahan.'));
-    toast('Koordinator UKM berhasil ditunjuk.');return render();
+    if(button){button.disabled=true;button.textContent='Menyimpan…';}
+    try{
+      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
+      if(error||!data?.ok){
+        const reason=data?.error||error?.message||'Terjadi kesalahan.';
+        console.error('UKM coordinator assignment failed:',{ukmId,accountId,reason,error});
+        toast('Gagal menunjuk koordinator: '+reason);
+        return;
+      }
+      toast('Koordinator UKM berhasil ditunjuk.');
+      S.viewCache={};
+      S.htmlCache={};
+      return render({force:true});
+    }catch(error){
+      console.error('UKM coordinator assignment exception:',error);
+      toast('Gagal menunjuk koordinator. Coba lagi.');
+    }finally{
+      if(button){button.disabled=false;button.textContent='Tunjuk';}
+    }
   }
 
   if(e.target.id==='form-profile')return saveProfile(e);
