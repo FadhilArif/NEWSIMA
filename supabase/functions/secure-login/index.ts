@@ -1,16 +1,39 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://fadhilarif.github.io".replaceAll(" ", ""),
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+const PRIMARY_ORIGIN = "https://fadhilarif.github.io";
+const VERCEL_ORIGIN_PATTERN = /^https:\/\/newsima(?:-[a-z0-9-]+)*\.vercel\.app$/i;
 
-function json(body: unknown, status = 200, extra: Record<string,string> = {}) {
+function resolveAllowedOrigin(origin: string | null) {
+  if (!origin) return PRIMARY_ORIGIN;
+  if (origin === PRIMARY_ORIGIN) return origin;
+
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "https:" && VERCEL_ORIGIN_PATTERN.test(url.origin)) {
+      return origin;
+    }
+  } catch (_) {}
+
+  return "";
+}
+
+function corsHeaders(req: Request) {
+  const origin = resolveAllowedOrigin(req.headers.get("origin"));
+  const headers: Record<string,string> = {
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+    "Vary": "Origin",
+  };
+
+  if (origin) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
+}
+
+function json(req: Request, body: unknown, status = 200, extra: Record<string,string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, ...extra },
+    headers: { ...corsHeaders(req), ...extra },
   });
 }
 
@@ -49,24 +72,24 @@ const adminClient = createClient(supabaseUrl, serviceKey, {
 });
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: corsHeaders(req) });
+  if (req.method !== "POST") return json(req, { error: "METHOD_NOT_ALLOWED" }, 405);
   if (!supabaseUrl || !publishableKey || !serviceKey) {
-    return json({ error: "SERVER_NOT_CONFIGURED" }, 500);
+    return json(req, { error: "SERVER_NOT_CONFIGURED" }, 500);
   }
 
   let body: { email?: string; password?: string };
   try {
     body = await req.json();
   } catch (_) {
-    return json({ error: "INVALID_REQUEST" }, 400);
+    return json(req, { error: "INVALID_REQUEST" }, 400);
   }
 
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
 
   if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 1 || password.length > 512) {
-    return json({ error: "INVALID_CREDENTIALS" }, 401);
+    return json(req, { error: "INVALID_CREDENTIALS" }, 401);
   }
 
   const ip = firstForwardedIp(req.headers.get("x-forwarded-for"))
@@ -97,7 +120,7 @@ Deno.serve(async (req) => {
   const emailLimit = checks[1].data?.[0];
 
   if (checks[0].error || checks[1].error) {
-    return json({ error: "RATE_LIMIT_UNAVAILABLE" }, 503);
+    return json(req, { error: "RATE_LIMIT_UNAVAILABLE" }, 503);
   }
 
   if (!ipLimit?.allowed || !emailLimit?.allowed) {
@@ -106,6 +129,7 @@ Deno.serve(async (req) => {
       Number(emailLimit?.retry_after || 0),
     );
     return json(
+      req,
       { error: "RATE_LIMITED", retry_after: retryAfter || 900 },
       429,
       { "Retry-After": String(retryAfter || 900) },
@@ -115,7 +139,7 @@ Deno.serve(async (req) => {
   const { data, error } = await authClient.auth.signInWithPassword({ email, password });
 
   if (error || !data.session || !data.user) {
-    return json({ error: "INVALID_CREDENTIALS" }, 401);
+    return json(req, { error: "INVALID_CREDENTIALS" }, 401);
   }
 
   // Successful authentication resets both counters.
@@ -132,7 +156,7 @@ Deno.serve(async (req) => {
 
   // Return only the session needed by the browser to establish its normal
   // Supabase session. Never return service keys.
-  return json({
+  return json(req, {
     session: {
       access_token: data.session.access_token,
       refresh_token: data.session.refresh_token,
