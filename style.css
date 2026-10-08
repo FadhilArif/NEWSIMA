@@ -733,3 +733,9 @@ input:disabled,select:disabled,textarea:disabled{background:#F5F3F0;color:#A6A29
   html{scroll-behavior:auto}
   button{transition:none}
 }
+
+/* Small consistency fixes for generated utility classes. */
+.profile-popover-avatar span{background:var(--p)!important}
+.bn button.text-sima-600{color:var(--p)!important}
+.bn button.text-slate-500{color:#99948E!important}
+#profileMenu .rounded-full.bg-sima-600{background:var(--p)!important}
