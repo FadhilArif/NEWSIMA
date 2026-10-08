@@ -1,19 +1,17 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-import { corsHeaders as supabaseCorsHeaders } from "npm:@supabase/supabase-js@^2/cors";
-
-function corsJsonHeaders() {
-  return {
-    ...supabaseCorsHeaders,
-    "Content-Type": "application/json",
-    "Vary": "Origin",
-  };
-}
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+  "Content-Type": "application/json",
+};
 
 function json(body: unknown, status = 200, extra: Record<string,string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsJsonHeaders(), ...extra },
+    headers: { ...corsHeaders, ...extra },
   });
 }
 
@@ -40,7 +38,7 @@ const adminClient = createClient(supabaseUrl, secretKey, {
 });
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: supabaseCorsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 
   const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
