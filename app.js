@@ -1132,6 +1132,7 @@ async function loadBudgets() {
 
 async function loadFundUsage() {
   S.payouts=[];
+  S.fundUsageProkers=[];
   if(!sb || !isBphFundUsageViewer()) return;
 
   const orgId=S.orgId;
@@ -1498,7 +1499,7 @@ function resetClientState() {
   S.authLost=true;
   S.ctx=0;S.ctxs=[];S.view='beranda';S.tab='semua';S.q='';S.orgId=null;S.permissions=new Set();S.positions=[];S.permissionMatrix={};S.positionsLoaded=false;S.structureOrgId=null;S.organizationRelations=[];S.coordinatorAssignments=[];S.clubMembers=[];S.revealedCredential=null;S.storageStatus=null;
   S.history=[];S.notifications=[];S.memberships=[];S.organizations=[];S.pendingAvatarFile=null;
-  S.proker=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
+  S.proker=[];S.fundUsageProkers=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.approvedCampusProkers=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];S.anggota=[];S.anggotaPeriodId=null;S.anggotaQ='';
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
 S.viewCache={};
