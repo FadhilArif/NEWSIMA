@@ -197,7 +197,10 @@ Deno.serve(async (req) => {
 
     if (position.unit_wajib && !unitId) {
       await adminClient.auth.admin.deleteUser(userId);
-      return json({ error: "DIVISION_REQUIRED_FOR_POSITION" }, 400);
+      return json({
+        error: "REQUIRED_UNIT_FOR_POSITION",
+        detail: `Jabatan ${position.nama} membutuhkan unit ${position.unit_jenis_wajib || "yang sesuai"}.`
+      }, 400);
     }
 
     if (unitId) {
