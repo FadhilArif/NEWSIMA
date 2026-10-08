@@ -505,6 +505,7 @@ async function loadContexts() {
 
 async function loadProker(_retry=false) {
   if (!sb) return;
+  const requestContextSeq=S.contextSwitchSeq;
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
@@ -597,6 +598,8 @@ async function loadProker(_retry=false) {
   const orgMap=Object.fromEntries((orgRes.data||[]).map(o=>[o.id,o]));
   (budgetRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].ajuan+=Number(x.subtotal||0);});
   (payoutRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].cair+=Number(x.jumlah||0);});
+
+  if(requestContextSeq!==S.contextSwitchSeq)return;
 
   S.proker=rows.map(p=>({
     ...p,
@@ -3606,6 +3609,9 @@ document.addEventListener('change', async e => {
     S.ctx=nextCtx;
     S.orgId=nextOrgId;
     S.selectedProkerId=null;
+    // Invalidate any render/data request still running for the previous context.
+    S.renderToken++;
+    clearViewCache();
     if(S.view==='review')S.view='proker';
 
     if(S.contextSwitchTimer)clearTimeout(S.contextSwitchTimer);
@@ -3616,7 +3622,6 @@ document.addEventListener('change', async e => {
 
     if(seq!==S.contextSwitchSeq)return;
 
-    clearViewCache();
     await loadPermissionsForOrganization(nextOrgId);
 
     if(seq!==S.contextSwitchSeq)return;
