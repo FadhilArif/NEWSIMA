@@ -110,7 +110,7 @@ body{min-height:100vh}
 #profileAvatarPreview img{display:block}
 .toast{box-shadow:0 12px 30px rgba(16,21,64,.18)}
 @media(max-width:820px){.top{position:relative;z-index:20}}
-
+  
 /* Prevent dense proker/review tables and workflow cards from collapsing. */
 .proker-table{overflow-x:auto;max-width:100%}
 .proker-table table{min-width:820px}
