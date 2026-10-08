@@ -949,3 +949,50 @@ body.mobile-menu-open{overflow:hidden}
     width:100%;
   }
 }
+
+@media(max-width:600px){
+  #profileMenu{
+    top:58px!important;
+    left:12px!important;
+    right:12px!important;
+    max-height:66vh!important;
+    border-radius:18px!important;
+  }
+  #profileMenu .profile-popover-head{
+    padding:14px 15px!important;
+    gap:12px!important;
+  }
+  #profileMenu .profile-popover-avatar img,
+  #profileMenu .profile-popover-avatar span{
+    width:52px!important;
+    height:52px!important;
+    min-width:52px!important;
+  }
+  #profileMenu .profile-popover-name{font-size:15px!important}
+  #profileMenu .profile-popover-role{font-size:10px!important}
+  #profileMenu .profile-popover-email{font-size:9px!important}
+  #profileMenu .profile-popover-body{padding:11px 13px 13px!important}
+  #profileMenu .profile-popover-section>span{font-size:8px!important;margin-bottom:4px!important}
+  #profileMenu .profile-org-row{padding:7px 0!important}
+  #profileMenu .profile-org-row b{font-size:10px!important}
+  #profileMenu .profile-org-row small{font-size:9px!important}
+  #profileMenu .profile-popover-actions{
+    grid-template-columns:1fr 1fr!important;
+    gap:6px!important;
+    margin-top:10px!important;
+  }
+  #profileMenu .profile-action{
+    min-height:36px!important;
+    font-size:9px!important;
+    padding:7px 5px!important;
+  }
+
+  .bn .bn-plus{
+    justify-self:end!important;
+    margin-right:4px!important;
+    margin-left:0!important;
+  }
+  .bn .bn-more{
+    justify-self:center;
+  }
+}
