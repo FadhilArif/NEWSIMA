@@ -4,10 +4,12 @@ const SUPABASE_KEY = window.SIMA_CONFIG?.SUPABASE_ANON_KEY || window.SIMA_CONFIG
 const SECURE_LOGIN_FUNCTION = 'secure-login';
 
 // Auth is intentionally isolated per browser tab.
-// This prevents several SIMA accounts/tabs from sharing one refresh-token
-// stream and exhausting the Supabase /auth/v1/token rate limit.
-const AUTH_STORAGE_KEY = 'sima.auth.tab.v3';
+// Each tab gets its own storage key as well as its own sessionStorage, so
+// Supabase Auth BroadcastChannel traffic cannot switch accounts between tabs.
 const AUTH_STORAGE = window.sessionStorage;
+const AUTH_TAB_ID = AUTH_STORAGE.getItem('sima.auth.tab.id') || crypto.randomUUID();
+AUTH_STORAGE.setItem('sima.auth.tab.id', AUTH_TAB_ID);
+const AUTH_STORAGE_KEY = 'sima.auth.tab.v3.' + AUTH_TAB_ID;
 
 const sb = SUPABASE_URL && SUPABASE_KEY && window.supabase
   ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
