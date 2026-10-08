@@ -52,7 +52,7 @@ const VIEW_PERMISSION = {
   inbox:'dokumen.review',
   rapat:'rapat.manage',
   plafon:'keuangan.view',
-  cair:'keuangan.manage',
+  cair:null,
   periode:'periode.view',
   organisasi:'organisasi.view',
   unit_kerja:'unit.manage',
@@ -284,6 +284,20 @@ function isBphBemBudgetViewer() {
   });
 }
 
+function isBphFundUsageViewer(orgId=S.orgId) {
+  if (!orgId) return false;
+  const org = (S.organizations || []).find(o => String(o.id) === String(orgId));
+  if (!['BEM','HMJ'].includes(org?.tipe)) return false;
+  const allowedCodes = org.tipe === 'BEM'
+    ? new Set(['presiden','wakil_presiden','bendahara','sekretaris'])
+    : new Set(['ketua','wakil_ketua','bendahara','sekretaris']);
+  return (S.memberships || []).some(m => {
+    if (String(m.organisasi_id) !== String(orgId) || m.status !== 'aktif' || !m.jabatan_id) return false;
+    const position = (S.positions || []).find(j => String(j.id) === String(m.jabatan_id));
+    return position?.aktif === true && allowedCodes.has(position.kode);
+  });
+}
+
 function canAccessView(view) {
   const role = S.user?.peran || '';
 
@@ -302,6 +316,7 @@ function canAccessView(view) {
   }
 
   if (view === 'plafon' && isBphBemBudgetViewer()) return true;
+  if (view === 'cair' && isBphFundUsageViewer()) return true;
 
   const permission = VIEW_PERMISSION[view];
   if (permission && S.permissions?.has(permission)) return true;
@@ -343,7 +358,7 @@ const S = {
   history:[],notifications:[],memberships:[],organizations:[],positions:[],permissions:new Set(),positionsLoaded:false,structureOrgId:null,organizationRelations:[],coordinatorAssignments:[],clubMembers:[],revealedCredential:null,storageStatus:null,pendingAvatarFile:null,
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
-  proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
+  proker:[],fundUsageProkers:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
   contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
   uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null
 }
@@ -351,7 +366,7 @@ const S = {
 const MENU = [
   ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['anggota','Lihat anggota'],['struktur','Struktur dan anggota'],['koordinator','Koordinator UKM']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
-  ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Pencairan dan verifikasi']]],
+  ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Penggunaan Dana']]],
   ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Struktur organisasi'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
 ];
 
@@ -1115,20 +1130,37 @@ async function loadBudgets() {
   }];
 }
 
-async function loadPayouts() {
+async function loadFundUsage() {
   S.payouts=[];
-  if(!sb)return;
-  const {data,error}=await sb.from('pencairan_dana').select('id,proker_id,sumber_dana_id,jumlah,tanggal,tahap,dicatat_oleh').order('tanggal',{ascending:false});
-  if(error)return toast('Gagal memuat pencairan: '+error.message);
-  const pids=[...new Set((data||[]).map(x=>x.proker_id))];
-  const sids=[...new Set((data||[]).map(x=>x.sumber_dana_id))];
-  const [prokers,sources]=await Promise.all([
-    pids.length?sb.from('proker').select('id,nama,organisasi_id').in('id',pids):{data:[]},
-    sids.length?sb.from('sumber_dana').select('id,kode,nama').in('id',sids):{data:[]}
-  ]);
-  const pm=Object.fromEntries((prokers.data||[]).map(x=>[x.id,x]));
-  const sm=Object.fromEntries((sources.data||[]).map(x=>[x.id,x]));
-  S.payouts=(data||[]).map(x=>({...x,proker:pm[x.proker_id],sumber:sm[x.sumber_dana_id]}));
+  if(!sb || !isBphFundUsageViewer()) return;
+
+  const orgId=S.orgId;
+  const {data:prokers,error:prokerError}=await sb.from('proker')
+    .select('id,nama,anggaran_disetujui,anggaran_disetujui_pada,status')
+    .eq('organisasi_id',orgId)
+    .eq('sumber_dana_kode','KAMPUS')
+    .gt('anggaran_disetujui',0)
+    .order('anggaran_disetujui_pada',{ascending:false});
+  if(prokerError)return toast('Gagal memuat anggaran organisasi: '+prokerError.message);
+
+  const ids=(prokers||[]).map(x=>x.id);
+  if(!ids.length)return;
+
+  const {data:usage,error:usageError}=await sb.from('penggunaan_dana')
+    .select('id,proker_id,jumlah,tanggal,keterangan,dicatat_oleh,dibuat_pada')
+    .in('proker_id',ids)
+    .order('tanggal',{ascending:false});
+  if(usageError)return toast('Gagal memuat penggunaan dana: '+usageError.message);
+
+  const usedBy=Object.fromEntries(ids.map(id=>[id,0]));
+  (usage||[]).forEach(x=>{usedBy[x.proker_id]=(usedBy[x.proker_id]||0)+Number(x.jumlah||0);});
+  S.payouts=(usage||[]).map(x=>({...x,proker:(prokers||[]).find(p=>p.id===x.proker_id)||null}));
+
+  S.fundUsageProkers=(prokers||[]).map(p=>({
+    ...p,
+    digunakan:usedBy[p.id]||0,
+    tersisa:Math.max(Number(p.anggaran_disetujui||0)-(usedBy[p.id]||0),0)
+  }));
 }
 
 async function loadPeriods() {
@@ -1269,7 +1301,7 @@ const VIEW_CACHE_KEYS = {
   anggota:['anggota','periods'],
   struktur:['structure','units','clubMembers'],
   rapat:['meetings'],
-  cair:['proker','payouts','sources'],
+  cair:['proker','payouts','fundUsageProkers'],
   koordinator:['organizations','coordinatorAssignments']
 };
 
@@ -1352,7 +1384,7 @@ async function loadViewData(view){
       await loadBudgets();
       break;
     case 'cair':
-      await Promise.all([loadProker(),loadPayouts(),loadSources()]);
+      await loadFundUsage();
       break;
     case 'periode':
       await loadPeriods();
@@ -2711,10 +2743,31 @@ const V = {
       '</div>';
   },
   cair:function(){
-    const canWrite=['admin','wakil_rektor','staf_keuangan'].includes(S.user.peran);
-    return pageHeader('Pencairan dan verifikasi','Catat pencairan dana dan sumber pembiayaannya.')+
-      (canWrite?'<form id="form-cair" class="card"><h3>Catat pencairan</h3><div class="f2"><div><label>Proker</label><select id="c-proker" required><option value="">Pilih proker</option>'+S.proker.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+'</select></div><div><label>Sumber dana</label><select id="c-sumber" required><option value="">Pilih sumber dana</option>'+(S.sources||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.kode+' · '+x.nama)+'</option>').join('')+'</select></div><div><label>Jumlah</label><input id="c-jumlah" type="text" inputmode="numeric" autocomplete="off" data-money="amount" required></div><div><label>Tanggal</label><input id="c-tanggal" type="date"></div><div><label>Tahap</label><input id="c-tahap" type="number" min="1" value="1"></div></div><button class="btn mt-4">Simpan</button></form>':'')+
-      (S.payouts.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Sumber</th><th>Jumlah</th><th>Tanggal</th><th>Tahap</th></tr></thead><tbody>'+S.payouts.map(x=>'<tr><td>'+esc(x.proker?.nama||'-')+'</td><td>'+esc(x.sumber?.nama||'-')+'</td><td>'+rp(x.jumlah)+'</td><td>'+dateID(x.tanggal)+'</td><td>'+esc(x.tahap||'-')+'</td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada pencairan.'));
+    const rows=S.fundUsageProkers||[];
+    const totalDiberikan=rows.reduce((n,x)=>n+Number(x.anggaran_disetujui||0),0);
+    const totalDigunakan=rows.reduce((n,x)=>n+Number(x.digunakan||0),0);
+    const totalSisa=Math.max(totalDiberikan-totalDigunakan,0);
+    const today=new Date().toISOString().slice(0,10);
+    return pageHeader('Penggunaan Dana','Catat penggunaan dana yang sudah disetujui untuk organisasi ini.')+
+      '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">'+
+        '<div class="card"><small>Dana diberikan</small><p class="text-2xl font-bold text-blue-700">'+rp(totalDiberikan)+'</p></div>'+
+        '<div class="card"><small>Sudah digunakan</small><p class="text-2xl font-bold text-red-600">'+rp(totalDigunakan)+'</p></div>'+
+        '<div class="card"><small>Sisa dana</small><p class="text-2xl font-bold text-emerald-700">'+rp(totalSisa)+'</p></div>'+
+      '</div>'+
+      '<div class="card"><h3>Catat penggunaan</h3><p class="sub mb-4">Pencatatan ini hanya mengurangi saldo penggunaan organisasi. Plafon kampus tetap mengikuti anggaran yang sudah disetujui.</p>'+
+        '<form id="form-penggunaan" class="f2">'+
+          '<div><label>Program kerja</label><select id="u-proker" required><option value="">Pilih proker</option>'+rows.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+rp(x.anggaran_disetujui)+' tersedia '+rp(x.tersisa)+'</option>').join('')+'</select></div>'+
+          '<div><label>Jumlah penggunaan</label><input id="u-jumlah" type="text" inputmode="numeric" autocomplete="off" data-money="amount" required></div>'+
+          '<div><label>Tanggal</label><input id="u-tanggal" type="date" value="'+today+'"></div>'+
+          '<div><label>Keterangan</label><input id="u-keterangan" type="text" maxlength="200" placeholder="Contoh: konsumsi rapat" required></div>'+
+          '<div class="md:col-span-2"><button class="btn" '+(!rows.length?'disabled':'')+'>Simpan penggunaan</button></div>'+
+        '</form></div>'+
+      '<div class="card"><h3>Anggaran per proker</h3>'+
+        (rows.length?'<div class="space-y-3">'+rows.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex flex-col sm:flex-row sm:justify-between gap-2"><div><b>'+esc(x.nama)+'</b><p class="sub">Disetujui '+rp(x.anggaran_disetujui)+'</p></div><div class="sm:text-right"><b>'+rp(x.digunakan)+'</b><p class="sub">digunakan · sisa '+rp(x.tersisa)+'</p></div></div></div>').join('')+'</div>':emptyCard('Belum ada anggaran Kampus yang disetujui untuk organisasi ini.'))+
+      '</div>'+
+      '<div class="card overflow-x-auto"><h3>Riwayat penggunaan</h3>'+
+        (S.payouts.length?'<table><thead><tr><th>Tanggal</th><th>Proker</th><th>Keterangan</th><th>Jumlah</th></tr></thead><tbody>'+S.payouts.map(x=>'<tr><td>'+dateID(x.tanggal)+'</td><td>'+esc(x.proker?.nama||'-')+'</td><td>'+esc(x.keterangan||'-')+'</td><td>'+rp(x.jumlah)+'</td></tr>').join('')+'</tbody></table>':emptyCard('Belum ada penggunaan dana.'))+
+      '</div>';
   },
   organisasi:function(){
     const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
@@ -4064,13 +4117,28 @@ document.addEventListener('submit', async e => {
     toast('Plafon periode berhasil disimpan.');clearViewCache();return render();
   }
 
-  if(e.target.id==='form-cair'){
+  if(e.target.id==='form-penggunaan'){
     e.preventDefault();
-    const proker_id=$('#c-proker').value,sumber_dana_id=$('#c-sumber').value,jumlah=parseMoney($('#c-jumlah').value),tanggal=$('#c-tanggal').value||new Date().toISOString().slice(0,10),tahap=Number($('#c-tahap').value||1);
-    if(!proker_id||!sumber_dana_id||jumlah<=0)return toast('Lengkapi proker, sumber dana, dan jumlah.');
-    const {error}=await sb.from('pencairan_dana').insert({proker_id,sumber_dana_id,jumlah,tanggal,tahap,dicatat_oleh:S.user.id});
-    if(error)return toast('Gagal mencatat pencairan: '+error.message);
-    toast('Pencairan tersimpan.');return render();
+    const proker_id=$('#u-proker').value;
+    const jumlah=parseMoney($('#u-jumlah').value);
+    const tanggal=$('#u-tanggal').value||new Date().toISOString().slice(0,10);
+    const keterangan=$('#u-keterangan').value.trim();
+    if(!proker_id||jumlah<=0||!keterangan)return toast('Lengkapi proker, jumlah, dan keterangan.');
+    const {error}=await sb.rpc('add_penggunaan_dana',{
+      p_proker_id:proker_id,
+      p_jumlah:jumlah,
+      p_tanggal:tanggal,
+      p_keterangan:keterangan
+    });
+    if(error){
+      const msg=String(error.message||'');
+      if(msg.includes('USAGE_EXCEEDS_APPROVED_BUDGET'))return toast('Penggunaan melebihi anggaran yang disetujui.');
+      if(msg.includes('FORBIDDEN_FUND_USAGE'))return toast('Kamu tidak memiliki akses ke penggunaan dana organisasi ini.');
+      return toast('Gagal mencatat penggunaan: '+msg);
+    }
+    toast('Penggunaan dana tersimpan.');
+    clearViewCache();
+    return render();
   }
 
   if(e.target.id==='form-organisasi'){
