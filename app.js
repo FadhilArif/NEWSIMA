@@ -2140,7 +2140,7 @@ function renderShell() {
       return '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
         allowed.map(([k, t]) => {
           const navIcons={beranda:'home',proker:'folder',form:'plus',undangan:'mail',galeri:'image',laporan:'file',struktur:'building',inbox:'mail',rapat:'calendar',plafon:'wallet',cair:'wallet',anggota:'users',periode:'calendar',organisasi:'building',unit_kerja:'grid',akun:'users',jabatan:'settings',audit:'shield',koordinator:'users',profil:'user'};
-          return '<button class="nav" data-go="' + esc(k) + '">' +
+          return '<button class="nav" data-go="' + esc(k) + '" data-active="' + (S.view===k ? 'true' : 'false') + '" aria-current="' + (S.view===k ? 'page' : 'false') + '">' +
             '<span class="nav-ico">' + icon(navIcons[k]||'grid') + '</span><span class="nav-label">' + esc(t) + '</span>' +
           '</button>';
         }).join('');
