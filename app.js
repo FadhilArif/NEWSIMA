@@ -3191,7 +3191,20 @@ document.addEventListener('click', async e => {
     error=rpc.error;
     if(error)return toast('Tindakan gagal: '+(error.message||error.details||error.hint||'Tidak dapat memproses alur proker.'));
     if(data?.status)toast('Status proker diperbarui menjadi: '+(ST[data.status]?.[0]||data.status));
-    S.selectedProkerId=prokerId;
+
+    // A reviewer may lose access to the detail immediately after a workflow
+    // decision because the Proker moves to another stage. Do not re-query the
+    // now-inaccessible detail page; return to the review/list view instead.
+    const reviewActions=['approve','revise','approve_lpj','reject_lpj'];
+    if(reviewActions.includes(action)){
+      S.selectedProkerId=null;
+      S.detail=null;
+      S.view='proker';
+      S.tab='semua';
+    }else{
+      S.selectedProkerId=prokerId;
+    }
+
     clearViewCache();
     return render();
   }
