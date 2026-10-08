@@ -328,7 +328,8 @@ const S = {
   selectedProkerId:null,detail:null,reviewDocId:null,
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
   proker:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
-  contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null
+  contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
+  uploadLockPromise:Promise.resolve(),lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null
 }
 
 const MENU = [
@@ -1739,6 +1740,7 @@ async function hydrateUser(authUser) {
 }
 
 async function logout() {
+  S.intentionalSignOut=true;
   if (sb) {
     const { error } = await sb.auth.signOut({ scope:'local' });
     if (error) return toast('Gagal keluar: ' + error.message);
@@ -1836,6 +1838,109 @@ function clearLegacyAuthStorage() {
   } catch (error) {
     console.warn('Legacy auth storage cleanup skipped:',error);
   }
+}
+
+async function withUploadLock(label,task){
+  const previous=S.uploadLockPromise||Promise.resolve();
+  let releaseResolve;
+  const current=new Promise(resolve=>{releaseResolve=resolve;});
+  S.uploadLockPromise=current;
+
+  if(previous!==current){
+    try{
+      await previous;
+    }catch(_){}
+  }
+
+  try{
+    return await task();
+  }finally{
+    releaseResolve();
+    if(S.uploadLockPromise===current)S.uploadLockPromise=Promise.resolve();
+  }
+}
+
+async function mapWithConcurrency(items,limit,worker){
+  const results=new Array(items.length);
+  let nextIndex=0;
+  async function runner(){
+    while(true){
+      const index=nextIndex++;
+      if(index>=items.length)return;
+      results[index]=await worker(items[index],index);
+    }
+  }
+  const workers=Array.from({length:Math.min(Math.max(1,limit),items.length)},()=>runner());
+  await Promise.all(workers);
+  return results;
+}
+
+async function recoverUnexpectedSignOut(){
+  if(!sb||S.intentionalSignOut||!S.user?.id)return false;
+  if(S.authRecoveryTimer){
+    clearTimeout(S.authRecoveryTimer);
+    S.authRecoveryTimer=null;
+  }
+
+  const tryRestore=async()=>{
+    try{
+      const current=await sb.auth.getSession();
+      if(current.data?.session?.user){
+        S.lastKnownSession=current.data.session;
+        if(S.authLost)await hydrateUser(current.data.session.user);
+        return true;
+      }
+
+      if(S.lastKnownSession?.refresh_token){
+        const restored=await sb.auth.setSession({
+          access_token:S.lastKnownSession.access_token,
+          refresh_token:S.lastKnownSession.refresh_token
+        });
+        if(!restored.error&&restored.data?.session?.user){
+          S.lastKnownSession=restored.data.session;
+          S.authLost=false;
+          await hydrateUser(restored.data.session.user);
+          return true;
+        }
+      }
+
+      const recovered=await recoverAuthSession('unexpected_signed_out');
+      if(recovered.ok&&recovered.session?.user){
+        S.lastKnownSession=recovered.session;
+        S.authLost=false;
+        await hydrateUser(recovered.session.user);
+        return true;
+      }
+    }catch(error){
+      console.warn('Pemulihan SIGNED_OUT gagal:',error);
+    }
+    return false;
+  };
+
+  S.authRecoveryTimer=setTimeout(async()=>{
+    S.authRecoveryTimer=null;
+    const restored=await tryRestore();
+    if(restored)return;
+
+    // If an upload is still active, do not destroy the working UI. Give the
+    // upload queue a chance to finish before treating this as a true logout.
+    if(S.uploadLockPromise){
+      await Promise.race([
+        S.uploadLockPromise.catch(()=>{}),
+        new Promise(resolve=>setTimeout(resolve,4000))
+      ]).catch(()=>{});
+      if(await tryRestore())return;
+    }
+
+    if(!S.intentionalSignOut){
+      resetClientState();
+      $('#app').hidden=true;
+      $('#login').hidden=false;
+      $('#le').textContent='Sesi akun tidak dapat dipulihkan. Silakan masuk kembali.';
+    }
+  },1200);
+
+  return true;
 }
 
 async function recoverAuthSession(reason='unknown'){
@@ -1948,14 +2053,22 @@ async function initAuth() {
 
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if(session)S.lastKnownSession=session;
       if (session?.user && S.authLost) {
         hydrateUser(session.user).catch(error=>console.warn('Hydrate setelah auth event gagal:',error));
       }
     } else if (event === 'SIGNED_OUT') {
-      resetClientState();
-      $('#app').hidden = true;
-      $('#login').hidden = false;
-      $('#le').textContent = '';
+      if(S.intentionalSignOut){
+        resetClientState();
+        $('#app').hidden=true;
+        $('#login').hidden=false;
+        $('#le').textContent='';
+        return;
+      }
+      // Do not immediately erase the application state. A transient Auth
+      // refresh failure/rate-limit can emit SIGNED_OUT while a valid refresh
+      // token is still recoverable.
+      recoverUnexpectedSignOut();
     }
   });
 }
@@ -3263,6 +3376,7 @@ document.addEventListener('click', async e => {
 
   const activityPhotoUpload=e.target.closest('[data-activity-photo-upload]');
   if(activityPhotoUpload){
+    return withUploadLock('foto-kegiatan',async()=>{
     if(!sb)return toast('Supabase belum tersedia.');
     const prokerId=activityPhotoUpload.dataset.prokerId||S.selectedProkerId;
     const input=$('#activity-photo-input');
@@ -3305,7 +3419,7 @@ document.addEventListener('click', async e => {
       const lpjDoc=S.detail?.docs?.find(x=>x.jenis==='laporan_akhir')||null;
       updateActivityPhotoProgress(0,files.length,'Memulai upload '+files.length+' foto...');
 
-      const uploadResults=await Promise.all(files.map(async(file,index)=>{
+      const uploadResults=await mapWithConcurrency(files,2,async(file,index)=>{
         const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
         const path=proker.organisasi_id+'/'+prokerId+'/foto/'+Date.now()+'_'+index+'_'+crypto.randomUUID()+'_'+safeName;
 
@@ -3329,7 +3443,7 @@ document.addEventListener('click', async e => {
           mime_type:file.type,
           uploaded_at:new Date().toISOString()
         };
-      }));
+      });
 
       updateActivityPhotoProgress(files.length,files.length,'Menyimpan metadata foto...');
       const dbResult=await sb.from('foto_kegiatan')
@@ -3360,11 +3474,13 @@ document.addEventListener('click', async e => {
       activityPhotoUpload.disabled=false;
       return toast(error?.message||'Upload foto kegiatan gagal. Tidak ada foto dari batch ini yang disimpan.');
     }
+    });
   }
 
 
   const docUpload=e.target.closest('[data-doc-upload]');
   if(docUpload){
+    return withUploadLock('dokumen',async()=>{
     if(!sb)return toast('Supabase belum tersedia.');
     const prokerId=docUpload.dataset.prokerId;
     const kind=docUpload.dataset.docUpload;
@@ -3431,6 +3547,7 @@ document.addEventListener('click', async e => {
     await loadProkerDetail();
     toast(kind==='proposal'?'Proposal berhasil diunggah.':'LPJ berhasil diunggah.');
     return render();
+    });
   }
 
   const docPrint=e.target.closest('[data-doc-print]');
@@ -3726,9 +3843,15 @@ document.addEventListener('submit', async e => {
       if(!sb)return $('#le').textContent='Login dinonaktifkan: Supabase belum dikonfigurasi.';
 
       // Fully detach the previous account from this tab before creating a new session.
+      S.intentionalSignOut=true;
       await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+      S.intentionalSignOut=false;
       clearLegacyAuthStorage();
       AUTH_STORAGE.removeItem(AUTH_STORAGE_KEY);
+
+      S.intentionalSignOut=true;
+      await sb.auth.signOut({ scope:'local' }).catch(()=>{});
+      S.intentionalSignOut=false;
 
       const response=await fetch(SUPABASE_URL+'/functions/v1/'+SECURE_LOGIN_FUNCTION,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({email,password})});
       const payload=await response.json().catch(()=>({}));
