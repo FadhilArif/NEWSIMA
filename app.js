@@ -3380,24 +3380,27 @@ document.addEventListener('click', async e => {
 
   const activityPhotoUpload=e.target.closest('[data-activity-photo-upload]');
   if(activityPhotoUpload){
-    return withUploadLock('foto-kegiatan',async()=>{
     if(!sb)return toast('Supabase belum tersedia.');
+
+    // Capture the selected File objects immediately. A later render must not
+    // be able to clear/change the user's selection before the queued upload runs.
     const prokerId=activityPhotoUpload.dataset.prokerId||S.selectedProkerId;
     const input=$('#activity-photo-input');
     const files=[...(input?.files||[])];
     if(!prokerId)return toast('Proker tidak ditemukan.');
     if(!files.length)return toast('Pilih foto kegiatan terlebih dahulu.');
 
-    const currentCount=Number(S.detail?.photos?.length||0);
-    const remaining=Math.max(0,5-currentCount);
-    if(!remaining)return toast('Maksimal 5 foto kegiatan sudah tercapai.');
-    if(files.length>remaining)return toast('Foto yang dipilih melebihi sisa slot. Maksimal '+remaining+' foto lagi.');
-
     const allowed=['image/jpeg','image/png','image/webp','image/gif'];
     for(const file of files){
       if(!allowed.includes(file.type))return toast('Format '+file.name+' tidak didukung. Gunakan JPG, PNG, WEBP, atau GIF.');
       if(file.size>10*1024*1024)return toast('Foto '+file.name+' melebihi batas 10 MB.');
     }
+
+    return withUploadLock('foto-kegiatan',async()=>{
+    const currentCount=Number(S.detail?.photos?.length||0);
+    const remaining=Math.max(0,5-currentCount);
+    if(!remaining)return toast('Maksimal 5 foto kegiatan sudah tercapai.');
+    if(files.length>remaining)return toast('Foto yang dipilih melebihi sisa slot. Maksimal '+remaining+' foto lagi.');
 
     const totalIncoming=files.reduce((sum,file)=>sum+file.size,0);
     const quota=await loadStorageStatus(totalIncoming);
@@ -3484,8 +3487,10 @@ document.addEventListener('click', async e => {
 
   const docUpload=e.target.closest('[data-doc-upload]');
   if(docUpload){
-    return withUploadLock('dokumen',async()=>{
     if(!sb)return toast('Supabase belum tersedia.');
+
+    // Capture the chosen document immediately; do not re-read the input after
+    // another queued upload may have caused a render.
     const prokerId=docUpload.dataset.prokerId;
     const kind=docUpload.dataset.docUpload;
     const input=kind==='laporan_akhir'?$('#workflow-file-lpj'):$('#workflow-file');
@@ -3503,9 +3508,11 @@ document.addEventListener('click', async e => {
     }
     if(file.size>15*1024*1024)return toast('Ukuran file maksimal 15 MB.');
 
-    const proker=S.detail?.proker;
-    if(!proker?.organisasi_id)return toast('Organisasi proker tidak ditemukan.');
+    const prokerSnapshot=S.detail?.proker ? {...S.detail.proker} : null;
+    if(!prokerSnapshot?.organisasi_id)return toast('Organisasi proker tidak ditemukan.');
 
+    return withUploadLock('dokumen',async()=>{
+    const proker=prokerSnapshot;
     const quota=await loadStorageStatus(file.size);
     if(quota && !quota.can_upload){
       return toast('Penyimpanan SIMA tidak cukup untuk file ini. Upload dihentikan.');
