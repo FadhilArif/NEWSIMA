@@ -1976,7 +1976,7 @@ const V = {
       return ['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
         p.organisasi?.tipe==='HMJ' &&
         String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
-        S.permissions?.has('dokumen.review');
+        S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review');
     };
     const isStageReviewerFor=(p)=>{
       return isBemReviewerFor(p) ||
@@ -2051,7 +2051,7 @@ const V = {
       ['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
       p.organisasi?.tipe==='HMJ' &&
       String(p.organisasi?.induk_organisasi_id||'')===String(S.orgId||'') &&
-      S.permissions?.has('dokumen.review');
+      S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review');
 
     const isPembimbingReviewerForStage=
       S.user.peran==='pembimbing' &&
