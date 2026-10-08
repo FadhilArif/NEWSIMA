@@ -2222,9 +2222,9 @@ function renderShell() {
     const mobile = [
       ['beranda','Beranda','home'],
       ['proker','Proker','folder'],
-      ['form','Tambah','plus'],
       ['inbox','Review','mail'],
-      ['__more__','Lainnya','grid']
+      ['__more__','Lainnya','grid'],
+      ['form','Tambah','plus']
     ].filter(([k]) => k==='__more__' || canAccessView(k));
     $('#bn').innerHTML = mobile.map(([k,t,ico]) => {
       if(k==='__more__'){
