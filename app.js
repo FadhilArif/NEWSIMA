@@ -4508,14 +4508,14 @@ document.addEventListener('submit', async e => {
     if(tipe==='CLUB'&&relasi.length){
       const rows=relasi.filter(id=>id!==data.id).map(id=>({organisasi_id:data.id,terhubung_dengan_id:id,hubungan:'terhubung',dibuat_oleh:S.user.id}));
       const r=await sb.from('organisasi_relasi').insert(rows);
-      if(r.error)return toast('Organisasi dibuat, tetapi koneksi Club gagal: '+r.error.message);
+      if(r.error)return toast('Organisasi dibuat, tetapi koneksi UKM Minat Bakat gagal: '+r.error.message);
     }
     toast('Organisasi berhasil ditambahkan.');return render();
   }
 
   if(e.target.id==='form-club-relasi'){
     e.preventDefault();
-    if(!S.orgId)return toast('Pilih Club terlebih dahulu.');
+    if(!S.orgId)return toast('Pilih UKM Minat Bakat terlebih dahulu.');
     const target=$('#cr-org').value;
     if(!target)return toast('Pilih organisasi yang akan dihubungkan.');
     const {error}=await sb.from('organisasi_relasi').insert({
