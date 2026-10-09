@@ -275,15 +275,6 @@ begin
     v_message:=case when v_stage like '%lpj%' then 'LPJ "' else 'Proposal "' end||coalesce(new.nama,'program kerja')||'" menunggu persetujuan Wakil Rektor 1.';
   end if;
 
-  -- Notify the owner after a revision or final approval/completion.
-  if tg_op='UPDATE' and new.review_stage is null and new.status in ('revisi','selesai','disetujui','lpj_disetujui')
-     and old.review_stage is not null then
-    v_targets:=array_append(v_targets,new.dibuat_oleh);
-    v_message:=case when new.status='revisi' or new.status='selesai'
-      then 'Program kerja "'||coalesce(new.nama,'program kerja')||'" dikembalikan untuk tindak lanjut.'
-      else 'Program kerja "'||coalesce(new.nama,'program kerja')||'" telah mendapat keputusan akhir.' end;
-  end if;
-
   foreach v_id in array coalesce(v_targets,array[]::uuid[]) loop
     if v_id is not null and v_id is distinct from auth.uid() and not exists(
       select 1 from public.notifikasi n
