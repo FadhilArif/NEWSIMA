@@ -639,46 +639,76 @@ async function loadProker(_retry=false) {
     }
   }
 
-  let ukmReviewQuery=Promise.resolve({data:[],error:null});
-  const coordUkmIds=(S.coordinatorAssignments||[])
-    .filter(x=>x.status==='aktif' && String(x.akun_id)===String(S.user.id))
-    .map(x=>x.organisasi_id);
-  const presidentUkmIds=(S.organizations||[])
-    .filter(o=>o.tipe==='UKM' && String(o.induk_organisasi_id||'')===String(S.orgId||''))
-    .filter(()=> (S.memberships||[]).some(m=>{
-      if(String(m.organisasi_id)!==String(S.orgId||'') || m.status!=='aktif' || !m.jabatan_id) return false;
-      const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
-      return pos?.kode==='presiden' && String(m.akun_id)===String(S.user.id);
-    }))
-    .map(o=>o.id);
-  const reviewerUkmIds=[...new Set([...coordUkmIds,...presidentUkmIds])];
-  if(!isWakil && reviewerUkmIds.length){
-    ukmReviewQuery=sb.from('proker')
-      .select(selectFields)
-      .in('organisasi_id',reviewerUkmIds)
-      .in('review_stage',['ukm_koordinator','ukm_presiden_bem','ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor','wakil_rektor_lpj'])
-      .order('tanggal_mulai',{ascending:true});
-  }
+  const currentBemUkmIds=activeOrg?.tipe==='BEM'
+    ? (S.organizations||[])
+        .filter(o=>o.tipe==='UKM' && String(o.induk_organisasi_id||'')===String(activeOrg.id))
+        .map(o=>o.id)
+    : [];
+  const coordinatorUkmIds=[...new Set((S.coordinatorAssignments||[])
+    .filter(x=>x.status==='aktif'
+      && String(x.akun_id)===String(S.user.id)
+      && (x.mulai_pada==null || x.mulai_pada<=new Date().toISOString().slice(0,10))
+      && (x.berakhir_pada==null || x.berakhir_pada>=new Date().toISOString().slice(0,10)))
+    .map(x=>x.organisasi_id))];
+
+  const isBemPresident=activeOrg?.tipe==='BEM' && (S.memberships||[]).some(m=>{
+    if(String(m.organisasi_id)!==String(activeOrg.id) || String(m.akun_id)!==String(S.user.id) || m.status!=='aktif' || !m.jabatan_id)return false;
+    const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
+    return pos?.kode==='presiden';
+  });
+
+  // Stage 1: only the account assigned as coordinator gets this query.
+  const coordinatorUkmQuery=!isWakil && coordinatorUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',coordinatorUkmIds)
+        .in('review_stage',['ukm_koordinator','ukm_koordinator_lpj'])
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+
+  // Stage 2: only the BEM President sees UKM submissions awaiting their decision.
+  const presidentUkmQuery=!isWakil && isBemPresident && currentBemUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',currentBemUkmIds)
+        .in('review_stage',['ukm_presiden_bem','ukm_presiden_bem_lpj'])
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+
+  // After the President approves, every active member of the parent BEM can
+  // see the UKM proker as read-only while it is with WR and afterwards.
+  const visibleUkmQuery=!isWakil && currentBemUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',currentBemUkmIds)
+        .or('and(status.eq.proposal_diajukan,review_stage.eq.wakil_rektor),and(status.eq.lpj_diajukan,review_stage.eq.wakil_rektor_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
 
   const [
     {data:ownRows,error:ownError},
     {data:collabProkers,error:collabProkerError},
     {data:bemHmjRows,error:bemHmjError},
-    {data:ukmReviewRows,error:ukmReviewError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,ukmReviewQuery]);
+    {data:coordinatorUkmRows,error:coordinatorUkmError},
+    {data:presidentUkmRows,error:presidentUkmError},
+    {data:visibleUkmRows,error:visibleUkmError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorUkmQuery,presidentUkmQuery,visibleUkmQuery]);
 
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
-  if(ukmReviewError)console.warn('Gagal memuat proker UKM yang menunggu review:',ukmReviewError.message);
+  if(coordinatorUkmError)console.warn('Gagal memuat proker Koordinator UKM:',coordinatorUkmError.message);
+  if(presidentUkmError)console.warn('Gagal memuat proker review Presiden BEM:',presidentUkmError.message);
+  if(visibleUkmError)console.warn('Gagal memuat proker UKM yang sudah disetujui Presiden BEM:',visibleUkmError.message);
 
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
-  const ukmReviews=(ukmReviewRows||[]).map(x=>({...x,__collaborator:false,__ukmReview:true}));
+  const coordinatorUkm=(coordinatorUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmCoordinatorReview:true}));
+  const presidentUkm=(presidentUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmPresidentReview:true}));
+  const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
 
   const map=new Map();
-  [...own,...collab,...childHmjs,...ukmReviews].forEach(x=>map.set(x.id,x));
+  [...own,...collab,...childHmjs,...coordinatorUkm,...presidentUkm,...visibleUkm].forEach(x=>{
+    map.set(x.id,{...(map.get(x.id)||{}),...x});
+  });
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -2465,6 +2495,7 @@ const V = {
       if(S.user.peran==='pembimbing'){
         return p.review_stage==='pembimbing_hmj' ? 'Review pengajuan' : 'Lihat proker';
       }
+      if(p.__ukmBphReadOnly)return 'Lihat proker';
       if(p.__collaborator)return 'Lihat proker';
       if(p.status==='direncanakan')return 'Ajukan proposal';
       if(p.status==='revisi')return 'Ajukan ulang';
