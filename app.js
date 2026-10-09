@@ -337,6 +337,10 @@ function reviewStageLabel(stage) {
     hmj_from_bem:'HMJ · tindak lanjut revisi BEM',
     hmj_from_pembimbing:'HMJ · tindak lanjut Pembimbing',
     hmj_from_pembimbing_approved:'HMJ · siap diteruskan ke BEM',
+    ukm_koordinator:'Koordinator UKM · review proposal',
+    ukm_presiden_bem:'Presiden BEM · review proposal',
+    ukm_koordinator_lpj:'Koordinator UKM · review LPJ',
+    ukm_presiden_bem_lpj:'Presiden BEM · review LPJ',
     pembimbing_hmj_lpj:'Pembimbing HMJ · review LPJ',
     hmj_from_pembimbing_lpj:'HMJ · LPJ siap diteruskan ke BEM',
     hmj_from_pembimbing_lpj_revision:'HMJ · LPJ perlu revisi',
@@ -346,6 +350,41 @@ function reviewStageLabel(stage) {
     hmj_from_wakil_rektor_lpj:'HMJ · tindak lanjut revisi LPJ Wakil Rektor',
     bem_from_wakil_rektor:'BEM · tindak lanjut Wakil Rektor'
   })[stage] || '';
+}
+
+function isUkmProker(p){
+  return p?.organisasi?.tipe==='UKM';
+}
+function isUkmCoordinatorReviewer(p){
+  if(!isUkmProker(p) || !['ukm_koordinator','ukm_koordinator_lpj'].includes(p?.review_stage)) return false;
+  return (S.coordinatorAssignments||[]).some(x=>String(x.organisasi_id)===String(p.organisasi_id) && String(x.akun_id)===String(S.user.id) && x.status==='aktif');
+}
+function isUkmPresidentReviewer(p){
+  if(!isUkmProker(p) || !['ukm_presiden_bem','ukm_presiden_bem_lpj'].includes(p?.review_stage)) return false;
+  const parentId=p.organisasi?.induk_organisasi_id;
+  if(!parentId) return false;
+  return (S.memberships||[]).some(m=>{
+    if(String(m.organisasi_id)!==String(parentId) || m.status!=='aktif' || !m.jabatan_id) return false;
+    const pos=(S.positions||[]).find(x=>String(x.id)===String(m.jabatan_id));
+    return pos?.kode==='presiden' && String(m.akun_id)===String(S.user.id);
+  });
+}
+function isUkmStageReviewer(p){
+  return isUkmCoordinatorReviewer(p) || isUkmPresidentReviewer(p) ||
+    (S.user.peran==='wakil_rektor' && ['wakil_rektor','wakil_rektor_lpj'].includes(p?.review_stage));
+}
+async function transitionWorkflow(p, action, comment=null, approvedBudget=null){
+  if(!sb) throw new Error('Supabase belum tersedia.');
+  const org=(S.organizations||[]).find(o=>String(o.id)===String(p?.organisasi_id||S.detail?.proker?.organisasi_id||S.orgId||''));
+  const ukm=org?.tipe==='UKM';
+  const actionsUkm=['submit','resubmit','approve','revise','start','finish','submit_lpj','approve_lpj','reject_lpj'];
+  const rpcName=ukm && actionsUkm.includes(action) ? 'transition_ukm_proker' : 'transition_proker';
+  return sb.rpc(rpcName,{
+    p_proker_id:p.id,
+    p_action:action,
+    p_comment:comment,
+    ...(rpcName==='transition_ukm_proker'||approvedBudget!==null ? {p_anggaran_disetujui:approvedBudget}: {})
+  });
 }
 
 const ST = { direncanakan:['Direncanakan',''], draft:['Draft',''], proposal_diajukan:['Menunggu review','wa'], revisi:['Perlu revisi','er'], disetujui:['Disetujui','ok'], berjalan:['Sedang berjalan','ok'], selesai:['Kegiatan selesai','bl'], lpj_diajukan:['LPJ menunggu review','wa'], lpj_disetujui:['LPJ disetujui','ok'], tidak_terlaksana:['Tidak terlaksana','er'], arsip:['Diarsipkan',''], digabung:['Digabung',''] };
@@ -538,6 +577,7 @@ async function loadContexts() {
 async function loadProker(_retry=false) {
   if (!sb) return;
   const requestContextSeq=S.contextSwitchSeq;
+  await loadCoordinatorAssignments().catch(()=>{});
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
@@ -599,22 +639,76 @@ async function loadProker(_retry=false) {
     }
   }
 
+  const currentBemUkmIds=activeOrg?.tipe==='BEM'
+    ? (S.organizations||[])
+        .filter(o=>o.tipe==='UKM' && String(o.induk_organisasi_id||'')===String(activeOrg.id))
+        .map(o=>o.id)
+    : [];
+  const coordinatorUkmIds=[...new Set((S.coordinatorAssignments||[])
+    .filter(x=>x.status==='aktif'
+      && String(x.akun_id)===String(S.user.id)
+      && (x.mulai_pada==null || x.mulai_pada<=new Date().toISOString().slice(0,10))
+      && (x.berakhir_pada==null || x.berakhir_pada>=new Date().toISOString().slice(0,10)))
+    .map(x=>x.organisasi_id))];
+
+  const isBemPresident=activeOrg?.tipe==='BEM' && (S.memberships||[]).some(m=>{
+    if(String(m.organisasi_id)!==String(activeOrg.id) || String(m.akun_id)!==String(S.user.id) || m.status!=='aktif' || !m.jabatan_id)return false;
+    const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
+    return pos?.kode==='presiden';
+  });
+
+  // Stage 1: only the account assigned as coordinator gets this query.
+  const coordinatorUkmQuery=!isWakil && coordinatorUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',coordinatorUkmIds)
+        .in('review_stage',['ukm_koordinator','ukm_koordinator_lpj'])
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+
+  // Stage 2: only the BEM President sees UKM submissions awaiting their decision.
+  const presidentUkmQuery=!isWakil && isBemPresident && currentBemUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',currentBemUkmIds)
+        .in('review_stage',['ukm_presiden_bem','ukm_presiden_bem_lpj'])
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+
+  // After the President approves, every active member of the parent BEM can
+  // see the UKM proker as read-only while it is with WR and afterwards.
+  const visibleUkmQuery=!isWakil && currentBemUkmIds.length
+    ? sb.from('proker').select(selectFields)
+        .in('organisasi_id',currentBemUkmIds)
+        .or('and(status.eq.proposal_diajukan,review_stage.eq.wakil_rektor),and(status.eq.lpj_diajukan,review_stage.eq.wakil_rektor_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+        .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+
   const [
     {data:ownRows,error:ownError},
     {data:collabProkers,error:collabProkerError},
-    {data:bemHmjRows,error:bemHmjError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery]);
+    {data:bemHmjRows,error:bemHmjError},
+    {data:coordinatorUkmRows,error:coordinatorUkmError},
+    {data:presidentUkmRows,error:presidentUkmError},
+    {data:visibleUkmRows,error:visibleUkmError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorUkmQuery,presidentUkmQuery,visibleUkmQuery]);
 
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
+  if(coordinatorUkmError)console.warn('Gagal memuat proker Koordinator UKM:',coordinatorUkmError.message);
+  if(presidentUkmError)console.warn('Gagal memuat proker review Presiden BEM:',presidentUkmError.message);
+  if(visibleUkmError)console.warn('Gagal memuat proker UKM yang sudah disetujui Presiden BEM:',visibleUkmError.message);
 
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
+  const coordinatorUkm=(coordinatorUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmCoordinatorReview:true}));
+  const presidentUkm=(presidentUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmPresidentReview:true}));
+  const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
 
   const map=new Map();
-  [...own,...collab,...childHmjs].forEach(x=>map.set(x.id,x));
+  [...own,...collab,...childHmjs,...coordinatorUkm,...presidentUkm,...visibleUkm].forEach(x=>{
+    map.set(x.id,{...(map.get(x.id)||{}),...x});
+  });
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -838,6 +932,7 @@ async function loadInbox() {
   S.inbox=[];
   if(!sb)return;
 
+  await loadCoordinatorAssignments();
   const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
   let rows=[];
 
@@ -881,12 +976,38 @@ async function loadInbox() {
     rows=data||[];
   }
 
+  // Add UKM proposals/LPJs assigned to the signed-in coordinator regardless
+  // of the currently selected BEM ministry/context.
+  const coordinatorUkmIds=[...new Set((S.coordinatorAssignments||[])
+    .filter(x=>x.status==='aktif' && String(x.akun_id)===String(S.user.id))
+    .map(x=>x.organisasi_id))];
+  if(coordinatorUkmIds.length){
+    const {data:ukmDocs,error:ukmInboxError}=await sb.from('dokumen')
+      .select('id,organisasi_id,proker_id,jenis,status,tahap')
+      .in('organisasi_id',coordinatorUkmIds)
+      .in('jenis',['proposal','laporan_akhir'])
+      .in('tahap',['ukm_koordinator','ukm_koordinator_lpj'])
+      .eq('status','diajukan')
+      .order('id',{ascending:false});
+    if(ukmInboxError){
+      console.warn('Gagal memuat inbox Koordinator UKM:',ukmInboxError.message);
+    }else{
+      const seen=new Set(rows.map(x=>String(x.id)));
+      (ukmDocs||[]).forEach(x=>{if(!seen.has(String(x.id)))rows.push(x);});
+    }
+  }
+
   const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
-  const pm=ids.length
-    ? (await sb.from('proker').select('id,nama,status,review_stage').in('id',ids)).data||[]
-    : [];
-  const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
-  S.inbox=rows.map(x=>({...x,proker:pmap[x.proker_id]}));
+  const orgIds=[...new Set(rows.map(x=>x.organisasi_id).filter(Boolean))];
+  const [prokerRes,orgRes]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,status,review_stage').in('id',ids):Promise.resolve({data:[],error:null}),
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):Promise.resolve({data:[],error:null})
+  ]);
+  if(prokerRes.error)console.warn('Gagal memuat nama proker di inbox:',prokerRes.error.message);
+  if(orgRes.error)console.warn('Gagal memuat organisasi di inbox:',orgRes.error.message);
+  const pmap=Object.fromEntries((prokerRes.data||[]).map(x=>[x.id,x]));
+  const omap=Object.fromEntries((orgRes.data||[]).map(x=>[x.id,x]));
+  S.inbox=rows.map(x=>({...x,proker:pmap[x.proker_id],organisasi:omap[x.organisasi_id]}));
 }
 
 async function loadGallery() {
@@ -1243,22 +1364,50 @@ async function loadOrganizationRelations() {
 async function loadCoordinatorAssignments() {
   S.coordinatorAssignments=[];
   if(!sb)return;
-  let ukmIds=[];
-  const current=(S.organizations||[]).find(o=>o.id===S.orgId);
-  if(current?.tipe==='UKM') ukmIds=[current.id];
-  else if(current?.tipe==='BEM') ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===current.id).map(o=>o.id);
-  else if(S.orgId) ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===S.orgId).map(o=>o.id);
-  let q=sb.from('penugasan_koordinator').select('id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada').eq('status','aktif');
-  if(ukmIds.length) q=q.in('organisasi_id',ukmIds);
-  else if(S.orgId && current?.tipe!=='BEM') q=q.eq('organisasi_id',S.orgId);
-  const {data,error}=await q;
-  if(error)return toast('Gagal memuat koordinator UKM: '+error.message);
-  const ids=[...new Set((data||[]).map(x=>x.akun_id))];
-  const profiles=ids.length?(await sb.from('profiles').select('id,nama,nim').in('id',ids)).data||[]:[];
-  const pm=Object.fromEntries(profiles.map(x=>[x.id,x]));
-  S.coordinatorAssignments=(data||[]).map(x=>({...x,akun:pm[x.akun_id]}));
-}
 
+  const fields='id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada';
+  const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+  let managedUkmIds=[];
+  if(current?.tipe==='UKM'){
+    managedUkmIds=[current.id];
+  }else if(current?.tipe==='BEM'){
+    managedUkmIds=(S.organizations||[])
+      .filter(o=>o.tipe==='UKM'&&String(o.induk_organisasi_id||'')===String(current.id))
+      .map(o=>o.id);
+  }
+
+  // A coordinator may be assigned from a BEM ministry or other context;
+  // always fetch assignments directly addressed to the signed-in account.
+  const ownQuery=S.user?.id
+    ? sb.from('penugasan_koordinator').select(fields)
+        .eq('akun_id',S.user.id).eq('status','aktif')
+    : Promise.resolve({data:[],error:null});
+
+  let managedQuery=null;
+  if(managedUkmIds.length){
+    managedQuery=sb.from('penugasan_koordinator').select(fields)
+      .eq('status','aktif').in('organisasi_id',managedUkmIds);
+  }else if(!S.orgId && ['admin','wakil_rektor'].includes(S.user?.peran||'')){
+    managedQuery=sb.from('penugasan_koordinator').select(fields).eq('status','aktif');
+  }
+
+  const [ownRes,managedRes]=await Promise.all([
+    ownQuery,
+    managedQuery||Promise.resolve({data:[],error:null})
+  ]);
+  if(ownRes.error)console.warn('Gagal memuat penugasan koordinator milik akun:',ownRes.error.message);
+  if(managedRes.error)console.warn('Gagal memuat daftar koordinator organisasi:',managedRes.error.message);
+
+  const assignments=new Map();
+  [...(ownRes.data||[]),...(managedRes.data||[])].forEach(x=>assignments.set(String(x.id),x));
+  const rows=[...assignments.values()];
+  const ids=[...new Set(rows.map(x=>x.akun_id).filter(Boolean))];
+  const profiles=ids.length
+    ? (await sb.from('profiles').select('id,nama,nim').in('id',ids)).data||[]
+    : [];
+  const pm=Object.fromEntries(profiles.map(x=>[String(x.id),x]));
+  S.coordinatorAssignments=rows.map(x=>({...x,akun:pm[String(x.akun_id)]||null}));
+}
 async function loadClubMembers() {
   S.clubMembers=[];
   if(!sb || !S.orgId)return;
@@ -1270,7 +1419,8 @@ async function loadClubMembers() {
 }
 
 async function loadStructureCatalog() {
-  await Promise.all([loadOrganizations(),loadJabatanAndUnits(),loadOrganizationRelations(),loadCoordinatorAssignments(),loadClubMembers()]);
+  await loadOrganizations();
+  await Promise.all([loadJabatanAndUnits(),loadOrganizationRelations(),loadCoordinatorAssignments(),loadClubMembers()]);
 }
 
 async function loadAccounts() {
@@ -1404,7 +1554,8 @@ async function loadViewData(view){
       await loadPeriods();
       break;
     case 'organisasi':
-      await Promise.all([loadOrganizations(),loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
+      await loadOrganizations();
+      await Promise.all([loadPeriods(),loadOrganizationRelations(),loadCoordinatorAssignments()]);
       break;
     case 'unit_kerja':
       await loadStructureCatalog();
@@ -1419,7 +1570,8 @@ async function loadViewData(view){
       await loadJabatanAndUnits();
       break;
     case 'koordinator':
-      await Promise.all([loadOrganizations(),loadCoordinatorAssignments()]);
+      await loadOrganizations();
+      await loadCoordinatorAssignments();
       break;
     case 'profil':
       await loadMemberships();
@@ -1436,12 +1588,26 @@ const chip = s => { const [t, c] = ST[s] || [s, '']; return `<span class="chip $
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const ICON = {
-  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m15 18-6-6 6-6"/><path d="M9 12h9"/></svg>',
-  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
-  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.2 3.3-5 7-5s6.1 1.8 7 5"/></svg>',
-  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-5"/></svg>',
-  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m14.5 6.5 3 3"/><path d="M4 20l4.3-.9L19 8.4a2.1 2.1 0 0 0 0-3l-.4-.4a2.1 2.1 0 0 0-3 0L4.9 15.7 4 20Z"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="m5 12 4 4L19 6"/></svg>'
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/><path d="M9 12h9"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
+  user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.2 3.3-5 7-5s6.1 1.8 7 5"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-5"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14.5 6.5 3 3"/><path d="M4 20l4.3-.9L19 8.4a2.1 2.1 0 0 0 0-3l-.4-.4a2.1 2.1 0 0 0-3 0L4.9 15.7 4 20Z"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>',
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
+  folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+  image:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 16-5-5-7 7"/></svg>',
+  file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.8M18 14c1.8.8 2.8 2.5 3 5"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V5l8-2v18M12 7h8v14M7 7h2M7 11h2M7 15h2M15 11h2M15 15h2M15 19h2"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h15a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13"/><path d="M16 13h5M17 13h.01"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .35 1.98l.05.05-1.7 1.7-.05-.05a1.8 1.8 0 0 0-1.98-.35 1.8 1.8 0 0 0-1.1 1.65V20h-2.4v-.07a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-1.98.35l-.05.05-1.7-1.7.05-.05A1.8 1.8 0 0 0 7.1 15a1.8 1.8 0 0 0-1.65-1.1H5.4v-2.4h.05A1.8 1.8 0 0 0 7.1 10a1.8 1.8 0 0 0-.35-1.98L6.7 7.97l1.7-1.7.05.05A1.8 1.8 0 0 0 10.43 6a1.8 1.8 0 0 0 1.1-1.65V4h2.4v.35A1.8 1.8 0 0 0 15 6a1.8 1.8 0 0 0 1.98-.35l.05-.05 1.7 1.7-.05.05A1.8 1.8 0 0 0 18.9 10a1.8 1.8 0 0 0 1.65 1.1h.05v2.4h-.05A1.8 1.8 0 0 0 19.4 15Z"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 20 6v5c0 5-3.2 8.5-8 10-4.8-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h17"/><path d="m7 15 4-5 3 3 5-7"/></svg>',
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>'
 };
 const icon = name => ICON[name] || '';
 
@@ -1691,21 +1857,32 @@ function openActivityGallery(prokerId) {
 }
 
 document.addEventListener('keydown',event=>{
-  if(event.key==='Escape')closeActivityGallery();
+  if(event.key==='Escape'){
+    closeActivityGallery();
+    closeMobileMoreMenu();
+  }
 });
 
 function renderProfileMenu() {
   const m = $('#profileMenu');
   if (!m) return;
+  const memberships=(S.memberships||[]).map(m=>{
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(m.organisasi_id));
+    return '<div class="profile-org-row"><span class="profile-org-dot"></span><span><b>'+esc(org?.nama||'Organisasi')+'</b><small>'+esc(m.jabatan||'Anggota')+'</small></span></div>';
+  }).join('');
   m.innerHTML =
-    '<div class="p-4 flex items-center gap-3 border-b border-slate-100">' +
-      avatarMarkup(S.user,'h-11 w-11') +
-      '<div class="min-w-0"><p class="font-bold text-sm truncate">' + esc(S.user.nama || 'Pengguna') + '</p>' +
-      '<p class="text-xs text-slate-500 truncate">' + esc(roleLabel(S.user.peran)) + ' · ' + esc(S.user.email || '') + '</p></div>' +
+    '<div class="profile-popover-head">' +
+      '<div class="profile-popover-avatar">' + avatarMarkup(S.user,'h-16 w-16') + '</div>' +
+      '<div class="min-w-0"><p class="profile-popover-name">' + esc(S.user.nama || 'Pengguna') + '</p>' +
+      '<p class="profile-popover-role">' + esc(roleLabel(S.user.peran)) + '</p>' +
+      '<p class="profile-popover-email">' + esc(S.user.email || '') + '</p></div>' +
     '</div>' +
-    '<div class="p-2">' +
-      '<button data-profile-action="profile" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-semibold">' + icon('user') + '<span>Profil & organisasi</span></button>' +
-      '<button data-profile-action="logout" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 text-red-600 text-sm font-semibold">' + icon('logout') + '<span>Keluar dari akun</span></button>' +
+    '<div class="profile-popover-body">' +
+      '<div class="profile-popover-section"><span>ORGANISASI AKTIF</span>' + (memberships || '<p class="profile-empty">Belum ada organisasi.</p>') + '</div>' +
+      '<div class="profile-popover-actions">' +
+        '<button data-profile-action="profile" class="profile-action">' + icon('user') + '<span>Profil & organisasi</span></button>' +
+        '<button data-profile-action="logout" class="profile-action danger">' + icon('logout') + '<span>Keluar dari akun</span></button>' +
+      '</div>' +
     '</div>';
   m.querySelectorAll('svg').forEach(x => x.classList.add('w-5','h-5','shrink-0'));
 }
@@ -2109,6 +2286,73 @@ function getTempSb() {
 }
 
 // --- Fungsi Render ---
+function mobileMenuItems() {
+  const navIcons={beranda:'home',proker:'folder',form:'plus',undangan:'mail',galeri:'image',laporan:'file',anggota:'users',struktur:'building',koordinator:'users',inbox:'mail',rapat:'calendar',plafon:'wallet',cair:'wallet',periode:'calendar',organisasi:'building',unit_kerja:'grid',akun:'users',jabatan:'settings',audit:'shield',profil:'user'};
+  const groups = MENU
+    .filter(([group]) => !(S.user.peran !== 'admin' && group === 'Admin'))
+    .map(([group, items]) => [group, items.filter(([k]) => canAccessView(k))])
+    .filter(([,items]) => items.length);
+  return {groups,navIcons};
+}
+
+function closeMobileMoreMenu() {
+  const panel=$('#mobileMoreMenu');
+  if(panel){
+    panel.classList.remove('open');
+    document.body.classList.remove('mobile-menu-open');
+    setTimeout(()=>panel.remove(),180);
+  }
+}
+
+function openMobileMoreMenu() {
+  closeMobileMoreMenu();
+  const {groups,navIcons}=mobileMenuItems();
+  const overlay=document.createElement('div');
+  overlay.id='mobileMoreMenu';
+  overlay.className='mobile-more-overlay';
+  overlay.innerHTML=
+    '<div class="mobile-more-backdrop" data-mobile-more-close></div>'+
+    '<section class="mobile-more-sheet" role="dialog" aria-modal="true" aria-label="Menu lainnya">'+
+      '<div class="mobile-more-grab"></div>'+
+      '<div class="mobile-more-head">'+
+        '<div><p class="mobile-more-kicker">NAVIGASI</p><h2>Menu lainnya</h2></div>'+
+        '<button type="button" class="mobile-more-close" data-mobile-more-close aria-label="Tutup">×</button>'+
+      '</div>'+
+      '<div class="mobile-more-scroll">'+
+        groups.map(([group,items])=>
+          '<section class="mobile-more-group"><p class="mobile-more-group-title">'+esc(group)+'</p>'+
+          '<div class="mobile-more-list">'+
+          items.map(([k,label])=>
+            '<button type="button" class="mobile-more-item '+(S.view===k?'active':'')+'" data-mobile-more-go="'+esc(k)+'">'+
+              '<span class="mobile-more-icon">'+icon(navIcons[k]||'grid')+'</span>'+
+              '<span class="mobile-more-label">'+esc(label)+'</span>'+
+              (S.view===k?'<span class="mobile-more-active-dot"></span>':'')+
+            '</button>'
+          ).join('')+
+          '</div></section>'
+        ).join('')+
+        '<section class="mobile-more-group"><p class="mobile-more-group-title">Akun</p>'+
+          '<div class="mobile-more-list"><button type="button" class="mobile-more-item '+(S.view==='profil'?'active':'')+'" data-mobile-more-go="profil">'+
+            '<span class="mobile-more-icon">'+icon('user')+'</span><span class="mobile-more-label">Profil & organisasi</span>'+
+            (S.view==='profil'?'<span class="mobile-more-active-dot"></span>':'')+
+          '</button></div></section>'+
+      '</div>'+
+    '</section>';
+
+  overlay.addEventListener('click',e=>{
+    if(e.target.closest('[data-mobile-more-close]')){closeMobileMoreMenu();return;}
+    const item=e.target.closest('[data-mobile-more-go]');
+    if(item){
+      const view=item.dataset.mobileMoreGo;
+      closeMobileMoreMenu();
+      requestAnimationFrame(()=>navigate(view));
+    }
+  });
+  document.body.append(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('open'));
+  document.body.classList.add('mobile-menu-open');
+}
+
 function renderShell() {
   if (!$('#app') || !$('#nav') || !$('#bn') || !$('#cx') || !$('#notifBtn') || !$('#backBtn')) return;
   if(S.authLost && !S.user.id){
@@ -2129,24 +2373,29 @@ function renderShell() {
       const allowed = it.filter(([k]) => canAccessView(k));
       if (!allowed.length) return '';
       return '<div class="mt-5 mb-1 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">' + esc(g) + '</div>' +
-        allowed.map(([k, t]) =>
-          '<button class="nav flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm transition ' +
-          (S.view === k ? 'bg-sima-50 text-sima-600 font-bold' : 'text-slate-600 hover:bg-slate-50') +
-          '" data-go="' + esc(k) + '">' + esc(t) + '</button>'
-        ).join('');
+        allowed.map(([k, t]) => {
+          const navIcons={beranda:'home',proker:'folder',form:'plus',undangan:'mail',galeri:'image',laporan:'file',struktur:'building',inbox:'mail',rapat:'calendar',plafon:'wallet',cair:'wallet',anggota:'users',periode:'calendar',organisasi:'building',unit_kerja:'grid',akun:'users',jabatan:'settings',audit:'shield',koordinator:'users',profil:'user'};
+          return '<button class="nav" data-go="' + esc(k) + '" data-active="' + (S.view===k ? 'true' : 'false') + '" aria-current="' + (S.view===k ? 'page' : 'false') + '">' +
+            '<span class="nav-ico">' + icon(navIcons[k]||'grid') + '</span><span class="nav-label">' + esc(t) + '</span>' +
+          '</button>';
+        }).join('');
     }).join('');
 
-    const mobile = S.user.peran === 'admin'
-      ? []
-      : [['beranda','Beranda'],['proker','Proker'],['form','+'],['inbox','Review'],['galeri','Galeri']]
-        .filter(([k]) => canAccessView(k));
-    $('#bn').innerHTML = mobile.map(([k,t]) =>
-      '<button class="' +
-      (k === 'form'
-        ? 'fab bg-sima-600 text-white w-11 h-11 rounded-full text-xl -mt-5 shadow-lg'
-        : 'px-2 py-2 text-[11px] ' + (S.view === k ? 'text-sima-600 font-bold' : 'text-slate-500')) +
-      '" data-go="' + esc(k) + '" aria-label="' + esc(t) + '">' + esc(t) + '</button>'
-    ).join('');
+    const mobile = [
+      ['beranda','Beranda','home'],
+      ['proker','Proker','folder'],
+      ['inbox','Review','mail'],
+      ['__more__','Lainnya','grid'],
+      ['form','Tambah','plus']
+    ].filter(([k]) => k==='__more__' || canAccessView(k));
+    $('#bn').innerHTML = mobile.map(([k,t,ico]) => {
+      if(k==='__more__'){
+        return '<button class="bn-more" type="button" data-mobile-more aria-label="Menu lainnya"><span class="bn-icon">'+icon(ico)+'</span><span> Lainnya</span></button>';
+      }
+      const active=S.view===k;
+      return '<button class="'+(k==='form'?'bn-plus':'bn-item '+(active?'on':''))+'" type="button" data-go="'+esc(k)+'" aria-label="'+esc(t)+'">'+
+        '<span class="bn-icon">'+icon(ico)+'</span><span>'+esc(t)+'</span></button>';
+    }).join('');
   }
 
   $('#cx').innerHTML = (S.ctxs || []).map((ctx, i) =>
@@ -2245,7 +2494,8 @@ const V = {
         S.permissions?.has(p.review_stage==='bem_lpj'?'laporan.review':'dokumen.review');
     };
     const isStageReviewerFor=(p)=>{
-      return isBemReviewerFor(p) ||
+      return isUkmStageReviewer(p) ||
+        isBemReviewerFor(p) ||
         (S.user.peran==='pembimbing' && ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) && S.permissions?.has(p.review_stage==='pembimbing_hmj_lpj'?'laporan.review':'dokumen.review')) ||
         (S.user.peran==='wakil_rektor' && ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage));
     };
@@ -2258,6 +2508,7 @@ const V = {
       if(S.user.peran==='pembimbing'){
         return p.review_stage==='pembimbing_hmj' ? 'Review pengajuan' : 'Lihat proker';
       }
+      if(p.__ukmBphReadOnly)return 'Lihat proker';
       if(p.__collaborator)return 'Lihat proker';
       if(p.status==='direncanakan')return 'Ajukan proposal';
       if(p.status==='revisi')return 'Ajukan ulang';
@@ -2328,7 +2579,9 @@ const V = {
       S.user.peran==='wakil_rektor' &&
       ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage);
 
+    const isUkmStageReviewerFor = isUkmStageReviewer(p);
     const isStageReviewer=
+      isUkmStageReviewerFor ||
       isBemReviewerForStage ||
       isPembimbingReviewerForStage ||
       isWakilReviewerForStage;
@@ -2346,6 +2599,7 @@ const V = {
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
     const canReviewStage=
+      isUkmStageReviewerFor ||
       isWakilReviewerForStage ||
       (!readOnlyCollaborator && (
         (['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) &&
@@ -2358,8 +2612,8 @@ const V = {
         || (!p.review_stage && canReviewLegacy)
       ));
     const canReview=canReviewLegacy||canReviewStage;
-    const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor'].includes(p.review_stage);
-    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj'].includes(p.review_stage);
+    const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor','ukm_koordinator','ukm_presiden_bem'].includes(p.review_stage);
+    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj','ukm_koordinator_lpj','ukm_presiden_bem_lpj'].includes(p.review_stage);
     // Reviewer visibility is determined by workflow stage. The backend RPC
     // remains authoritative for self-review and authorization checks.
     const isWakilProposalReview=
@@ -2463,6 +2717,8 @@ const V = {
             '<p class="text-xs text-slate-500 mt-1">Komentar wajib diisi jika memilih "Kembalikan ke HMJ".</p>'+
             '<div class="flex flex-wrap gap-2 mt-3">'+action('resubmit','Kirim kembali ke Wakil Rektor')+action('revise','Kembalikan ke HMJ','d')+'</div></div>'
           : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
+      }else if(p.organisasi?.tipe==='UKM'){
+        actions=proposal?.file_path ? action('resubmit','Ajukan ulang ke Koordinator UKM') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else if(p.organisasi?.tipe==='BEM' && p.review_stage==='bem_from_wakil_rektor'){
         actions=proposal?.file_path ? action('resubmit','Ajukan kembali ke Wakil Rektor') : '<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Upload ulang proposal yang sudah diperbaiki terlebih dahulu.</p>';
       }else{
@@ -2489,38 +2745,68 @@ const V = {
     else if(isProposalReview){
       const targetLabel=reviewStageLabel(p.review_stage);
       actions='<div class="w-full"><p class="text-sm text-slate-600 mb-3">Tahap saat ini: <b>'+esc(targetLabel||'Review internal')+'</b></p><label>Komentar review</label>'+
-        ((S.user.peran==='wakil_rektor'&&['BEM','HMJ'].includes(p.organisasi?.tipe)&&p.review_stage==='wakil_rektor'&&p.sumber_dana_kode==='KAMPUS')?
+        ((S.user.peran==='wakil_rektor'&&['BEM','HMJ','UKM'].includes(p.organisasi?.tipe)&&p.review_stage==='wakil_rektor'&&p.sumber_dana_kode==='KAMPUS')?
           '<label class="mt-3">Anggaran kampus disetujui Wakil Rektor</label><input id="approved-budget" type="text" inputmode="numeric" autocomplete="off" data-money="amount" data-money-max="'+esc(p.anggaran_diajukan||0)+'" value="'+esc(formatMoney(p.anggaran_diajukan||0))+'"><p class="sub">Diajukan ke kampus: <b>'+rp(p.anggaran_diajukan||0)+'</b> · Sisa plafon periode: <b>'+rp(d.budgetStatus?.tersisa||0)+'</b></p>'
           :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
         '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+
           action('revise',
-            p.review_stage==='pembimbing_hmj'
-              ? 'Kembalikan untuk revisi'
-              : p.review_stage==='bem'
-                ? 'Kembalikan ke HMJ'
-                : 'Minta revisi',
+            ['ukm_koordinator','ukm_presiden_bem','wakil_rektor'].includes(p.review_stage)
+              ? 'Kembalikan ke UKM'
+              : p.review_stage==='pembimbing_hmj'
+                ? 'Kembalikan untuk revisi'
+                : p.review_stage==='bem'
+                  ? 'Kembalikan ke HMJ'
+                  : 'Minta revisi',
             'd')+
           action('approve',
-            p.review_stage==='pembimbing_hmj'
-              ? 'Setujui & kembalikan ke HMJ'
-              : p.review_stage==='bem'
+            p.review_stage==='ukm_koordinator'
+              ? 'Setujui & teruskan ke Presiden BEM'
+              : p.review_stage==='ukm_presiden_bem'
                 ? 'Setujui & teruskan ke Wakil Rektor'
-                : 'Setujui',
+                : p.review_stage==='wakil_rektor' && p.organisasi?.tipe==='UKM'
+                  ? (p.sumber_dana_kode==='KAMPUS' ? 'Setujui & cairkan dana' : 'Setujui')
+                  : p.review_stage==='pembimbing_hmj'
+                    ? 'Setujui & kembalikan ke HMJ'
+                    : p.review_stage==='bem'
+                      ? 'Setujui & teruskan ke Wakil Rektor'
+                      : 'Setujui',
             '')+
         '</div></div>';
     }
-    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['pembimbing_hmj_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='pembimbing_hmj_lpj'?'Setujui & kembalikan ke HMJ':p.review_stage==='bem_lpj'?'Setujui & teruskan ke Wakil Rektor':'Setujui LPJ','')+'</div></div>';
+    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',isUkmProker(p)?'Kembalikan ke UKM':'Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='ukm_koordinator_lpj'?'Setujui & teruskan ke Presiden BEM':p.review_stage==='ukm_presiden_bem_lpj'?'Setujui & teruskan ke Wakil Rektor':p.review_stage==='wakil_rektor_lpj'&&isUkmProker(p)?'Setujui LPJ':'Setujui LPJ','')+'</div></div>';
 
-    const steps=[
-      ['direncanakan','Direncanakan'],
-      ['proposal_diajukan','Review proposal'],
-      ['disetujui','Disetujui'],
-      ['berjalan','Pelaksanaan'],
-      ['selesai','Selesai'],
-      ['lpj_diajukan','Review LPJ'],
-      ['lpj_disetujui','Selesai administrasi']
-    ];
-    const currentIndex=Math.max(steps.findIndex(x=>x[0]===p.status),0);
+    const ukmJourney=isUkmProker(p);
+    const steps=ukmJourney
+      ? [
+        ['direncanakan','UKM','calendar'],
+        ['ukm_koordinator','Koordinator UKM','file'],
+        ['ukm_presiden_bem','Presiden BEM','users'],
+        ['wakil_rektor','Wakil Rektor','wallet'],
+        ['disetujui','Disetujui','check'],
+        ['berjalan','Pelaksanaan','calendar'],
+        ['selesai','Selesai','check'],
+        ['ukm_koordinator_lpj','Review LPJ','file'],
+        ['ukm_presiden_bem_lpj','Presiden BEM','users'],
+        ['wakil_rektor_lpj','Wakil Rektor','wallet'],
+        ['lpj_disetujui','LPJ selesai','check']
+      ]
+      : [
+        ['direncanakan','Direncanakan','calendar'],
+        ['proposal_diajukan','Review proposal','file'],
+        ['disetujui','Disetujui','check'],
+        ['berjalan','Pelaksanaan','calendar'],
+        ['selesai','Selesai','check'],
+        ['lpj_diajukan','Review LPJ','file'],
+        ['lpj_disetujui','Selesai administrasi','check']
+      ];
+    const isReturnedForRevision=p.status==='revisi';
+    const currentStepKey=ukmJourney
+      ? (isReturnedForRevision ? 'direncanakan' : (p.review_stage || p.status))
+      : p.status;
+    const currentIndex=Math.max(steps.findIndex(x=>x[0]===currentStepKey),0);
+    const currentStepLabel=isReturnedForRevision
+      ? (ukmJourney ? 'Revisi · kembali ke UKM' : 'Revisi · kembali ke pengaju')
+      : (steps[currentIndex]?.[1] || ST[p.status]?.[0] || p.status);
     const collaboratorBanner=readOnlyCollaborator
       ? '<div class="card mb-4 border border-blue-200 bg-blue-50"><p class="text-sm text-blue-800"><b>Mode lihat saja.</b> Anda merupakan kolaborator yang sudah bergabung. Anda dapat melihat perkembangan Proker, dokumen, riwayat persetujuan, dan dokumentasi kegiatan, tetapi tidak dapat melakukan perubahan atau tindakan workflow.</p></div>'
       : '';
@@ -2534,14 +2820,20 @@ const V = {
         : (readOnlyCollaborator
         ? 'Dokumentasi kolaborator · akses hanya baca.'
         : isStageReviewer
-          ? (S.user.peran==='pembimbing' ? 'Pengajuan HMJ · Pembimbing dapat review, setujui, atau revisi.'
+          ? (isUkmProker(p)
+            ? 'Pengajuan UKM · setiap tahap dapat disetujui atau dikembalikan ke UKM untuk revisi.'
+            : S.user.peran==='pembimbing' ? 'Pengajuan HMJ · Pembimbing dapat review, setujui, atau revisi.'
              : S.user.peran==='wakil_rektor' ? 'Pengajuan · Wakil Rektor dapat review, setujui, atau revisi.'
              : 'Pengajuan HMJ · BEM dapat review, setujui, atau revisi.')
           : 'Alur tindak lanjut program kerja.')+
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
-      collaboratorBanner+      '<div class="card mb-4 workflow-steps"><div class="workflow-steps-track">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'"><div class="workflow-step-number">'+(i+1)+'</div><div class="workflow-step-label">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
+      collaboratorBanner+
+      '<section class="workflow-steps '+(ukmJourney?'workflow-steps--ukm':'')+'" aria-label="Perjalanan program kerja">'+
+        '<div class="workflow-steps-heading"><span class="workflow-steps-title">Perjalanan Proker</span><span class="workflow-current-note '+(isReturnedForRevision?'is-revision':'')+'"><i></i>'+esc(currentStepLabel)+'</span></div>'+
+        '<div class="workflow-steps-scroll"><div class="workflow-steps-track '+(ukmJourney?'is-ukm':'')+'">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'" aria-current="'+(i===currentIndex?'step':'false')+'"><span class="workflow-step-icon">'+icon(i<currentIndex?'check':s[2])+'</span><span class="workflow-step-label">'+esc(s[1])+'</span></div>').join('')+'</div></div>'+
+      '</section>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
         ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
@@ -2596,8 +2888,12 @@ const V = {
       (S.undangan.length?'<div class="grid gap-3">'+S.undangan.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Program kerja')+'</h3><p class="sub mb-1">'+dateID(x.proker?.tanggal_mulai)+'</p><p class="text-sm text-slate-600">Kolaborasi organisasi</p></div><div class="flex gap-2"><span class="chip '+(x.status==='bergabung'?'ok':x.status==='menolak'?'er':'wa')+'">'+esc(x.status)+'</span>'+(x.status==='diundang' && S.user.peran!=='wakil_rektor'?'<button class="btn w" data-collab-action="bergabung" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Terima</button><button class="btn d" data-collab-action="menolak" data-proker-id="'+esc(x.proker_id)+'" data-org-id="'+esc(x.organisasi_id)+'">Tolak</button>':'')+'</div></div></div>').join('')+'</div>':emptyCard('Belum ada undangan.'));
   },
   inbox:function(){
-    return pageHeader('Inbox review','Dokumen yang tersedia untuk ditinjau.')+
-      (S.inbox.length?'<div class="grid gap-3">'+S.inbox.map(x=>'<div class="card"><div class="flex items-center justify-between gap-3"><div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.jenis)+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></div></div>').join('')+'</div>':emptyCard('Inbox kosong.'));
+    return pageHeader('Inbox review','Pengajuan yang menunggu tindakan Anda.')+
+      (S.inbox.length?'<div class="grid gap-3">'+S.inbox.map(x=>{
+        const stageLabel=reviewStageLabel(x.tahap);
+        const kind=x.jenis==='laporan_akhir'?'LPJ':'Proposal';
+        return '<article class="card"><div class="flex flex-wrap items-center justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2 mb-1"><span class="chip bl">'+esc(kind)+'</span><span class="chip wa">'+esc(stageLabel||x.status||'Menunggu review')+'</span></div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'Organisasi')+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka pengajuan</button></div></article>';
+      }).join('')+'</div>':emptyCard('Belum ada pengajuan yang menunggu tindakan Anda.'));
   },
   galeri:function(){
     return pageHeader('Galeri kegiatan','Satu album untuk setiap program kerja. Klik thumbnail untuk melihat seluruh foto.')+
@@ -2917,7 +3213,8 @@ async function render(options={}) {
   if(!root)return;
 
   const view=S.view;
-  const cacheable=!['form','review','plafon','akun','organisasi','unit_kerja','periode','jabatan','audit','profil','koordinator','cair'].includes(view);
+  // Reuse the last rendered screen immediately; refresh data in the background.
+  const cacheable=!['form','review'].includes(view);
   const cachedHtml=cacheable&&!options.force?getHtmlCache(view):null;
   const dataCached=cacheable&&!options.force&&!cachedHtml&&restoreView(view);
   const hadContent=!!root.innerHTML.trim();
@@ -3010,13 +3307,33 @@ async function render(options={}) {
     document.querySelectorAll('[data-koordinator-form]').forEach(async form=>{
       const ukmId=form.dataset.koordinatorForm;
       const select=form.querySelector('select[name="akun_id"]');
+      const button=form.querySelector('button[type="submit"]');
       if(!select || S.user.peran==='admin')return;
-      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
-      const candidates=data?.candidates||[];
-      if(!error&&data?.ok){
-        select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
-      }else{
+      try{
+        const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
+        const candidates=data?.candidates||[];
+        if(!error&&data?.ok){
+          select.disabled=false;
+          select.innerHTML='<option value="">Pilih anggota BEM</option>'+candidates.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.nim||'-')+'</option>').join('');
+          if(!candidates.length){
+            select.innerHTML='<option value="">Belum ada anggota BEM aktif</option>';
+            select.disabled=true;
+            if(button)button.disabled=true;
+          }
+        }else{
+          const reason=data?.error||error?.message||'Gagal memuat kandidat.';
+          select.innerHTML='<option value="">Gagal memuat kandidat</option>';
+          select.disabled=true;
+          if(button)button.disabled=true;
+          console.error('UKM coordinator candidates failed:',{ukmId,reason});
+          toast('Kandidat koordinator gagal dimuat: '+reason);
+        }
+      }catch(error){
         select.innerHTML='<option value="">Gagal memuat kandidat</option>';
+        select.disabled=true;
+        if(button)button.disabled=true;
+        console.error('UKM coordinator candidate exception:',error);
+        toast('Kandidat koordinator gagal dimuat.');
       }
     });
   }
@@ -3673,12 +3990,8 @@ document.addEventListener('click', async e => {
     const approvedBudgetEl=$('#approved-budget');
     const approvedBudget=(approvedBudgetEl && S.detail?.proker?.sumber_dana_kode==='KAMPUS') ? parseMoney(approvedBudgetEl.value) : null;
     let data,error;
-    const rpc=await sb.rpc('transition_proker',{
-      p_proker_id:prokerId,
-      p_action:action,
-      p_comment:comment,
-      p_anggaran_disetujui:approvedBudget
-    });
+    const targetProker=S.detail?.proker||S.proker.find(x=>String(x.id)===String(prokerId))||{id:prokerId};
+    const rpc=await transitionWorkflow(targetProker,action,comment,approvedBudget);
     data=rpc.data;
     error=rpc.error;
     if(error)return toast('Tindakan gagal: '+(error.message||error.details||error.hint||'Tidak dapat memproses alur proker.'));
@@ -3708,7 +4021,8 @@ document.addEventListener('click', async e => {
     const k=($('#kk')?.value||'').trim()||null;
     const prokerId=S.selectedProkerId;
     if(!prokerId)return toast('Proker tidak ditemukan.');
-    const {data,error}=await sb.rpc('transition_proker',{p_proker_id:prokerId,p_action:action,p_comment:k});
+    const targetProker=S.detail?.proker||S.proker.find(x=>String(x.id)===String(prokerId))||{id:prokerId};
+    const {data,error}=await transitionWorkflow(targetProker,action,k,null);
     if(error)return toast('Review gagal: '+(error.message||'Tidak dapat memproses review.'));
     toast('Review tersimpan.');
     clearViewCache();return render();
@@ -3912,6 +4226,7 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('click', e => {
+  if(e.target.closest('[data-mobile-more]')){openMobileMoreMenu();return;}
   if(!e.target.closest('#notifWrap'))$('#notifPanel').hidden=true;
   if(!e.target.closest('#profileWrap'))$('#profileMenu').hidden=true;
 });
@@ -4236,12 +4551,31 @@ document.addEventListener('submit', async e => {
 
   if(e.target.matches('form[data-koordinator-form]')){
     e.preventDefault();
-    const ukmId=e.target.dataset.koordinatorForm;
-    const accountId=e.target.querySelector('select[name="akun_id"]')?.value;
+    const form=e.target;
+    const ukmId=form.dataset.koordinatorForm;
+    const select=form.querySelector('select[name="akun_id"]');
+    const button=form.querySelector('button[type="submit"]');
+    const accountId=select?.value;
     if(!accountId)return toast('Pilih anggota BEM terlebih dahulu.');
-    const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
-    if(error||!data?.ok)return toast('Gagal menunjuk koordinator: '+(data?.error||error?.message||'Terjadi kesalahan.'));
-    toast('Koordinator UKM berhasil ditunjuk.');return render();
+    if(button){button.disabled=true;button.textContent='Menyimpan…';}
+    try{
+      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
+      if(error||!data?.ok){
+        const reason=data?.error||error?.message||'Terjadi kesalahan.';
+        console.error('UKM coordinator assignment failed:',{ukmId,accountId,reason,error});
+        toast('Gagal menunjuk koordinator: '+reason);
+        return;
+      }
+      toast('Koordinator UKM berhasil ditunjuk.');
+      S.viewCache={};
+      S.htmlCache={};
+      return render({force:true});
+    }catch(error){
+      console.error('UKM coordinator assignment exception:',error);
+      toast('Gagal menunjuk koordinator. Coba lagi.');
+    }finally{
+      if(button){button.disabled=false;button.textContent='Tunjuk';}
+    }
   }
 
   if(e.target.id==='form-profile')return saveProfile(e);
