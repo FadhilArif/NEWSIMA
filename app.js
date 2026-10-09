@@ -764,6 +764,16 @@ async function loadProkerDetail() {
     sb.from('foto_kegiatan').select('id,proker_id,dokumen_id,file_name,mime_type,thumb_path,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at').eq('proker_id',S.selectedProkerId).order('urutan',{ascending:true})
   ]);
 
+  const decisionError=decisions?.error?.message||null;
+  if(decisionError)console.warn('Gagal memuat riwayat persetujuan:',decisionError);
+  const decisionRows=Array.isArray(decisions?.data)?decisions.data:[];
+  const decisionActorIds=[...new Set(decisionRows.map(x=>x.oleh).filter(Boolean))];
+  const decisionActorResult=decisionActorIds.length
+    ? await sb.from('profiles').select('id,nama').in('id',decisionActorIds)
+    : {data:[],error:null};
+  if(decisionActorResult.error)console.warn('Nama reviewer tidak dapat dimuat:',decisionActorResult.error.message);
+  const decisionActorMap=Object.fromEntries((decisionActorResult.data||[]).map(x=>[String(x.id),x.nama]));
+
   const periodId=orgRes.data?.periode_id||null;
   let budgetStatus=null;
   if(periodId){
@@ -791,10 +801,12 @@ async function loadProkerDetail() {
     proker:{...proker,organisasi:orgRes.data || null},
     docs:docsRows,
     kolaborator:kolab.data || [],
-    keputusan:(decisions.data||[]).map(x=>({
+    keputusan:decisionRows.map(x=>({
       ...x,
+      nama_oleh:decisionActorMap[String(x.oleh)]||null,
       dokumen_jenis:docsRows.find(d=>String(d.id)===String(x.dokumen_id))?.jenis||null
     })),
+    decisionError,
     photos:photoWithUrls,
     budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
@@ -2576,7 +2588,7 @@ const V = {
         ? '<div class="row2"><div class="card"><div class="flex items-center justify-between gap-3"><h3>Kolaborator</h3><span class="chip '+(collabReady?'ok':'wa')+'">'+confirmedCollaborators.length+'/'+d.kolaborator.length+' dikonfirmasi</span></div>'+
           d.kolaborator.map(x=>{const o=(S.organizations||[]).find(org=>String(org.id)===String(x.organisasi_id));return '<div class="py-2 border-b border-slate-100 last:border-0"><p class="text-sm font-semibold">'+esc(o?.nama||'Organisasi kolaborator')+'</p><p class="text-xs text-slate-500">'+esc(x.status==='bergabung'?'Sudah bergabung':x.status==='menolak'?'Menolak undangan':'Menunggu konfirmasi')+'</p></div>';}).join('')+
           '</div><div class="card"><h3>Riwayat persetujuan</h3>'
-        : '<div class="row2"><div class="card"><h3>Kolaborator</h3><p class="sub">Tidak ada kolaborator.</p></div><div class="card"><h3>Riwayat persetujuan</h3>')+(d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p>'+(x.dokumen_jenis?'<span class="chip bl">'+esc(x.dokumen_jenis==='laporan_akhir'?'LPJ':'Proposal')+'</span>':'')+'</div><p class="text-xs text-slate-500">'+dateTimeID(x.waktu)+'</p><p class="text-sm">'+esc(x.komentar||'')+'</p></div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
+        : '<div class="row2"><div class="card"><h3>Kolaborator</h3><p class="sub">Tidak ada kolaborator.</p></div><div class="card"><h3>Riwayat persetujuan</h3>')+(d.decisionError?'<p class="text-sm text-amber-700 bg-amber-50 rounded-xl p-3">Riwayat tidak dapat dimuat. Muat ulang halaman untuk mencoba lagi.</p>':d.keputusan.length?d.keputusan.map(x=>'<div class="py-2 border-b border-slate-100 last:border-0"><div class="flex flex-wrap items-center gap-2"><p class="font-semibold">'+esc(x.keputusan)+' · '+esc(x.tahap)+'</p>'+(x.dokumen_jenis?'<span class="chip bl">'+esc(x.dokumen_jenis==='laporan_akhir'?'LPJ':'Proposal')+'</span>':'')+'</div><p class="text-xs text-slate-500">'+dateTimeID(x.waktu)+'</p><p class="text-xs text-slate-500">Diproses oleh: '+esc(x.nama_oleh||({koordinator_ukm:'Koordinator UKM',presiden_bem:'Presiden BEM',wakil_rektor:'Wakil Rektor'}[x.sebagai]||x.sebagai||'Reviewer'))+'</p>'+(x.komentar?'<p class="text-sm mt-1">'+esc(x.komentar)+'</p>':'')+'</div>').join(''):'<p class="sub">Belum ada keputusan.</p>')+'</div></div>';
   },
   undangan:function(){
     return pageHeader('Undangan kolaborasi',S.user.peran==='wakil_rektor'?'Pantauan undangan kolaborasi · akses hanya baca.':'Kelola undangan organisasi untuk program kerja.')+
