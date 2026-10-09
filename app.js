@@ -889,6 +889,7 @@ async function loadInbox() {
   S.inbox=[];
   if(!sb)return;
 
+  await loadCoordinatorAssignments();
   const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
   let rows=[];
 
@@ -930,6 +931,27 @@ async function loadInbox() {
     const {data,error}=await sb.from('dokumen').select('id,organisasi_id,proker_id,jenis,status,tahap').eq('organisasi_id',S.orgId).order('id',{ascending:false});
     if(error)return toast('Gagal memuat inbox: '+error.message);
     rows=data||[];
+  }
+
+  // Add UKM proposals/LPJs assigned to the signed-in coordinator regardless
+  // of the currently selected BEM ministry/context.
+  const coordinatorUkmIds=[...new Set((S.coordinatorAssignments||[])
+    .filter(x=>x.status==='aktif' && String(x.akun_id)===String(S.user.id))
+    .map(x=>x.organisasi_id))];
+  if(coordinatorUkmIds.length){
+    const {data:ukmDocs,error:ukmInboxError}=await sb.from('dokumen')
+      .select('id,organisasi_id,proker_id,jenis,status,tahap')
+      .in('organisasi_id',coordinatorUkmIds)
+      .in('jenis',['proposal','laporan_akhir'])
+      .in('tahap',['ukm_koordinator','ukm_koordinator_lpj'])
+      .eq('status','diajukan')
+      .order('id',{ascending:false});
+    if(ukmInboxError){
+      console.warn('Gagal memuat inbox Koordinator UKM:',ukmInboxError.message);
+    }else{
+      const seen=new Set(rows.map(x=>String(x.id)));
+      (ukmDocs||[]).forEach(x=>{if(!seen.has(String(x.id)))rows.push(x);});
+    }
   }
 
   const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
