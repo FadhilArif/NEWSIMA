@@ -315,3 +315,61 @@ when (
   )
 )
 execute function private.notify_proker_workflow();
+
+
+-- Parent BEM members may view HMJ proposal/LPJ only from the point the
+-- President BEM has approved it and returned it to HMJ, plus later stages.
+drop policy if exists proker_select_hmj_parent_bem_after_president on public.proker;
+create policy proker_select_hmj_parent_bem_after_president
+on public.proker
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.organisasi hmj
+    join public.keanggotaan k on k.organisasi_id = hmj.induk_organisasi_id
+    where hmj.id = proker.organisasi_id
+      and hmj.tipe = 'HMJ'::public.tipe_org
+      and k.akun_id = (select auth.uid())
+      and k.status = 'aktif'
+      and (
+        (proker.status = 'proposal_diajukan' and proker.review_stage in
+          ('hmj_lanjut_kaprodi','kaprodi_hmj','hmj_lanjut_dekan','dekan_hmj','hmj_lanjut_wakil_rektor','wakil_rektor_hmj'))
+        or
+        (proker.status = 'lpj_diajukan' and proker.review_stage in
+          ('hmj_lanjut_kaprodi_lpj','kaprodi_hmj_lpj','hmj_lanjut_dekan_lpj','dekan_hmj_lpj','hmj_lanjut_wakil_rektor_lpj','wakil_rektor_hmj_lpj'))
+        or
+        (proker.review_stage is null and proker.status in
+          ('disetujui','berjalan','selesai','lpj_disetujui','tidak_terlaksana','arsip'))
+      )
+  )
+);
+
+drop policy if exists dokumen_select_hmj_parent_bem_after_president on public.dokumen;
+create policy dokumen_select_hmj_parent_bem_after_president
+on public.dokumen
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.proker p
+    join public.organisasi hmj on hmj.id = p.organisasi_id
+    join public.keanggotaan k on k.organisasi_id = hmj.induk_organisasi_id
+    where p.id = dokumen.proker_id
+      and hmj.tipe = 'HMJ'::public.tipe_org
+      and k.akun_id = (select auth.uid())
+      and k.status = 'aktif'
+      and (
+        (p.status = 'proposal_diajukan' and p.review_stage in
+          ('hmj_lanjut_kaprodi','kaprodi_hmj','hmj_lanjut_dekan','dekan_hmj','hmj_lanjut_wakil_rektor','wakil_rektor_hmj'))
+        or
+        (p.status = 'lpj_diajukan' and p.review_stage in
+          ('hmj_lanjut_kaprodi_lpj','kaprodi_hmj_lpj','hmj_lanjut_dekan_lpj','dekan_hmj_lpj','hmj_lanjut_wakil_rektor_lpj','wakil_rektor_hmj_lpj'))
+        or
+        (p.review_stage is null and p.status in
+          ('disetujui','berjalan','selesai','lpj_disetujui','tidak_terlaksana','arsip'))
+      )
+  )
+);

@@ -434,7 +434,7 @@ function isNewWorkflowDekan(p){
 }
 function isNewWorkflowWR(p){return S.user.peran==='wakil_rektor'&&!!p&&NEW_WR_STAGES.has(p.review_stage);}
 function isNewWorkflowReviewer(p){return isNewWorkflowCoordinator(p)||isNewWorkflowPresident(p)||isNewWorkflowKaprodi(p)||isNewWorkflowDekan(p)||isNewWorkflowWR(p);}
-function isNewWorkflowOwnerForwardStage(p){return !!p&&NEW_HMJ_FORWARD_STAGES.has(p.review_stage)&&isHmjProker(p)&&(S.permissions?.has('proker.create')||S.permissions?.has('proker.edit'));}
+function isNewWorkflowOwnerForwardStage(p){return !!p&&!p.__ukmBphReadOnly&&!p.__collaborator&&NEW_HMJ_FORWARD_STAGES.has(p.review_stage)&&isHmjProker(p)&&(S.permissions?.has('proker.create')||S.permissions?.has('proker.edit'));}
 function isUkmCoordinatorReviewer(p){return !!p&&['ukm_koordinator','ukm_koordinator_lpj'].includes(p.review_stage)&&(S.coordinatorAssignments||[]).some(x=>String(x.organisasi_id)===String(p.organisasi_id)&&String(x.akun_id)===String(S.user.id)&&x.status==='aktif');}
 function isUkmPresidentReviewer(p){
  if(!p||!['ukm_presiden_bem','ukm_presiden_bem_lpj'].includes(p.review_stage))return false;
@@ -723,7 +723,7 @@ async function loadProker(_retry=false) {
     : Promise.resolve({data:[],error:null});
   const visibleUkmQuery=!isWakil&&bemChildIds.length
     ? sb.from('proker').select(selectFields).in('organisasi_id',bemChildIds)
-      .or('and(status.eq.proposal_diajukan,review_stage.eq.wakil_rektor_ukm),and(status.eq.lpj_diajukan,review_stage.eq.wakil_rektor_ukm_lpj),and(status.eq.proposal_diajukan,review_stage.eq.wakil_rektor),and(status.eq.lpj_diajukan,review_stage.eq.wakil_rektor_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+      .or('and(status.eq.proposal_diajukan,review_stage.in.(wakil_rektor_ukm,wakil_rektor,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj)),and(status.eq.lpj_diajukan,review_stage.in.(wakil_rektor_ukm_lpj,wakil_rektor_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj)),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
       .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
   const [
