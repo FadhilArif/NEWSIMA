@@ -45,14 +45,14 @@ async function caller(req: Request) {
   return data.user;
 }
 
-async function presidentContext(userId: string, ukmId: string) {
+async function presidentContext(userId: string, organizationId: string) {
   const { data: ukm, error: ukmError } = await db
     .from("organisasi")
     .select("id,nama,tipe,induk_organisasi_id")
-    .eq("id", ukmId)
+    .eq("id", organizationId)
     .single();
 
-  if (ukmError || !ukm || ukm.tipe !== "UKM" || !ukm.induk_organisasi_id) return null;
+  if (ukmError || !ukm || !["HMJ","UKM","CLUB"].includes(ukm.tipe) || !ukm.induk_organisasi_id) return null;
 
   const { data: membership, error } = await db
     .from("keanggotaan")
@@ -88,9 +88,10 @@ Deno.serve(async (req) => {
     return json({ error: "INVALID_REQUEST" }, 400);
   }
 
-  const ukmId = String(body.ukm_id || "").trim();
+  // Keep ukm_id as a backward-compatible alias for the current frontend.
+  const ukmId = String(body.organisasi_id || body.ukm_id || "").trim();
   const context = await presidentContext(user.id, ukmId);
-  if (!context) return json({ error: "ONLY_BEM_PRESIDENT_CAN_MANAGE_THIS_UKM" }, 403);
+  if (!context) return json({ error: "ONLY_BEM_PRESIDENT_CAN_MANAGE_THIS_ORGANIZATION" }, 403);
 
   if (body.action === "candidates") {
     const { data, error } = await db

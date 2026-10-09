@@ -34,6 +34,8 @@ const ROLE_ACCESS = {
   pembimbing: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','inbox','rapat','profil']),
   staf_keuangan: new Set(['beranda','proker','undangan','galeri','laporan','struktur','plafon','cair','profil']),
   mahasiswa: new Set(['beranda','proker','form','undangan','galeri','laporan','struktur','profil']),
+  kaprodi: new Set(['beranda','proker','galeri','laporan','struktur','inbox','profil']),
+  dekan: new Set(['beranda','proker','galeri','laporan','struktur','inbox','profil']),
   wakil_rektor: new Set(['beranda','proker','undangan','galeri','laporan','struktur','inbox','plafon','profil'])
 }
 
@@ -81,11 +83,11 @@ const PERMISSION_CATALOG = {
   'periode.view':'Lihat periode',
   'organisasi.view':'Lihat organisasi',
   'unit.manage':'Kelola unit kerja',
-  'koordinator.view':'Lihat koordinasi UKM',
-  'koordinator.manage':'Tunjuk koordinator UKM',
-  'club.member.view':'Lihat anggota Club',
-  'club.member.manage':'Kelola anggota Club',
-  'organisasi.relation.manage':'Kelola koneksi Club'
+  'koordinator.view':'Lihat koordinasi BEM',
+  'koordinator.manage':'Tunjuk Koordinator BEM',
+  'club.member.view':'Lihat anggota UKM Minat Bakat',
+  'club.member.manage':'Kelola anggota UKM Minat Bakat',
+  'organisasi.relation.manage':'Kelola koneksi UKM Minat Bakat'
 };
 
 const ROLE_LABEL = {
@@ -94,7 +96,9 @@ const ROLE_LABEL = {
   pembimbing:'Pembimbing',
   staf_keuangan:'Staf Keuangan',
   mahasiswa:'Mahasiswa',
-  wakil_rektor:'Wakil Rektor'
+  wakil_rektor:'Wakil Rektor 1',
+  kaprodi:'Kepala Program Studi',
+  dekan:'Dekan Fakultas'
 };
 
 const POSITION_LABELS = {
@@ -107,8 +111,16 @@ const POSITION_LABELS = {
   menteri:'Menteri',
   staff_kementerian:'Staff Kementerian',
   ketua:'Ketua',
-  wakil_ketua:'Wakil Ketua'
+  wakil_ketua:'Wakil Ketua',
+  kaprodi:'Kepala Program Studi',
+  dekan:'Dekan Fakultas'
 };
+
+function organizationTypeLabel(type){
+  return type==='CLUB'?'UKM Minat Bakat':String(type||'Organisasi');
+}
+function isAcademicReviewerRole(role){return role==='kaprodi'||role==='dekan';}
+function isReviewerAccountRole(role){return role==='pembimbing'||isAcademicReviewerRole(role);}
 
 function positionLabel(code) {
   return POSITION_LABELS[code] || code || 'Anggota';
@@ -207,6 +219,31 @@ function syncSpecialAccountRole() {
     return;
   }
 
+  if(isAcademicReviewerRole(role)){
+    setNimMode(false,true);
+    const hmjs=allOrgs.filter(o=>o.tipe==='HMJ');
+    const selectedOrg=orgEl.value;
+    setOrgOptions(hmjs,'Pilih HMJ yang menjadi cakupan reviewer');
+    if(hmjs.some(o=>String(o.id)===String(selectedOrg)))orgEl.value=selectedOrg;
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
+    jabEl.innerHTML=org
+      ? '<option value="'+role+'">'+(role==='kaprodi'?'Kepala Program Studi':'Dekan Fakultas')+'</option>'
+      : '<option value="">Pilih HMJ terlebih dahulu</option>';
+    jabEl.value=org?role:'';
+    jabEl.disabled=true;
+    if(role==='kaprodi'){
+      unitLabel.textContent='Program studi yang menjadi cakupan Kaprodi';
+      const programUnits=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'')&&u.jenis==='program_studi');
+      if(programUnits.length===1)setUnitOptions(programUnits,'Program studi',true,true,programUnits[0].id);
+      else if(programUnits.length>1)setUnitOptions(programUnits,'Pilih program studi',false,true);
+      else setUnitOptions([],'Program studi HMJ belum tersedia',true,true);
+    }else{
+      unitLabel.textContent='Unit kerja (tidak wajib untuk Dekan)';
+      setUnitOptions([],'Tidak memerlukan unit khusus',true,false);
+    }
+    return;
+  }
+
   setNimMode(['user','mahasiswa'].includes(role),false);
 
   const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
@@ -260,7 +297,30 @@ function syncAdditionalAssignment() {
     return;
   }
 
-  // Non-pembimbing accounts use the normal organization/position/unit flow.
+  if(isAcademicReviewerRole(role)){
+    const hmjs=allOrgs.filter(o=>o.tipe==='HMJ');
+    setOrgOptions(hmjs,'Pilih HMJ yang menjadi cakupan reviewer');
+    const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
+    jabEl.disabled=true;
+    jabEl.innerHTML=org
+      ? '<option value="'+role+'">'+(role==='kaprodi'?'Kepala Program Studi':'Dekan Fakultas')+'</option>'
+      : '<option value="">Pilih HMJ terlebih dahulu</option>';
+    jabEl.value=org?role:'';
+    if(role==='kaprodi'){
+      const programUnits=(S.units||[]).filter(u=>String(u.organisasi_id)===String(org?.id||'')&&u.jenis==='program_studi');
+      unitLabel.textContent='Program studi';
+      unitEl.innerHTML='<option value="">'+(programUnits.length?'Pilih program studi':'Program studi HMJ belum tersedia')+'</option>'+programUnits.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama)+'</option>').join('');
+      unitEl.disabled=programUnits.length===0;unitEl.required=true;
+      if(programUnits.length===1)unitEl.value=programUnits[0].id;
+    }else{
+      unitLabel.textContent='Unit kerja (tidak wajib untuk Dekan)';
+      unitEl.innerHTML='<option value="">Tidak memerlukan unit khusus</option>';
+      unitEl.value='';unitEl.disabled=true;unitEl.required=false;
+    }
+    return;
+  }
+
+  // Other accounts use the normal organization/position/unit flow.
   const org=(S.organizations||[]).find(o=>String(o.id)===String(orgEl.value||''));
   const positions=(S.positions||[]).filter(j=>!!org && Array.isArray(j.berlaku_tipe) && j.berlaku_tipe.includes(org.tipe));
   jabEl.disabled=false;
@@ -405,7 +465,7 @@ const S = {
 }
 
 const MENU = [
-  ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['anggota','Lihat anggota'],['struktur','Struktur dan anggota'],['koordinator','Koordinator UKM']]],
+  ['Utama',[['beranda','Beranda'],['proker','Proker'],['undangan','Undangan kolaborasi'],['galeri','Galeri'],['laporan','Laporan akhir'],['anggota','Lihat anggota'],['struktur','Struktur dan anggota'],['koordinator','Koordinator BEM']]],
   ['Review',[['inbox','Inbox review'],['rapat','Rapat']]], 
   ['Anggaran',[['plafon','Plafon dan anggaran'],['cair','Penggunaan Dana']]],
   ['Admin',[['periode','Periode'],['organisasi','Organisasi'],['unit_kerja','Struktur organisasi'],['akun','Akun dan penetapan'],['jabatan','Jabatan & hak akses'],['audit','Jejak audit']]]
@@ -1369,12 +1429,12 @@ async function loadCoordinatorAssignments({force=false}={}) {
 
   const fields='id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada';
   const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
-  let managedUkmIds=[];
-  if(current?.tipe==='UKM'){
-    managedUkmIds=[current.id];
+  let managedOrganizationIds=[];
+  if(['HMJ','UKM','CLUB'].includes(current?.tipe)){
+    managedOrganizationIds=[current.id];
   }else if(current?.tipe==='BEM'){
-    managedUkmIds=(S.organizations||[])
-      .filter(o=>o.tipe==='UKM'&&String(o.induk_organisasi_id||'')===String(current.id))
+    managedOrganizationIds=(S.organizations||[])
+      .filter(o=>['HMJ','UKM','CLUB'].includes(o.tipe)&&String(o.induk_organisasi_id||'')===String(current.id))
       .map(o=>o.id);
   }
 
@@ -1386,9 +1446,9 @@ async function loadCoordinatorAssignments({force=false}={}) {
     : Promise.resolve({data:[],error:null});
 
   let managedQuery=null;
-  if(managedUkmIds.length){
+  if(managedOrganizationIds.length){
     managedQuery=sb.from('penugasan_koordinator').select(fields)
-      .eq('status','aktif').in('organisasi_id',managedUkmIds);
+      .eq('status','aktif').in('organisasi_id',managedOrganizationIds);
   }else if(!S.orgId && ['admin','wakil_rektor'].includes(S.user?.peran||'')){
     managedQuery=sb.from('penugasan_koordinator').select(fields).eq('status','aktif');
   }
@@ -1417,7 +1477,7 @@ async function loadClubMembers() {
   const org=(S.organizations||[]).find(x=>x.id===S.orgId);
   if(org?.tipe!=='CLUB')return;
   const {data,error}=await sb.from('anggota_non_akun').select('id,organisasi_id,nama,nim,aktif,dibuat_pada').eq('organisasi_id',S.orgId).order('nama');
-  if(error)return toast('Gagal memuat anggota Club: '+error.message);
+  if(error)return toast('Gagal memuat anggota UKM Minat Bakat: '+error.message);
   S.clubMembers=data||[];
 }
 
@@ -2984,12 +3044,12 @@ const V = {
     const canUnit=S.user.peran==='admin' || S.permissions?.has('unit.manage');
     const targetOptions=(S.organizations||[])
       .filter(o=>o.tipe==='BEM'||o.tipe==='HMJ')
-      .map(o=>'<option value="'+esc(o.id)+'" '+(String(o.id)===String(selectedId)?'selected':'')+'>'+esc(o.nama+' · '+o.tipe)+'</option>')
+      .map(o=>'<option value="'+esc(o.id)+'" '+(String(o.id)===String(selectedId)?'selected':'')+'>'+esc(o.nama+' · '+organizationTypeLabel(o.tipe))+'</option>')
       .join('');
 
     let html=pageHeader(
       org ? 'Struktur '+esc(org.nama) : 'Struktur organisasi',
-      org ? (type==='BEM' ? 'BEM menggunakan Kementerian.' : type==='HMJ' ? 'HMJ menggunakan Divisi.' : type==='UKM' ? 'UKM memiliki BPH dan koordinator.' : 'Club memiliki pengurus dan anggota.') : 'Pilih organisasi untuk mengelola struktur.'
+      org ? (type==='BEM' ? 'BEM menggunakan Kementerian.' : type==='HMJ' ? 'HMJ menggunakan Divisi.' : type==='UKM' ? 'UKM memiliki BPH dan koordinator.' : 'UKM Minat Bakat memiliki pengurus dan anggota.') : 'Pilih organisasi untuk mengelola struktur.'
     );
 
     if(isPrivileged){
@@ -3018,7 +3078,7 @@ const V = {
       }else if(type==='UKM'){
         html+='<div class="card mb-4"><h3>Struktur UKM</h3><p class="sub">Ketua · Wakil Ketua · Sekretaris · Bendahara · Koordinator dari BEM</p></div>';
       }else if(type==='CLUB'){
-        html+='<div class="card mb-4"><h3>Struktur Club</h3><p class="sub">Ketua · Sekretaris · Bendahara · anggota tanpa akun</p></div>';
+        html+='<div class="card mb-4"><h3>Struktur UKM Minat Bakat</h3><p class="sub">Ketua · Sekretaris · Bendahara · anggota tanpa akun</p></div>';
       }
 
       if(S.structure.length){
@@ -3098,9 +3158,9 @@ const V = {
     const related=(S.organizationRelations||[]).filter(r=>r.organisasi_id===S.orgId||r.terhubung_dengan_id===S.orgId);
 
     const connectionCard=currentOrg?.tipe==='CLUB' && (S.permissions?.has('organisasi.relation.manage')||canWrite)
-      ? '<div class="card mt-4"><h3>Koneksi Club</h3><p class="sub">Club dapat terhubung ke BEM, HMJ, UKM, atau Club lain.</p>'+
+      ? '<div class="card mt-4"><h3>Koneksi UKM Minat Bakat</h3><p class="sub">UKM Minat Bakat dapat terhubung ke BEM, HMJ, UKM, atau Club lain.</p>'+
         '<form id="form-club-relasi"><select id="cr-org" required><option value="">Pilih organisasi terhubung</option>'+
-        (S.organizations||[]).filter(o=>o.id!==currentOrg.id).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('')+
+        (S.organizations||[]).filter(o=>o.id!==currentOrg.id).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+organizationTypeLabel(o.tipe))+'</option>').join('')+
         '</select><button class="btn mt-3">Tambah koneksi</button></form>'+
         (related.length?'<div class="grid sm:grid-cols-2 gap-2 mt-4">'+related.map(r=>{
           const partner=r.organisasi_id===currentOrg.id?r.terhubung:r.organisasi;
@@ -3114,16 +3174,16 @@ const V = {
       : (canWrite
         ? '<form id="form-organisasi" class="card"><h3>Tambah organisasi</h3>'+
           '<div class="f2"><div><label>Nama *</label><input id="o-nama" required></div>'+
-          '<div><label>Tipe *</label><select id="o-tipe" required><option value="">Pilih tipe</option><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">CLUB</option></select></div>'+
+          '<div><label>Tipe *</label><select id="o-tipe" required><option value="">Pilih tipe</option><option value="BEM">BEM</option><option value="HMJ">HMJ</option><option value="UKM">UKM</option><option value="CLUB">UKM Minat Bakat</option></select></div>'+
           '<div><label>Periode *</label><select id="o-periode" required><option value="">Pilih periode</option>'+
           S.periods.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama+' · '+x.status)+'</option>').join('')+
           '</select></div></div>'+
           '<div id="o-parent-wrap" hidden><label>Naungan BEM *</label><select id="o-parent"><option value="">Pilih BEM</option>'+
           bems.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')+
           '</select></div>'+
-          '<div id="o-relasi-wrap" hidden><label>Koneksi Club</label><select id="o-relasi" multiple class="min-h-32">'+
-          (S.organizations||[]).filter(o=>['BEM','HMJ','UKM','CLUB'].includes(o.tipe)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('')+
-          '</select><small>Club dapat terhubung ke satu atau banyak organisasi.</small></div>'+
+          '<div id="o-relasi-wrap" hidden><label>Koneksi UKM Minat Bakat</label><select id="o-relasi" multiple class="min-h-32">'+
+          (S.organizations||[]).filter(o=>['BEM','HMJ','UKM','CLUB'].includes(o.tipe)).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+organizationTypeLabel(o.tipe))+'</option>').join('')+
+          '</select><small>UKM Minat Bakat dapat terhubung ke satu atau banyak organisasi.</small></div>'+
           '<button class="btn mt-4">Simpan organisasi</button></form>'
         : '');
 
@@ -3132,13 +3192,13 @@ const V = {
           const parent=(S.organizations||[]).find(o=>o.id===x.induk_organisasi_id);
           return '<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>'+esc(x.nama)+'</h3>'+
             '<p class="sub mb-1">'+esc(x.tipe)+'</p>'+
-            '<p class="text-xs text-slate-500">'+(parent?'Di bawah '+esc(parent.nama):(x.tipe==='CLUB'?'Club multi-koneksi':'Organisasi utama'))+'</p></div>'+
+            '<p class="text-xs text-slate-500">'+(parent?'Di bawah '+esc(parent.nama):(x.tipe==='CLUB'?'UKM Minat Bakat multi-koneksi':'Organisasi utama'))+'</p></div>'+
             '<span class="chip bl">'+esc(x.tipe)+'</span></div></div>';
         }).join('')+'</div>'
       : emptyCard('Belum ada organisasi.');
 
-    return pageHeader('Organisasi','Buat dan kelola BEM, HMJ, UKM, serta Club.',
-      currentOrg?.tipe==='CLUB'?'<button class="btn" data-go="struktur">Kelola struktur Club</button>':'')+
+    return pageHeader('Organisasi','Buat dan kelola BEM, HMJ, UKM, serta UKM Minat Bakat.',
+      currentOrg?.tipe==='CLUB'?'<button class="btn" data-go="struktur">Kelola struktur UKM Minat Bakat</button>':'')+
       createForm+connectionCard+orgList;
   },
 
@@ -3165,16 +3225,16 @@ const V = {
   koordinator:function(){
     const current=(S.organizations||[]).find(o=>o.id===S.orgId);
     const bemId=current?.tipe==='BEM'?current.id:current?.induk_organisasi_id;
-    const ukms=(S.organizations||[]).filter(o=>o.tipe==='UKM' && (!bemId || o.induk_organisasi_id===bemId));
+    const ukms=(S.organizations||[]).filter(o=>['HMJ','UKM','CLUB'].includes(o.tipe) && (!bemId || o.induk_organisasi_id===bemId));
     const canManage=S.user.peran!=='admin' && S.permissions?.has('koordinator.manage');
-    return pageHeader('Koordinator UKM','Koordinator ditunjuk oleh Presiden BEM dari seluruh anggota aktif BEM.')+
+    return pageHeader('Koordinator BEM','Anggota BEM yang ditunjuk Presiden BEM sebagai perantara pengajuan HMJ, UKM, dan UKM Minat Bakat.')+
       (S.user.peran==='admin'?'<div class="card border border-amber-200 bg-amber-50 mb-4"><p class="text-sm text-amber-900">Administrator dapat melihat data, tetapi penunjukan koordinator tetap harus dilakukan oleh Presiden BEM.</p></div>':'')+
       (ukms.length?'<div class="grid gap-4">'+ukms.map(u=>{
         const active=S.coordinatorAssignments.find(x=>x.organisasi_id===u.id);
-        return '<div class="card"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><h3>'+esc(u.nama)+'</h3><p class="sub">UKM di bawah '+esc((S.organizations||[]).find(o=>o.id===u.induk_organisasi_id)?.nama||'BEM')+'</p><p class="text-sm">Koordinator: <b>'+esc(active?.akun?.nama||'Belum ditunjuk')+'</b></p></div>'+
+        return '<div class="card"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><h3>'+esc(u.nama)+'</h3><p class="sub">'+esc(organizationTypeLabel(u.tipe))+' di bawah '+esc((S.organizations||[]).find(o=>o.id===u.induk_organisasi_id)?.nama||'BEM')+'</p><p class="text-sm">Koordinator: <b>'+esc(active?.akun?.nama||'Belum ditunjuk')+'</b></p></div>'+
           (canManage?'<form class="flex gap-2" data-koordinator-form="'+esc(u.id)+'"><select name="akun_id" required><option value="">Memuat anggota BEM…</option></select><button class="btn">Tunjuk</button></form>':'')+
           '</div></div>';
-      }).join('')+'</div>':emptyCard('Belum ada UKM pada BEM yang dipilih.'));
+      }).join('')+'</div>':emptyCard('Belum ada HMJ, UKM, atau UKM Minat Bakat pada BEM yang dipilih.'));
   },
 
   audit:function(){
@@ -3185,11 +3245,11 @@ const V = {
     return '<div class="max-w-5xl"><div class="mb-6"><h1 class="t">Profil & organisasi</h1><p class="sub">Kelola identitas akun dan organisasi Anda.</p></div><div class="grid gap-4 lg:grid-cols-[1.05fr_.95fr]"><form id="form-profile" class="card"><div class="flex gap-4 items-center pb-5 border-b border-slate-100"><div id="profileAvatarPreview">'+avatarMarkup(S.user,'h-24 w-24')+'</div><div><h3>Foto profil</h3><p class="sub mb-3">JPG/PNG disarankan.</p><label class="btn cursor-pointer">Ganti<input id="profileAvatar" type="file" accept="image/*" class="hidden"></label></div></div><div class="grid gap-4 sm:grid-cols-2 mt-5"><div><label>Nama lengkap</label><input id="profileName" value="'+esc(S.user.nama)+'" required></div><div><label>NIM</label><input id="profileNim" value="'+esc(S.user.nim||'')+'"></div><div class="sm:col-span-2"><label>Email</label><input value="'+esc(S.user.email)+'" disabled></div></div><button class="btn full mt-4">Simpan perubahan</button></form><div class="card"><h3>Organisasi & jabatan</h3><p class="sub">Keanggotaan akun.</p>'+((S.memberships||[]).length?S.memberships.map(m=>{const o=(S.organizations||[]).find(x=>x.id===m.organisasi_id);return '<div class="rounded-xl bg-slate-50 p-4 mb-3"><p class="font-bold">'+esc(o?.nama||'Organisasi')+'</p><p class="text-sm text-slate-500">'+esc(m.jabatan||'Anggota')+' · '+esc(m.status||'-')+'</p></div>';}).join(''):'<p class="sub">Belum ada organisasi.</p>')+'</div></div></div>';
   },
   akun:function(){
-    const orgOpts=(S.organizations||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+o.tipe)+'</option>').join('');
+    const orgOpts=(S.organizations||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+organizationTypeLabel(o.tipe))+'</option>').join('');
     const jabatanOpts=(S.positions||[]).map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
     const unitOpts=(S.units||[]).map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama+' · '+u.jenis)+'</option>').join('');
     return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Setiap organisasi mempunyai jabatan dan ruang lingkupnya sendiri.')+
-      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label id="an-nim-label">NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="wakil_rektor">Wakil Rektor</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option></select><label id="an-unit-label">Unit kerja</label><select id="an-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
+      '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label id="an-nim-label">NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="kaprodi">Kepala Program Studi</option><option value="dekan">Dekan Fakultas</option><option value="wakil_rektor">Wakil Rektor 1</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option></select><label id="an-unit-label">Unit kerja</label><select id="an-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
       '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option></select><label id="p-unit-label">Unit kerja</label><select id="p-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
       (S.revealedCredential?'<div class="card border border-amber-200 bg-amber-50 mb-4"><div class="flex items-start justify-between gap-3"><div><h3>Password sementara</h3><p class="sub !text-amber-900">Password lama tidak bisa dibaca kembali. Ini adalah password sementara baru yang baru saja direset dan wajib diganti saat login.</p><p class="font-bold">'+esc(S.revealedCredential.nama||S.revealedCredential.email||'Akun')+'</p></div><button class="text-sm underline" data-account-action="close-credential">Tutup</button></div><div class="flex gap-2 mt-3"><input readonly value="'+esc(S.revealedCredential.password)+'" id="revealed-password" class="font-mono flex-1"><button class="btn" data-account-action="copy-credential">Salin</button></div></div>':'')+
       (S.accounts?.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Penetapan organisasi</th><th>Status</th><th>Tindakan</th></tr></thead><tbody>'+S.accounts.map(x=>{
@@ -4160,7 +4220,7 @@ document.addEventListener('change', async e => {
   }
 
   if(e.target.id==='an-org'){
-    if($('#an-peran')?.value==='pembimbing'){
+    if(isReviewerAccountRole($('#an-peran')?.value||'')){
       syncSpecialAccountRole();
       return;
     }
@@ -4178,11 +4238,11 @@ document.addEventListener('change', async e => {
 
   if(['an-org','an-jabatan','p-org','p-jabatan'].includes(e.target.id)){
     const prefix=e.target.id.startsWith('p-')?'p':'an';
-    if(prefix==='an' && ['pembimbing','wakil_rektor','staf_keuangan'].includes($('#an-peran')?.value)){
+    if(prefix==='an' && ['pembimbing','wakil_rektor','staf_keuangan','kaprodi','dekan'].includes($('#an-peran')?.value)){
       syncSpecialAccountRole();
       return;
     }
-    if(prefix==='p' && (S.accounts||[]).find(x=>String(x.id)===String($('#p-akun')?.value||''))?.peran==='pembimbing'){
+    if(prefix==='p' && isReviewerAccountRole((S.accounts||[]).find(x=>String(x.id)===String($('#p-akun')?.value||''))?.peran||'')){
       syncAdditionalAssignment();
       return;
     }
@@ -4556,8 +4616,8 @@ document.addEventListener('submit', async e => {
     const nama=$('#cm-nama').value.trim(),nim=$('#cm-nim').value.trim();
     if(!S.orgId||!nama||!nim)return toast('Nama dan NIM wajib diisi.');
     const {error}=await sb.from('anggota_non_akun').insert({organisasi_id:S.orgId,nama,nim,dibuat_oleh:S.user.id});
-    if(error)return toast('Gagal menambah anggota Club: '+error.message);
-    toast('Anggota Club ditambahkan tanpa akun.');return render();
+    if(error)return toast('Gagal menambah anggota UKM Minat Bakat: '+error.message);
+    toast('Anggota UKM Minat Bakat ditambahkan tanpa akun.');return render();
   }
 
   if(e.target.matches('form[data-koordinator-form]')){
