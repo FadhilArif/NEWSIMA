@@ -1,5 +1,5 @@
 // Public browser configuration only.
-// NEVER put service_role / secret keys here.
+// Never place privileged Supabase keys in browser-accessible configuration.
 // Replace these placeholders with your Supabase project's URL and
 // anon/publishable key. Database RLS remains the real authorization layer.
 window.SIMA_CONFIG = {
