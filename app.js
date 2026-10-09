@@ -675,9 +675,10 @@ async function loadProker(_retry=false) {
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
+  const ukmReviews=(ukmReviewRows||[]).map(x=>({...x,__collaborator:false,__ukmReview:true}));
 
   const map=new Map();
-  [...own,...collab,...childHmjs].forEach(x=>map.set(x.id,x));
+  [...own,...collab,...childHmjs,...ukmReviews].forEach(x=>map.set(x.id,x));
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -1293,22 +1294,50 @@ async function loadOrganizationRelations() {
 async function loadCoordinatorAssignments() {
   S.coordinatorAssignments=[];
   if(!sb)return;
-  let ukmIds=[];
-  const current=(S.organizations||[]).find(o=>o.id===S.orgId);
-  if(current?.tipe==='UKM') ukmIds=[current.id];
-  else if(current?.tipe==='BEM') ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===current.id).map(o=>o.id);
-  else if(S.orgId) ukmIds=(S.organizations||[]).filter(o=>o.tipe==='UKM'&&o.induk_organisasi_id===S.orgId).map(o=>o.id);
-  let q=sb.from('penugasan_koordinator').select('id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada').eq('status','aktif');
-  if(ukmIds.length) q=q.in('organisasi_id',ukmIds);
-  else if(S.orgId && current?.tipe!=='BEM') q=q.eq('organisasi_id',S.orgId);
-  const {data,error}=await q;
-  if(error)return toast('Gagal memuat koordinator UKM: '+error.message);
-  const ids=[...new Set((data||[]).map(x=>x.akun_id))];
-  const profiles=ids.length?(await sb.from('profiles').select('id,nama,nim').in('id',ids)).data||[]:[];
-  const pm=Object.fromEntries(profiles.map(x=>[x.id,x]));
-  S.coordinatorAssignments=(data||[]).map(x=>({...x,akun:pm[x.akun_id]}));
-}
 
+  const fields='id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada';
+  const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
+  let managedUkmIds=[];
+  if(current?.tipe==='UKM'){
+    managedUkmIds=[current.id];
+  }else if(current?.tipe==='BEM'){
+    managedUkmIds=(S.organizations||[])
+      .filter(o=>o.tipe==='UKM'&&String(o.induk_organisasi_id||'')===String(current.id))
+      .map(o=>o.id);
+  }
+
+  // A coordinator may be assigned from a BEM ministry or other context;
+  // always fetch assignments directly addressed to the signed-in account.
+  const ownQuery=S.user?.id
+    ? sb.from('penugasan_koordinator').select(fields)
+        .eq('akun_id',S.user.id).eq('status','aktif')
+    : Promise.resolve({data:[],error:null});
+
+  let managedQuery=null;
+  if(managedUkmIds.length){
+    managedQuery=sb.from('penugasan_koordinator').select(fields)
+      .eq('status','aktif').in('organisasi_id',managedUkmIds);
+  }else if(!S.orgId && ['admin','wakil_rektor'].includes(S.user?.peran||'')){
+    managedQuery=sb.from('penugasan_koordinator').select(fields).eq('status','aktif');
+  }
+
+  const [ownRes,managedRes]=await Promise.all([
+    ownQuery,
+    managedQuery||Promise.resolve({data:[],error:null})
+  ]);
+  if(ownRes.error)console.warn('Gagal memuat penugasan koordinator milik akun:',ownRes.error.message);
+  if(managedRes.error)console.warn('Gagal memuat daftar koordinator organisasi:',managedRes.error.message);
+
+  const assignments=new Map();
+  [...(ownRes.data||[]),...(managedRes.data||[])].forEach(x=>assignments.set(String(x.id),x));
+  const rows=[...assignments.values()];
+  const ids=[...new Set(rows.map(x=>x.akun_id).filter(Boolean))];
+  const profiles=ids.length
+    ? (await sb.from('profiles').select('id,nama,nim').in('id',ids)).data||[]
+    : [];
+  const pm=Object.fromEntries(profiles.map(x=>[String(x.id),x]));
+  S.coordinatorAssignments=rows.map(x=>({...x,akun:pm[String(x.akun_id)]||null}));
+}
 async function loadClubMembers() {
   S.clubMembers=[];
   if(!sb || !S.orgId)return;
