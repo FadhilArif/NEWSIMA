@@ -2675,33 +2675,38 @@ const V = {
     }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',isUkmProker(p)?'Kembalikan ke UKM':'Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='ukm_koordinator_lpj'?'Setujui & teruskan ke Presiden BEM':p.review_stage==='ukm_presiden_bem_lpj'?'Setujui & teruskan ke Wakil Rektor':p.review_stage==='wakil_rektor_lpj'&&isUkmProker(p)?'Setujui LPJ':'Setujui LPJ','')+'</div></div>';
 
-    const steps=isUkmProker(p)
+    const ukmJourney=isUkmProker(p);
+    const steps=ukmJourney
       ? [
-        ['direncanakan','UKM'],
-        ['ukm_koordinator','Koordinator UKM'],
-        ['ukm_presiden_bem','Presiden BEM'],
-        ['wakil_rektor','Wakil Rektor'],
-        ['disetujui','Disetujui'],
-        ['berjalan','Pelaksanaan'],
-        ['selesai','Selesai'],
-        ['ukm_koordinator_lpj','Koordinator LPJ'],
-        ['ukm_presiden_bem_lpj','Presiden BEM'],
-        ['wakil_rektor_lpj','Wakil Rektor'],
-        ['lpj_disetujui','LPJ selesai']
+        ['direncanakan','UKM','calendar'],
+        ['ukm_koordinator','Koordinator UKM','file'],
+        ['ukm_presiden_bem','Presiden BEM','users'],
+        ['wakil_rektor','Wakil Rektor','wallet'],
+        ['disetujui','Disetujui','check'],
+        ['berjalan','Pelaksanaan','calendar'],
+        ['selesai','Selesai','check'],
+        ['ukm_koordinator_lpj','Review LPJ','file'],
+        ['ukm_presiden_bem_lpj','Presiden BEM','users'],
+        ['wakil_rektor_lpj','Wakil Rektor','wallet'],
+        ['lpj_disetujui','LPJ selesai','check']
       ]
       : [
-        ['direncanakan','Direncanakan'],
-        ['proposal_diajukan','Review proposal'],
-        ['disetujui','Disetujui'],
-        ['berjalan','Pelaksanaan'],
-        ['selesai','Selesai'],
-        ['lpj_diajukan','Review LPJ'],
-        ['lpj_disetujui','Selesai administrasi']
+        ['direncanakan','Direncanakan','calendar'],
+        ['proposal_diajukan','Review proposal','file'],
+        ['disetujui','Disetujui','check'],
+        ['berjalan','Pelaksanaan','calendar'],
+        ['selesai','Selesai','check'],
+        ['lpj_diajukan','Review LPJ','file'],
+        ['lpj_disetujui','Selesai administrasi','check']
       ];
-    const currentStepKey=isUkmProker(p)
-      ? (p.review_stage || p.status)
+    const isReturnedForRevision=p.status==='revisi';
+    const currentStepKey=ukmJourney
+      ? (isReturnedForRevision ? 'direncanakan' : (p.review_stage || p.status))
       : p.status;
     const currentIndex=Math.max(steps.findIndex(x=>x[0]===currentStepKey),0);
+    const currentStepLabel=isReturnedForRevision
+      ? (ukmJourney ? 'Revisi · kembali ke UKM' : 'Revisi · kembali ke pengaju')
+      : (steps[currentIndex]?.[1] || ST[p.status]?.[0] || p.status);
     const collaboratorBanner=readOnlyCollaborator
       ? '<div class="card mb-4 border border-blue-200 bg-blue-50"><p class="text-sm text-blue-800"><b>Mode lihat saja.</b> Anda merupakan kolaborator yang sudah bergabung. Anda dapat melihat perkembangan Proker, dokumen, riwayat persetujuan, dan dokumentasi kegiatan, tetapi tidak dapat melakukan perubahan atau tindakan workflow.</p></div>'
       : '';
@@ -2724,7 +2729,11 @@ const V = {
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage) : ''),
       chip(p.status)
     )+
-      collaboratorBanner+      '<div class="card mb-4 workflow-steps"><div class="workflow-steps-track">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'"><div class="workflow-step-number">'+(i+1)+'</div><div class="workflow-step-label">'+esc(s[1])+'</div></div>').join('')+'</div></div>'+
+      collaboratorBanner+
+      '<section class="workflow-steps '+(ukmJourney?'workflow-steps--ukm':'')+'" aria-label="Perjalanan program kerja">'+
+        '<div class="workflow-steps-heading"><span class="workflow-steps-title">Perjalanan Proker</span><span class="workflow-current-note '+(isReturnedForRevision?'is-revision':'')+'"><i></i>'+esc(currentStepLabel)+'</span></div>'+
+        '<div class="workflow-steps-scroll"><div class="workflow-steps-track '+(ukmJourney?'is-ukm':'')+'">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'" aria-current="'+(i===currentIndex?'step':'false')+'"><span class="workflow-step-icon">'+icon(i<currentIndex?'check':s[2])+'</span><span class="workflow-step-label">'+esc(s[1])+'</span></div>').join('')+'</div></div>'+
+      '</section>'+
       '<div class="row2"><div class="card"><h3>Informasi kegiatan</h3><div class="grid grid-cols-2 gap-3 mt-3"><div><small>Organisasi</small><p class="font-semibold">'+esc(p.organisasi?.nama||'-')+'</p></div><div><small>Ketua</small><p class="font-semibold">'+esc(p.ketua_pelaksana||'-')+'</p></div><div><small>Mulai</small><p class="font-semibold">'+dateID(p.tanggal_mulai)+'</p></div><div><small>Selesai</small><p class="font-semibold">'+dateID(p.tanggal_selesai)+'</p></div><div><small>Lokasi</small><p class="font-semibold">'+esc(p.tempat||'-')+'</p></div><div><small>Batas LPJ</small><p class="font-semibold">'+dateID(p.batas_lpj||'Belum aktif')+'</p></div></div><div class="mt-4 grid grid-cols-2 gap-3"><div class="rounded-xl bg-slate-50 p-3"><small>Pengajuan anggaran</small><p class="font-bold">'+rp(p.anggaran_diajukan||0)+'</p></div><div class="rounded-xl bg-emerald-50 p-3"><small>Anggaran disetujui</small><p class="font-bold text-emerald-800">'+rp(p.anggaran_disetujui||0)+'</p></div></div><p class="sub mt-4">'+esc(p.deskripsi||'Tidak ada deskripsi.')+'</p></div>'+
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
         ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
