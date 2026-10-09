@@ -832,12 +832,13 @@ async function loadProkerDetail() {
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
-  const docsResult = S.user.peran==='wakil_rektor'
-    ? await sb.rpc('get_wakil_rektor_review_documents',{p_proker_id:S.selectedProkerId})
-    : await sb.from('dokumen')
-        .select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at')
-        .eq('proker_id',S.selectedProkerId)
-        .order('jenis');
+  // Read all documents authorized for this account under dokumen RLS.
+  // Do not use the Wakil Rektor review-only RPC here: it filters out documents
+  // that have already passed the active stage and would hide their history.
+  const docsResult = await sb.from('dokumen')
+    .select('id,proker_id,organisasi_id,jenis,status,tahap,file_path,file_name,mime_type,file_size,uploaded_by,uploaded_at')
+    .eq('proker_id',S.selectedProkerId)
+    .order('jenis');
 
   if(docsResult.error){
     S.detail=null;
