@@ -88,7 +88,7 @@ begin
     else raise exception 'INVALID_UKM_REVIEW_STAGE'; end if;
 
     insert into public.persetujuan(dokumen_id,tahap,keputusan,komentar,oleh,sebagai)
-    values(v_doc.id,v_p.review_stage,case when p_action='approve' then 'setuju' else 'revisi' end,v_comment,v_uid,
+    values(v_doc.id,case when v_p.review_stage='ukm_koordinator' then 'koordinator' when v_p.review_stage='ukm_presiden_bem' then 'bem' when v_p.review_stage='wakil_rektor' then 'wakil_rektor' else v_p.review_stage end,case when p_action='approve' then 'setuju' else 'revisi' end,v_comment,v_uid,
       case when v_p.review_stage='ukm_koordinator' then 'koordinator_ukm'
            when v_p.review_stage='ukm_presiden_bem' then 'presiden_bem'
            else 'wakil_rektor' end);
@@ -177,7 +177,7 @@ begin
     else raise exception 'INVALID_UKM_LPJ_REVIEW_STAGE'; end if;
 
     insert into public.persetujuan(dokumen_id,tahap,keputusan,komentar,oleh,sebagai)
-    values(v_doc.id,v_p.review_stage,case when p_action='approve_lpj' then 'setuju' else 'revisi' end,v_comment,v_uid,
+    values(v_doc.id,case when v_p.review_stage='ukm_koordinator_lpj' then 'koordinator' when v_p.review_stage='ukm_presiden_bem_lpj' then 'bem_lpj' when v_p.review_stage='wakil_rektor_lpj' then 'wakil_rektor_lpj' else v_p.review_stage end,case when p_action='approve_lpj' then 'setuju' else 'revisi' end,v_comment,v_uid,
       case when v_p.review_stage='ukm_koordinator_lpj' then 'koordinator_ukm'
            when v_p.review_stage='ukm_presiden_bem_lpj' then 'presiden_bem'
            else 'wakil_rektor' end);
