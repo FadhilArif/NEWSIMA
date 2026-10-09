@@ -126,13 +126,27 @@ begin
       v_target_stage:='wakil_rektor';
     elsif v_org.tipe='HMJ' then
       if v_org.induk_organisasi_id is null then raise exception 'HMJ_PARENT_BEM_REQUIRED'; end if;
-      if not exists(select 1 from public.penugasan_koordinator pc where pc.organisasi_id=v_org.id and pc.status='aktif' and (pc.mulai_pada is null or pc.mulai_pada<=current_date) and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then
+      if not exists(select 1 from public.penugasan_koordinator pc
+        join public.organisasi child on child.id=pc.organisasi_id
+        join public.keanggotaan parent_member on parent_member.organisasi_id=child.induk_organisasi_id
+          and parent_member.akun_id=pc.akun_id and parent_member.status='aktif'
+        join public.profiles coordinator_profile on coordinator_profile.id=pc.akun_id and coordinator_profile.aktif=true
+        where pc.organisasi_id=v_org.id and pc.status='aktif'
+          and (pc.mulai_pada is null or pc.mulai_pada<=current_date)
+          and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then
         raise exception 'COORDINATOR_NOT_ASSIGNED';
       end if;
       v_target_stage:='koordinator_hmj';
     elsif v_org.tipe in ('UKM'::public.tipe_org,'CLUB'::public.tipe_org) then
       if v_org.induk_organisasi_id is null then raise exception 'UKM_PARENT_BEM_REQUIRED'; end if;
-      if not exists(select 1 from public.penugasan_koordinator pc where pc.organisasi_id=v_org.id and pc.status='aktif' and (pc.mulai_pada is null or pc.mulai_pada<=current_date) and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then
+      if not exists(select 1 from public.penugasan_koordinator pc
+        join public.organisasi child on child.id=pc.organisasi_id
+        join public.keanggotaan parent_member on parent_member.organisasi_id=child.induk_organisasi_id
+          and parent_member.akun_id=pc.akun_id and parent_member.status='aktif'
+        join public.profiles coordinator_profile on coordinator_profile.id=pc.akun_id and coordinator_profile.aktif=true
+        where pc.organisasi_id=v_org.id and pc.status='aktif'
+          and (pc.mulai_pada is null or pc.mulai_pada<=current_date)
+          and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then
         raise exception 'COORDINATOR_NOT_ASSIGNED';
       end if;
       v_target_stage:='koordinator_ukm';
@@ -255,6 +269,7 @@ begin
   if p_action='start' then
     if not v_owner then raise exception 'FORBIDDEN_PROKER_START'; end if;
     if v_p.status<>'disetujui' then raise exception 'INVALID_STATUS_FOR_START'; end if;
+    perform private.assert_proker_collaborators_confirmed(p_proker_id);
     update public.proker as pr
     set status='berjalan',
         batas_lpj=(select current_date+coalesce(per.batas_lpj_hari,7) from public.organisasi org join public.periode per on per.id=org.periode_id where org.id=pr.organisasi_id)
@@ -265,6 +280,7 @@ begin
   if p_action='finish' then
     if not v_owner then raise exception 'FORBIDDEN_PROKER_FINISH'; end if;
     if v_p.status<>'berjalan' then raise exception 'INVALID_STATUS_FOR_FINISH'; end if;
+    perform private.assert_proker_collaborators_confirmed(p_proker_id);
     update public.proker set status='selesai',review_stage=null where id=p_proker_id returning * into v_p;
     return v_p;
   end if;
@@ -277,10 +293,24 @@ begin
     if v_org.tipe='BEM' then
       v_target_stage:='wakil_rektor_lpj';
     elsif v_org.tipe='HMJ' then
-      if not exists(select 1 from public.penugasan_koordinator pc where pc.organisasi_id=v_org.id and pc.status='aktif' and (pc.mulai_pada is null or pc.mulai_pada<=current_date) and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then raise exception 'COORDINATOR_NOT_ASSIGNED'; end if;
+      if not exists(select 1 from public.penugasan_koordinator pc
+        join public.organisasi child on child.id=pc.organisasi_id
+        join public.keanggotaan parent_member on parent_member.organisasi_id=child.induk_organisasi_id
+          and parent_member.akun_id=pc.akun_id and parent_member.status='aktif'
+        join public.profiles coordinator_profile on coordinator_profile.id=pc.akun_id and coordinator_profile.aktif=true
+        where pc.organisasi_id=v_org.id and pc.status='aktif'
+          and (pc.mulai_pada is null or pc.mulai_pada<=current_date)
+          and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then raise exception 'COORDINATOR_NOT_ASSIGNED'; end if;
       v_target_stage:='koordinator_hmj_lpj';
     elsif v_org.tipe in ('UKM'::public.tipe_org,'CLUB'::public.tipe_org) then
-      if not exists(select 1 from public.penugasan_koordinator pc where pc.organisasi_id=v_org.id and pc.status='aktif' and (pc.mulai_pada is null or pc.mulai_pada<=current_date) and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then raise exception 'COORDINATOR_NOT_ASSIGNED'; end if;
+      if not exists(select 1 from public.penugasan_koordinator pc
+        join public.organisasi child on child.id=pc.organisasi_id
+        join public.keanggotaan parent_member on parent_member.organisasi_id=child.induk_organisasi_id
+          and parent_member.akun_id=pc.akun_id and parent_member.status='aktif'
+        join public.profiles coordinator_profile on coordinator_profile.id=pc.akun_id and coordinator_profile.aktif=true
+        where pc.organisasi_id=v_org.id and pc.status='aktif'
+          and (pc.mulai_pada is null or pc.mulai_pada<=current_date)
+          and (pc.berakhir_pada is null or pc.berakhir_pada>=current_date)) then raise exception 'COORDINATOR_NOT_ASSIGNED'; end if;
       v_target_stage:='koordinator_ukm_lpj';
     else raise exception 'ORGANIZATION_TYPE_NOT_SUPPORTED'; end if;
     perform private.assert_proker_collaborators_confirmed(p_proker_id);
