@@ -205,6 +205,7 @@ begin
     if v_p.status='proposal_diajukan' then
       select * into v_doc from public.dokumen where proker_id=p_proker_id and jenis='proposal'::public.jenis_dok order by uploaded_at desc nulls last,id desc limit 1;
       if not found or nullif(v_doc.file_path,'') is null then raise exception 'PROPOSAL_FILE_REQUIRED'; end if;
+      perform private.assert_proker_collaborators_confirmed(p_proker_id);
       if p_action='send_kaprodi' and v_p.review_stage='hmj_lanjut_kaprodi' then v_target_stage:='kaprodi_hmj';
       elsif p_action='send_dekan' and v_p.review_stage='hmj_lanjut_dekan' then v_target_stage:='dekan_hmj';
       elsif p_action='send_wakil_rektor' and v_p.review_stage='hmj_lanjut_wakil_rektor' then v_target_stage:='wakil_rektor_hmj';
@@ -217,6 +218,7 @@ begin
     elsif v_p.status='lpj_diajukan' then
       select * into v_doc from public.dokumen where proker_id=p_proker_id and jenis in ('laporan_akhir'::public.jenis_dok,'lpj'::public.jenis_dok) order by (jenis='laporan_akhir'::public.jenis_dok) desc,uploaded_at desc nulls last,id desc limit 1;
       if not found or nullif(v_doc.file_path,'') is null then raise exception 'LPJ_FILE_REQUIRED'; end if;
+      perform private.assert_proker_collaborators_confirmed(p_proker_id);
       if p_action='send_kaprodi' and v_p.review_stage='hmj_lanjut_kaprodi_lpj' then v_target_stage:='kaprodi_hmj_lpj';
       elsif p_action='send_dekan' and v_p.review_stage='hmj_lanjut_dekan_lpj' then v_target_stage:='dekan_hmj_lpj';
       elsif p_action='send_wakil_rektor' and v_p.review_stage='hmj_lanjut_wakil_rektor_lpj' then v_target_stage:='wakil_rektor_hmj_lpj';

@@ -936,7 +936,9 @@ async function loadProkerDetail() {
   const uploaderIds=[...new Set(photos.map(x=>x.diunggah_oleh).filter(Boolean))];
   const periodId=orgRes.data?.periode_id||null;
   const needsBudgetStatus=S.user.peran==='wakil_rektor' && proker.status==='proposal_diajukan'
-    && proker.review_stage==='wakil_rektor' && proker.sumber_dana_kode==='KAMPUS';
+    && NEW_WR_STAGES.has(proker.review_stage)
+    && !String(proker.review_stage).endsWith('_lpj')
+    && proker.sumber_dana_kode==='KAMPUS';
 
   const [decisionActorResult,budgetResult,uploaderResult,thumbUrls]=await Promise.all([
     decisionActorIds.length?sb.from('profiles').select('id,nama').in('id',decisionActorIds):Promise.resolve({data:[],error:null}),
@@ -2659,14 +2661,19 @@ const V = {
         || (!p.review_stage && canReviewLegacy)
       ));
     const canReview=canReviewLegacy||canReviewStage;
-    const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor','ukm_koordinator','ukm_presiden_bem'].includes(p.review_stage);
-    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj','ukm_koordinator_lpj','ukm_presiden_bem_lpj'].includes(p.review_stage);
+    const isProposalStage=['pembimbing_hmj','bem','bem_from_wakil_rektor','wakil_rektor','ukm_koordinator','ukm_presiden_bem',
+      'koordinator_hmj','koordinator_ukm','presiden_bem_hmj','presiden_bem_ukm','kaprodi_hmj','dekan_hmj',
+      'wakil_rektor_hmj','wakil_rektor_ukm'].includes(p.review_stage);
+    const isLpjStage=['pembimbing_hmj_lpj','bem_lpj','wakil_rektor_lpj','ukm_koordinator_lpj','ukm_presiden_bem_lpj',
+      'koordinator_hmj_lpj','koordinator_ukm_lpj','presiden_bem_hmj_lpj','presiden_bem_ukm_lpj',
+      'kaprodi_hmj_lpj','dekan_hmj_lpj','wakil_rektor_hmj_lpj','wakil_rektor_ukm_lpj'].includes(p.review_stage);
     // Reviewer visibility is determined by workflow stage. The backend RPC
     // remains authoritative for self-review and authorization checks.
     const isWakilProposalReview=
       isWakilReviewerForStage &&
       p.status==='proposal_diajukan' &&
-      p.review_stage==='wakil_rektor' &&
+      NEW_WR_STAGES.has(p.review_stage) &&
+      !String(p.review_stage).endsWith('_lpj') &&
       !!proposal;
 
     const isProposalReview=
@@ -2683,7 +2690,8 @@ const V = {
     const isWakilLpjReview=
       isWakilReviewerForStage &&
       p.status==='lpj_diajukan' &&
-      p.review_stage==='wakil_rektor_lpj' &&
+      NEW_WR_STAGES.has(p.review_stage) &&
+      String(p.review_stage).endsWith('_lpj') &&
       !!lpj;
 
     const isLpjReview=
@@ -2704,15 +2712,21 @@ const V = {
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
 
-    if(isNewWorkflowCoordinator(p)&&p.status==='proposal_diajukan'&&['koordinator_hmj','koordinator_ukm'].includes(p.review_stage)) actions=action('forward','Teruskan ke Presiden BEM');
-    else if(isNewWorkflowCoordinator(p)&&p.status==='lpj_diajukan'&&['koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage)) actions=action('forward','Teruskan LPJ ke Presiden BEM');
+    if(isNewWorkflowCoordinator(p)&&p.status==='proposal_diajukan'&&['koordinator_hmj_revisi','koordinator_ukm_revisi'].includes(p.review_stage))
+      actions=action('return_to_org',p.review_stage==='koordinator_hmj_revisi'?'Kembalikan revisi ke HMJ':'Kembalikan revisi ke UKM Minat Bakat');
+    else if(isNewWorkflowCoordinator(p)&&p.status==='lpj_diajukan'&&['koordinator_hmj_lpj_revisi','koordinator_ukm_lpj_revisi'].includes(p.review_stage))
+      actions=action('return_to_org',p.review_stage==='koordinator_hmj_lpj_revisi'?'Kembalikan revisi LPJ ke HMJ':'Kembalikan revisi LPJ ke UKM Minat Bakat');
+    else if(isNewWorkflowCoordinator(p)&&p.status==='proposal_diajukan'&&['koordinator_hmj','koordinator_ukm'].includes(p.review_stage))
+      actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):action('forward','Teruskan ke Presiden BEM');
+    else if(isNewWorkflowCoordinator(p)&&p.status==='lpj_diajukan'&&['koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage))
+      actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):action('forward','Teruskan LPJ ke Presiden BEM');
     else if(isNewWorkflowOwnerForwardStage(p)&&p.status==='proposal_diajukan'){
       const next=p.review_stage==='hmj_lanjut_kaprodi'?['send_kaprodi','Ajukan ke Kaprodi']:p.review_stage==='hmj_lanjut_dekan'?['send_dekan','Ajukan ke Dekan untuk review']:['send_wakil_rektor','Ajukan ke Wakil Rektor 1'];
-      actions=proposal?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan proposal sudah diunggah.</p>';
+      actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):(proposal?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan proposal sudah diunggah.</p>');
     }
     else if(isNewWorkflowOwnerForwardStage(p)&&p.status==='lpj_diajukan'){
       const next=p.review_stage==='hmj_lanjut_kaprodi_lpj'?['send_kaprodi','Ajukan LPJ ke Kaprodi']:p.review_stage==='hmj_lanjut_dekan_lpj'?['send_dekan','Ajukan LPJ ke Dekan untuk review']:['send_wakil_rektor','Ajukan LPJ ke Wakil Rektor 1'];
-      actions=lpj?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan LPJ sudah diunggah.</p>';
+      actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):(lpj?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan LPJ sudah diunggah.</p>');
     }
     else if(isNewWorkflowDekan(p)&&p.status==='proposal_diajukan'){
       actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview kegiatan dan tidak memberi keputusan ACC/revisi.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review · teruskan ke HMJ')+'</div>';
@@ -2737,7 +2751,7 @@ const V = {
         '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea>'+
         '<div class="flex flex-wrap gap-2 mt-3">'+
           action('revise','Kembalikan untuk revisi','d')+
-          action('approve','Setujui')+
+          action('approve',p.sumber_dana_kode==='KAMPUS'?'ACC & setujui anggaran':'ACC proposal')+
         '</div>'+
       '</div>';
     }
@@ -2813,30 +2827,38 @@ const V = {
           :((p.sumber_dana_kode&&p.sumber_dana_kode!=='KAMPUS')?'<p class="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3">Sumber dana: '+esc((S.sources||[]).find(x=>x.kode===p.sumber_dana_kode)?.nama||p.sumber_dana_kode||'-')+'. Dana ini <b>tidak mengurangi plafon kampus</b>.</p>':'') )+
         '<textarea id="workflow-comment" rows="3" placeholder="Komentar untuk pengaju, terutama wajib saat revisi."></textarea><div class="flex flex-wrap gap-2 mt-3">'+
           action('revise',
-            ['ukm_koordinator','ukm_presiden_bem','wakil_rektor'].includes(p.review_stage)
-              ? 'Kembalikan ke UKM'
-              : p.review_stage==='pembimbing_hmj'
+            ['presiden_bem_hmj','presiden_bem_ukm'].includes(p.review_stage)
+              ? 'Kembalikan ke Koordinator BEM'
+              : ['ukm_koordinator','ukm_presiden_bem','wakil_rektor','wakil_rektor_ukm','wakil_rektor_hmj'].includes(p.review_stage)
                 ? 'Kembalikan untuk revisi'
-                : p.review_stage==='bem'
+                : ['kaprodi_hmj','kaprodi_hmj_lpj'].includes(p.review_stage)
                   ? 'Kembalikan ke HMJ'
-                  : 'Minta revisi',
+                  : p.review_stage==='pembimbing_hmj'
+                    ? 'Kembalikan untuk revisi'
+                    : p.review_stage==='bem'
+                      ? 'Kembalikan ke HMJ'
+                      : 'Kembalikan untuk revisi',
             'd')+
           action('approve',
-            p.review_stage==='ukm_koordinator'
+            ['ukm_koordinator','koordinator_hmj','koordinator_ukm'].includes(p.review_stage)
               ? 'Setujui & teruskan ke Presiden BEM'
-              : p.review_stage==='ukm_presiden_bem'
-                ? 'Setujui & teruskan ke Wakil Rektor'
-                : p.review_stage==='wakil_rektor' && p.organisasi?.tipe==='UKM'
-                  ? (p.sumber_dana_kode==='KAMPUS' ? 'Setujui & cairkan dana' : 'Setujui')
-                  : p.review_stage==='pembimbing_hmj'
-                    ? 'Setujui & kembalikan ke HMJ'
-                    : p.review_stage==='bem'
-                      ? 'Setujui & teruskan ke Wakil Rektor'
-                      : 'Setujui',
+              : ['ukm_presiden_bem','presiden_bem_ukm'].includes(p.review_stage)
+                ? 'ACC & teruskan ke Wakil Rektor 1'
+                : p.review_stage==='presiden_bem_hmj'
+                  ? 'ACC & lanjut ke HMJ untuk pengajuan Kaprodi'
+                  : p.review_stage==='kaprodi_hmj'
+                    ? 'ACC & lanjut ke HMJ untuk pengajuan Dekan'
+                    : NEW_WR_STAGES.has(p.review_stage)
+                      ? (p.sumber_dana_kode==='KAMPUS'?'ACC & setujui anggaran':'ACC proposal')
+                      : p.review_stage==='pembimbing_hmj'
+                        ? 'Setujui & kembalikan ke HMJ'
+                        : p.review_stage==='bem'
+                          ? 'Setujui & teruskan ke Wakil Rektor 1'
+                          : 'Setujui',
             '')+
         '</div></div>';
     }
-    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',isUkmProker(p)?'Kembalikan ke UKM':'Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='ukm_koordinator_lpj'?'Setujui & teruskan ke Presiden BEM':p.review_stage==='ukm_presiden_bem_lpj'?'Setujui & teruskan ke Wakil Rektor':p.review_stage==='wakil_rektor_lpj'&&isUkmProker(p)?'Setujui LPJ':'Setujui LPJ','')+'</div></div>';
+    else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','presiden_bem_ukm_lpj','presiden_bem_hmj_lpj','kaprodi_hmj_lpj','wakil_rektor_lpj','wakil_rektor_ukm_lpj','wakil_rektor_hmj_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',['presiden_bem_ukm_lpj','presiden_bem_hmj_lpj'].includes(p.review_stage)?'Kembalikan ke Koordinator BEM':'Kembalikan untuk revisi','d')+action('approve_lpj',['ukm_koordinator_lpj','koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage)?'Setujui & teruskan ke Presiden BEM':['ukm_presiden_bem_lpj','presiden_bem_ukm_lpj'].includes(p.review_stage)?'ACC & teruskan ke Wakil Rektor 1':p.review_stage==='presiden_bem_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Kaprodi':p.review_stage==='kaprodi_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Dekan':NEW_WR_STAGES.has(p.review_stage)?'ACC LPJ':'Setujui LPJ','')+'</div></div>';
 
     const ukmJourney=isUkmProker(p),hmjJourney=isHmjProker(p);
     const processKind=hmjJourney?'hmj':ukmJourney?'ukm':'bem';
