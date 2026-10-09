@@ -2824,38 +2824,17 @@ const V = {
     }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','wakil_rektor_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',isUkmProker(p)?'Kembalikan ke UKM':'Kembalikan ke HMJ','d')+action('approve_lpj',p.review_stage==='ukm_koordinator_lpj'?'Setujui & teruskan ke Presiden BEM':p.review_stage==='ukm_presiden_bem_lpj'?'Setujui & teruskan ke Wakil Rektor':p.review_stage==='wakil_rektor_lpj'&&isUkmProker(p)?'Setujui LPJ':'Setujui LPJ','')+'</div></div>';
 
-    const ukmJourney=isUkmProker(p);
-    const steps=ukmJourney
-      ? [
-        ['direncanakan','UKM','calendar'],
-        ['ukm_koordinator','Koordinator UKM','file'],
-        ['ukm_presiden_bem','Presiden BEM','users'],
-        ['wakil_rektor','Wakil Rektor','wallet'],
-        ['disetujui','Disetujui','check'],
-        ['berjalan','Pelaksanaan','calendar'],
-        ['selesai','Selesai','check'],
-        ['ukm_koordinator_lpj','Review LPJ','file'],
-        ['ukm_presiden_bem_lpj','Presiden BEM','users'],
-        ['wakil_rektor_lpj','Wakil Rektor','wallet'],
-        ['lpj_disetujui','LPJ selesai','check']
-      ]
-      : [
-        ['direncanakan','Direncanakan','calendar'],
-        ['proposal_diajukan','Review proposal','file'],
-        ['disetujui','Disetujui','check'],
-        ['berjalan','Pelaksanaan','calendar'],
-        ['selesai','Selesai','check'],
-        ['lpj_diajukan','Review LPJ','file'],
-        ['lpj_disetujui','Selesai administrasi','check']
-      ];
+    const ukmJourney=isUkmProker(p),hmjJourney=isHmjProker(p);
+    const processKind=hmjJourney?'hmj':ukmJourney?'ukm':'bem';
+    const steps=processKind==='bem'
+      ? [['direncanakan','Direncanakan','calendar'],['wakil_rektor','Review Wakil Rektor 1','file'],['disetujui','Disetujui','check'],['berjalan','Pelaksanaan','calendar'],['selesai','Selesai','check'],['wakil_rektor_lpj','Review LPJ WR1','file'],['lpj_disetujui','LPJ selesai','check']]
+      : processKind==='ukm'
+        ? [['direncanakan','Direncanakan','calendar'],['koordinator_ukm','Koordinator BEM','file'],['presiden_bem_ukm','Presiden BEM','users'],['wakil_rektor_ukm','Wakil Rektor 1','wallet'],['disetujui','Disetujui','check'],['berjalan','Pelaksanaan','calendar'],['selesai','Selesai','check'],['koordinator_ukm_lpj','Koordinator LPJ','file'],['presiden_bem_ukm_lpj','Presiden BEM','users'],['wakil_rektor_ukm_lpj','Wakil Rektor 1','wallet'],['lpj_disetujui','LPJ selesai','check']]
+        : [['direncanakan','Direncanakan','calendar'],['koordinator_hmj','Koordinator BEM','file'],['presiden_bem_hmj','Presiden BEM','users'],['hmj_lanjut_kaprodi','HMJ → Kaprodi','file'],['kaprodi_hmj','Kaprodi','users'],['hmj_lanjut_dekan','HMJ → Dekan','file'],['dekan_hmj','Review Dekan','eye'],['hmj_lanjut_wakil_rektor','HMJ → Wakil Rektor 1','file'],['wakil_rektor_hmj','Wakil Rektor 1','wallet'],['disetujui','Disetujui','check'],['berjalan','Pelaksanaan','calendar'],['selesai','Selesai','check'],['koordinator_hmj_lpj','Koordinator LPJ','file'],['presiden_bem_hmj_lpj','Presiden BEM','users'],['hmj_lanjut_kaprodi_lpj','HMJ → Kaprodi','file'],['kaprodi_hmj_lpj','Kaprodi LPJ','users'],['hmj_lanjut_dekan_lpj','HMJ → Dekan','file'],['dekan_hmj_lpj','Review Dekan','eye'],['hmj_lanjut_wakil_rektor_lpj','HMJ → Wakil Rektor 1','file'],['wakil_rektor_hmj_lpj','Wakil Rektor 1','wallet'],['lpj_disetujui','LPJ selesai','check']];
     const isReturnedForRevision=p.status==='revisi';
-    const currentStepKey=ukmJourney
-      ? (isReturnedForRevision ? 'direncanakan' : (p.review_stage || p.status))
-      : p.status;
+    const currentStepKey=isReturnedForRevision?'direncanakan':(p.review_stage||p.status);
     const currentIndex=Math.max(steps.findIndex(x=>x[0]===currentStepKey),0);
-    const currentStepLabel=isReturnedForRevision
-      ? (ukmJourney ? 'Revisi · kembali ke UKM' : 'Revisi · kembali ke pengaju')
-      : (steps[currentIndex]?.[1] || ST[p.status]?.[0] || p.status);
+    const currentStepLabel=isReturnedForRevision?('Revisi · kembali ke '+(hmjJourney?'HMJ':ukmJourney?'UKM Minat Bakat':'BEM')):(steps[currentIndex]?.[1]||ST[p.status]?.[0]||p.status);
     const collaboratorBanner=readOnlyCollaborator
       ? '<div class="card mb-4 border border-blue-200 bg-blue-50"><p class="text-sm text-blue-800"><b>Mode lihat saja.</b> Anda merupakan kolaborator yang sudah bergabung. Anda dapat melihat perkembangan Proker, dokumen, riwayat persetujuan, dan dokumentasi kegiatan, tetapi tidak dapat melakukan perubahan atau tindakan workflow.</p></div>'
       : '';

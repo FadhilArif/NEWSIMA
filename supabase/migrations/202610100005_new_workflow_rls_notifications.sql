@@ -189,7 +189,21 @@ declare
 begin
   if tg_op='UPDATE' then
     if old.status is not distinct from new.status and old.review_stage is not distinct from new.review_stage then return new; end if;
-    v_stage:=coalesce(new.review_stage,old.review_stage);
+    if new.review_stage is null and old.review_stage is not null
+       and new.status in ('revisi','selesai','disetujui','lpj_disetujui') then
+      v_message:=case
+        when new.status='revisi' then 'Program kerja "'||coalesce(new.nama,'program kerja')||'" perlu direvisi dan dikirim ulang.'
+        when new.status='selesai' then 'Program kerja "'||coalesce(new.nama,'program kerja')||'" selesai dilaksanakan.'
+        else 'Program kerja "'||coalesce(new.nama,'program kerja')||'" telah mendapat keputusan akhir.'
+      end;
+      if new.dibuat_oleh is not null and new.dibuat_oleh is distinct from auth.uid()
+         and not exists(select 1 from public.notifikasi n where n.akun_id=new.dibuat_oleh and n.organisasi_id=new.organisasi_id and n.tautan='review:'||new.id::text and n.pesan=v_message) then
+        insert into public.notifikasi(akun_id,organisasi_id,pesan,tautan)
+        values(new.dibuat_oleh,new.organisasi_id,v_message,'review:'||new.id::text);
+      end if;
+      return new;
+    end if;
+    v_stage:=new.review_stage;
   else
     v_stage:=new.review_stage;
   end if;
