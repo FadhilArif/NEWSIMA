@@ -203,7 +203,6 @@ begin
   if p_action in ('send_kaprodi','send_dekan','send_wakil_rektor') then
     if not v_owner or v_org.tipe<>'HMJ' then raise exception 'FORBIDDEN_HMJ_FORWARD'; end if;
     if v_p.status='proposal_diajukan' then
-      v_doc.kind := null; -- no-op removed below
       select * into v_doc from public.dokumen where proker_id=p_proker_id and jenis='proposal'::public.jenis_dok order by uploaded_at desc nulls last,id desc limit 1;
       if not found or nullif(v_doc.file_path,'') is null then raise exception 'PROPOSAL_FILE_REQUIRED'; end if;
       if p_action='send_kaprodi' and v_p.review_stage='hmj_lanjut_kaprodi' then v_target_stage:='kaprodi_hmj';
