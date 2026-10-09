@@ -1349,7 +1349,9 @@ async function loadUnits() {
   S.units=[];
   if(!sb)return;
   let q=sb.from('unit_kerja').select('id,organisasi_id,jenis,nama').order('nama');
-  const targetOrgId=['admin','wakil_rektor'].includes(S.user.peran) ? (S.structureOrgId||S.orgId) : S.orgId;
+  // Admin account creation may target any HMJ; keep all units in memory for reviewer-role
+  // assignment. Structure views still filter this list by their selected organization.
+  const targetOrgId=S.user.peran==='admin' ? null : S.user.peran==='wakil_rektor' ? (S.structureOrgId||S.orgId) : S.orgId;
   if(targetOrgId)q=q.eq('organisasi_id',targetOrgId);
   const {data,error}=await q;
   if(error)return toast('Gagal memuat unit kerja: '+error.message);
