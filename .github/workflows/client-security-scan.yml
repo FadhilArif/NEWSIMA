@@ -2,9 +2,9 @@ name: Client Security Scan
 
 on:
   push:
-    branches: ["main", "New-UI"]
+    branches: ["main", "New-UI", "New-Proces"]
   pull_request:
-    branches: ["main", "New-UI"]
+    branches: ["main", "New-UI", "New-Proces"]
 
 jobs:
   scan-client-secrets:
@@ -12,6 +12,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check client JavaScript syntax
+        run: node --check app.js
 
       - name: Block Supabase secret keys in client files
         shell: bash

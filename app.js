@@ -2624,10 +2624,8 @@ const V = {
       ['pembimbing_hmj','pembimbing_hmj_lpj'].includes(p.review_stage) &&
       S.permissions?.has('dokumen.review');
 
-    const isWakilReviewerForStage=
-      S.user.peran==='wakil_rektor' &&
-      ['wakil_rektor','wakil_rektor_lpj'].includes(p.review_stage);
-
+    const isWakilReviewerForStage=S.user.peran==='wakil_rektor'&&NEW_WR_STAGES.has(p.review_stage);
+    const isNewReviewerForStage=isNewWorkflowReviewer(p);
     const isUkmStageReviewerFor = isUkmStageReviewer(p);
     const isStageReviewer=
       isUkmStageReviewerFor ||
@@ -2706,7 +2704,23 @@ const V = {
     const action=(action,label,kind='')=>'<button class="btn '+kind+'" data-proker-action="'+action+'" data-proker-id="'+esc(p.id)+'">'+label+'</button>';
     let actions='';
 
-    if(isWakilProposalReview){
+    if(isNewWorkflowCoordinator(p)&&p.status==='proposal_diajukan'&&['koordinator_hmj','koordinator_ukm'].includes(p.review_stage)) actions=action('forward','Teruskan ke Presiden BEM');
+    else if(isNewWorkflowCoordinator(p)&&p.status==='lpj_diajukan'&&['koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage)) actions=action('forward','Teruskan LPJ ke Presiden BEM');
+    else if(isNewWorkflowOwnerForwardStage(p)&&p.status==='proposal_diajukan'){
+      const next=p.review_stage==='hmj_lanjut_kaprodi'?['send_kaprodi','Ajukan ke Kaprodi']:p.review_stage==='hmj_lanjut_dekan'?['send_dekan','Ajukan ke Dekan untuk review']:['send_wakil_rektor','Ajukan ke Wakil Rektor 1'];
+      actions=proposal?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan proposal sudah diunggah.</p>';
+    }
+    else if(isNewWorkflowOwnerForwardStage(p)&&p.status==='lpj_diajukan'){
+      const next=p.review_stage==='hmj_lanjut_kaprodi_lpj'?['send_kaprodi','Ajukan LPJ ke Kaprodi']:p.review_stage==='hmj_lanjut_dekan_lpj'?['send_dekan','Ajukan LPJ ke Dekan untuk review']:['send_wakil_rektor','Ajukan LPJ ke Wakil Rektor 1'];
+      actions=lpj?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan LPJ sudah diunggah.</p>';
+    }
+    else if(isNewWorkflowDekan(p)&&p.status==='proposal_diajukan'){
+      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview kegiatan dan tidak memberi keputusan ACC/revisi.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review · teruskan ke HMJ')+'</div>';
+    }
+    else if(isNewWorkflowDekan(p)&&p.status==='lpj_diajukan'){
+      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview LPJ untuk informasi fakultas.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review LPJ · teruskan ke HMJ')+'</div>';
+    }
+    else if(isWakilProposalReview){
       const targetLabel=reviewStageLabel(p.review_stage);
       actions='<div class="w-full">'+
         '<div class="rounded-xl border border-sima-100 bg-sima-50 p-3 mb-3">'+
@@ -3058,11 +3072,11 @@ const V = {
   },
   plafon:function(){
     const b=S.budgets[0]||null;
-    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    const canWrite=S.user.peran==='wakil_rektor';
     const plafon=Number(b?.plafon||0), digunakan=Number(b?.digunakan||0), tersisa=Number(b?.tersisa||0);
     const periodName=b?.periode?.nama||'Belum ada periode aktif';
     return pageHeader('Plafon dan anggaran','Anggaran kampus berlaku bersama untuk seluruh organisasi dalam satu periode.',
-      S.user.peran==='wakil_rektor'?'<span class="chip bl">Wakil Rektor · pengendali plafon</span>':'')+
+      S.user.peran==='wakil_rektor'?'<span class="chip bl">Wakil Rektor 1 · pengendali plafon</span>':'')+
       '<div class="g3 mb-4"><div class="k bl"><b>'+rp(plafon)+'</b>Plafon periode</div><div class="k er"><b>'+rp(digunakan)+'</b>Sudah disetujui</div><div class="k wa"><b>'+rp(tersisa)+'</b>Sisa plafon</div></div>'+
       (canWrite?'<form id="form-plafon" class="card"><h3>Atur plafon periode</h3><div class="f2"><div><label>Periode</label><select id="p-periode" required>'+((S.periods||[]).filter(x=>x.status==='aktif').map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('')||'<option value="">Tidak ada periode aktif</option>')+'</select></div><div><label>Total plafon kampus</label><input id="p-jumlah" type="text" inputmode="numeric" autocomplete="off" data-money="amount" value="'+esc(formatMoney(plafon))+'" required></div></div><p class="sub">Satu plafon dipakai bersama oleh BEM, HMJ, UKM, dan organisasi lain. Plafon berkurang ketika pengajuan anggaran disetujui.</p><button class="btn mt-4">Simpan plafon</button></form>':'')+
       '<div class="card"><div class="flex items-center justify-between gap-3 mb-4"><div><h3>'+esc(periodName)+'</h3><p class="sub">Penggunaan dihitung dari seluruh <b>anggaran yang sudah disetujui</b>.</p></div><span class="chip '+(tersisa>0?'ok':'er')+'">'+(plafon>0?Math.round((digunakan/plafon)*100):0)+'% terpakai</span></div>'+
@@ -3110,7 +3124,7 @@ const V = {
       '</div>';
   },
   organisasi:function(){
-    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    const canWrite=S.user.peran==='wakil_rektor';
     const hasPeriods=Array.isArray(S.periods)&&S.periods.length>0;
     const currentOrg=(S.organizations||[]).find(o=>o.id===S.orgId);
     const bems=(S.organizations||[]).filter(o=>o.tipe==='BEM');
@@ -3166,7 +3180,7 @@ const V = {
   },
 
   periode:function(){
-    const canWrite=['admin','wakil_rektor'].includes(S.user.peran);
+    const canWrite=S.user.peran==='wakil_rektor';
     return pageHeader('Periode','Tentukan siklus periode dan berapa hari batas LPJ setelah proker mulai berjalan.')+
       (canWrite?'<form id="form-periode" class="card"><h3>Buat periode</h3><div class="f2"><div><label>Nama periode *</label><input id="pe-nama" required></div><div><label>Batas LPJ (hari) *</label><input id="pe-batas-hari" type="number" min="1" max="365" value="7" required><small>Deadline LPJ dihitung otomatis saat status proker berubah menjadi <b>Berjalan</b>.</small></div></div><label>Status periode</label><select id="pe-status"><option value="disiapkan">Disiapkan</option><option value="aktif">Aktif</option><option value="masa_lpj">Masa LPJ</option><option value="arsip">Arsip</option></select><button class="btn mt-4">Simpan periode</button></form>':'')+
       (S.periods.length?'<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">'+S.periods.map(x=>'<div class="card"><div class="flex justify-between gap-3"><h3>'+esc(x.nama)+'</h3>'+chip(x.status)+'</div><p class="sub">Batas LPJ: <b>'+esc(x.batas_lpj_hari ?? '-')+' hari</b> setelah proker mulai berjalan.</p></div>').join('')+'</div>':emptyCard('Belum ada periode.'));
@@ -4030,7 +4044,7 @@ document.addEventListener('click', async e => {
     // A reviewer may lose access to the detail immediately after a workflow
     // decision because the Proker moves to another stage. Do not re-query the
     // now-inaccessible detail page; return to the review/list view instead.
-    const reviewActions=['approve','revise','approve_lpj','reject_lpj'];
+    const reviewActions=['approve','revise','approve_lpj','reject_lpj','forward','return_to_org','send_kaprodi','send_dekan','send_wakil_rektor','review_forward'];
     if(reviewActions.includes(action)){
       S.selectedProkerId=null;
       S.detail=null;
@@ -4459,7 +4473,7 @@ document.addEventListener('submit', async e => {
 
   if(e.target.id==='form-plafon'){
     e.preventDefault();
-    if(!['admin','wakil_rektor'].includes(S.user.peran))return toast('Hanya Wakil Rektor/Administrator yang boleh mengatur plafon.');
+    if(S.user.peran!=='wakil_rektor')return toast('Hanya Wakil Rektor 1 yang boleh mengatur plafon.');
     const periodeId=$('#p-periode').value;
     const jumlah=parseMoney($('#p-jumlah').value);
     if(!periodeId||jumlah<0)return toast('Periode dan jumlah plafon wajib valid.');
@@ -4497,11 +4511,11 @@ document.addEventListener('submit', async e => {
     const nama=$('#o-nama').value.trim();
     const tipe=$('#o-tipe').value;
     const periode_id=$('#o-periode').value;
-    const induk_organisasi_id=(tipe==='HMJ'||tipe==='UKM')?($('#o-parent').value||null):null;
+    const induk_organisasi_id=(tipe==='HMJ'||tipe==='UKM'||tipe==='CLUB')?($('#o-parent').value||null):null;
     const relasi=[...($('#o-relasi')?.selectedOptions||[])].map(x=>x.value);
     if(!nama)return toast('Nama organisasi wajib diisi.');
     if(!periode_id)return toast('Pilih periode terlebih dahulu.');
-    if((tipe==='HMJ'||tipe==='UKM')&&!induk_organisasi_id)return toast('Pilih BEM sebagai induk organisasi.');
+    if((tipe==='HMJ'||tipe==='UKM'||tipe==='CLUB')&&!induk_organisasi_id)return toast('Pilih BEM sebagai induk organisasi.');
     if(tipe==='BEM'&&induk_organisasi_id)return toast('BEM tidak boleh memiliki induk.');
     const {data,error}=await sb.from('organisasi').insert({nama,tipe,periode_id,induk_organisasi_id}).select('id').single();
     if(error)return toast('Gagal membuat organisasi: '+error.message);
