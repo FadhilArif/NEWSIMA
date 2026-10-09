@@ -17,8 +17,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEYS|service_role'             --exclude-dir=.git             --exclude-dir=node_modules             --include='*.html'             --include='*.js'             --include='*.css'             --include='*.json'             --include='*.ts'             --include='*.tsx'             .; then
+
+          # Supabase Edge Functions are server-side code; service-key environment
+          # variable names are expected there and must not be treated as client leaks.
+          # Scan browser-accessible application files only.
+          if grep -RInE 'sb_secret_|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEYS|service_role' \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules \
+            --exclude-dir=supabase \
+            --include='*.html' \
+            --include='*.js' \
+            --include='*.css' \
+            --include='*.json' \
+            --include='*.ts' \
+            --include='*.tsx' \
+            .; then
             echo "Potential Supabase secret/service-role material detected in client-accessible source."
             exit 1
           fi
+
           echo "Client secret scan passed."
