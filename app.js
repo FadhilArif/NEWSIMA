@@ -399,7 +399,9 @@ const S = {
   undangan:[],inbox:[],gallery:[],reports:[],structure:[],meetings:[],budgets:[],approvedCampusProkers:[],payouts:[],periods:[],audit:[],accounts:[],sources:[],units:[],anggota:[],anggotaPeriodId:null,anggotaQ:'',
   proker:[],fundUsageProkers:[],csvData:[],lastCredentials:[],permissionMatrix:{},tempSb:null,notificationChannel:null,renderToken:0,searchTimer:null,
   contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
-  uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null
+  uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null,
+  activityThumbUrlCache:new Map(),coordinatorAssignmentsLoadedAt:0,coordinatorAssignmentsCacheKey:'',
+  notificationsLoadedAt:0,notificationsLoadPromise:null,hydrateUserPromise:null
 }
 
 const MENU = [
@@ -577,7 +579,7 @@ async function loadContexts() {
 async function loadProker(_retry=false) {
   if (!sb) return;
   const requestContextSeq=S.contextSwitchSeq;
-  await loadCoordinatorAssignments().catch(()=>{});
+  const coordinatorAssignmentsPromise=loadCoordinatorAssignments().catch(()=>{});
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
@@ -621,6 +623,7 @@ async function loadProker(_retry=false) {
     console.warn('Gagal memuat kolaborasi:',collabError.message);
   }
 
+  await coordinatorAssignmentsPromise;
   const collabIds=[...new Set((collabRows||[]).map(x=>x.proker_id).filter(Boolean))];
   const collabQuery=collabIds.length
     ? sb.from('proker').select(selectFields).in('id',collabIds).order('tanggal_mulai',{ascending:true})
@@ -713,16 +716,14 @@ async function loadProker(_retry=false) {
 
   const ids=rows.map(x=>x.id);
   const orgIds=[...new Set(rows.map(x=>x.organisasi_id).filter(Boolean))];
-  const totals=Object.fromEntries(ids.map(id=>[id,{ajuan:0,cair:0}]));
+  const totals=Object.fromEntries(ids.map(id=>[id,{cair:0}]));
 
-  const [orgRes,budgetRes,payoutRes]=await Promise.all([
-    orgIds.length?sb.from('organisasi').select('id,nama,tipe,induk_organisasi_id').in('id',orgIds):{data:[]},
-    ids.length?sb.from('item_anggaran').select('proker_id,subtotal').in('proker_id',ids):{data:[]},
-    ids.length?sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id',ids):{data:[]}
+  const [orgRes,payoutRes]=await Promise.all([
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe,induk_organisasi_id').in('id',orgIds):Promise.resolve({data:[],error:null}),
+    ids.length?sb.from('pencairan_dana').select('proker_id,jumlah').in('proker_id',ids):Promise.resolve({data:[],error:null})
   ]);
 
   const orgMap=Object.fromEntries((orgRes.data||[]).map(o=>[o.id,o]));
-  (budgetRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].ajuan+=Number(x.subtotal||0);});
   (payoutRes.data||[]).forEach(x=>{if(totals[x.proker_id])totals[x.proker_id].cair+=Number(x.jumlah||0);});
 
   if(requestContextSeq!==S.contextSwitchSeq)return;
@@ -737,31 +738,34 @@ async function loadProker(_retry=false) {
   }));
 }
 
-async function loadNotifications({silent=false}={}) {
+async function loadNotifications({silent=false,force=false}={}) {
   if (!sb || !S.user.id) return;
+  if(S.notificationsLoadPromise)return S.notificationsLoadPromise;
+  if(!force && Date.now()-Number(S.notificationsLoadedAt||0)<4000)return;
 
-  const { data, error } = await sb.from('notifikasi')
-    .select('id,akun_id,organisasi_id,pesan,tautan,dibaca,dibuat')
-    .eq('akun_id', S.user.id)
-    .order('dibuat', { ascending:false })
-    .limit(50);
+  const userId=S.user.id;
+  const request=(async()=>{
+    const { data, error } = await sb.from('notifikasi')
+      .select('id,akun_id,organisasi_id,pesan,tautan,dibaca,dibuat')
+      .eq('akun_id', userId)
+      .order('dibuat', { ascending:false })
+      .limit(50);
+    if(error){
+      if(!silent)console.warn('Gagal memuat notifikasi:',error);
+      return;
+    }
+    if(String(S.user.id)!==String(userId))return;
+    S.notifications=Array.isArray(data)?data.map(n=>({
+      id:n.id,title:'Notifikasi',message:n.pesan||'',type:'info',
+      read:!!n.dibaca,created_at:n.dibuat,view:n.tautan||''
+    })):[];
+    S.notificationsLoadedAt=Date.now();
+    renderNotificationPanel();
+  })();
 
-  if (error) {
-    if (!silent) console.warn('Gagal memuat notifikasi:', error);
-    return;
-  }
-
-  S.notifications = Array.isArray(data) ? data.map(n => ({
-    id:n.id,
-    title:'Notifikasi',
-    message:n.pesan || '',
-    type:'info',
-    read:!!n.dibaca,
-    created_at:n.dibuat,
-    view:n.tautan || ''
-  })) : [];
-
-  renderNotificationPanel();
+  S.notificationsLoadPromise=request;
+  try{return await request;}
+  finally{if(S.notificationsLoadPromise===request)S.notificationsLoadPromise=null;}
 }
 
 async function setupNotificationRealtime() {
@@ -823,6 +827,38 @@ async function setupNotificationRealtime() {
   await loadNotifications({silent:true});
 }
 
+const ACTIVITY_THUMB_URL_TTL_MS = 8 * 60 * 1000;
+
+async function getActivityThumbnailUrls(paths) {
+  const result=new Map();
+  if(!sb)return result;
+  if(!(S.activityThumbUrlCache instanceof Map))S.activityThumbUrlCache=new Map();
+  const unique=[...new Set((paths||[]).map(x=>String(x||'').trim()).filter(Boolean))];
+  const now=Date.now(),missing=[];
+  unique.forEach(path=>{
+    const cached=S.activityThumbUrlCache.get(String(S.user?.id||'')+'|'+path);
+    if(cached && cached.expiresAt>now+45000)result.set(path,cached.url);
+    else missing.push(path);
+  });
+  for(let offset=0;offset<missing.length;offset+=50){
+    const chunk=missing.slice(offset,offset+50);
+    try{
+      const {data,error}=await sb.storage.from('activity-photos').createSignedUrls(chunk,600);
+      if(error){console.warn('Gagal membuat signed URL thumbnail batch:',error.message);continue;}
+      const rows=Array.isArray(data)?data:[];
+      let failed=0;
+      chunk.forEach((path,index)=>{
+        const item=rows[index]||{},url=item.signedUrl||item.signedURL||'';
+        if(!url||item.error){failed++;return;}
+        result.set(path,url);
+        S.activityThumbUrlCache.set(String(S.user?.id||'')+'|'+path,{url,expiresAt:Date.now()+ACTIVITY_THUMB_URL_TTL_MS});
+      });
+      if(failed)console.warn('Sebagian thumbnail tidak dapat ditandatangani:',failed);
+    }catch(error){console.warn('Permintaan signed URL thumbnail gagal:',error?.message||error);}
+  }
+  return result;
+}
+
 async function loadProkerDetail() {
   S.detail = null;
   if (!sb || !S.selectedProkerId) return;
@@ -862,35 +898,26 @@ async function loadProkerDetail() {
   const decisionError=decisions?.error?.message||null;
   if(decisionError)console.warn('Gagal memuat riwayat persetujuan:',decisionError);
   const decisionRows=Array.isArray(decisions?.data)?decisions.data:[];
-  const decisionActorIds=[...new Set(decisionRows.map(x=>x.oleh).filter(Boolean))];
-  const decisionActorResult=decisionActorIds.length
-    ? await sb.from('profiles').select('id,nama').in('id',decisionActorIds)
-    : {data:[],error:null};
-  if(decisionActorResult.error)console.warn('Nama reviewer tidak dapat dimuat:',decisionActorResult.error.message);
-  const decisionActorMap=Object.fromEntries((decisionActorResult.data||[]).map(x=>[String(x.id),x.nama]));
-
-  const periodId=orgRes.data?.periode_id||null;
-  let budgetStatus=null;
-  if(periodId){
-    const bs=await sb.rpc('get_anggaran_periode_status',{p_periode_id:periodId});
-    budgetStatus=Array.isArray(bs.data)?(bs.data[0]||null):(bs.data||null);
-  }
-
   const photos=Array.isArray(photoRows?.data)?photoRows.data:[];
+  const decisionActorIds=[...new Set(decisionRows.map(x=>x.oleh).filter(Boolean))];
   const uploaderIds=[...new Set(photos.map(x=>x.diunggah_oleh).filter(Boolean))];
-  const uploaderRows=uploaderIds.length
-    ? ((await sb.from('profiles').select('id,nama,email').in('id',uploaderIds)).data||[])
-    : [];
-  const uploaderMap=Object.fromEntries(uploaderRows.map(x=>[x.id,x]));
+  const periodId=orgRes.data?.periode_id||null;
+  const needsBudgetStatus=S.user.peran==='wakil_rektor' && proker.status==='proposal_diajukan'
+    && proker.review_stage==='wakil_rektor' && proker.sumber_dana_kode==='KAMPUS';
 
-  const photoWithUrls=await Promise.all(photos.map(async x=>{
-    let thumb_url='';
-    if(x.thumb_path){
-      const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
-      thumb_url=signed.data?.signedUrl||'';
-    }
-    return {...x,thumb_url,uploader:uploaderMap[x.diunggah_oleh]||null};
-  }));
+  const [decisionActorResult,budgetResult,uploaderResult,thumbUrls]=await Promise.all([
+    decisionActorIds.length?sb.from('profiles').select('id,nama').in('id',decisionActorIds):Promise.resolve({data:[],error:null}),
+    needsBudgetStatus&&periodId?sb.rpc('get_anggaran_periode_status',{p_periode_id:periodId}):Promise.resolve({data:null,error:null}),
+    uploaderIds.length?sb.from('profiles').select('id,nama').in('id',uploaderIds):Promise.resolve({data:[],error:null}),
+    getActivityThumbnailUrls(photos.map(x=>x.thumb_path))
+  ]);
+  if(decisionActorResult.error)console.warn('Nama reviewer tidak dapat dimuat:',decisionActorResult.error.message);
+  if(budgetResult.error)console.warn('Status plafon tidak dapat dimuat:',budgetResult.error.message);
+  const decisionActorMap=Object.fromEntries((decisionActorResult.data||[]).map(x=>[String(x.id),x.nama]));
+  const budgetRows=Array.isArray(budgetResult.data)?budgetResult.data:(budgetResult.data?[budgetResult.data]:[]);
+  const budgetStatus=budgetRows[0]||null;
+  const uploaderMap=Object.fromEntries((uploaderResult.data||[]).map(x=>[x.id,x]));
+  const photoWithUrls=photos.map(x=>({...x,thumb_url:x.thumb_path?(thumbUrls.get(x.thumb_path)||''):'',uploader:uploaderMap[x.diunggah_oleh]||null}));
 
   S.detail = {
     proker:{...proker,organisasi:orgRes.data || null},
@@ -1013,95 +1040,70 @@ async function loadInbox() {
 async function loadGallery() {
   S.gallery=[];
   if(!sb)return;
-
   const {data,error}=await sb.from('foto_kegiatan')
     .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
-    .order('proker_id')
-    .order('urutan');
-
+    .order('proker_id').order('urutan');
   if(error)return toast('Gagal memuat galeri: '+error.message);
 
   const rows=Array.isArray(data)?data:[];
   const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
   const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
-
-  const [prokerRows,userRows]=await Promise.all([
-    ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):{data:[]},
-    userIds.length?sb.from('profiles').select('id,nama,email').in('id',userIds):{data:[]}
+  const [prokerResult,userResult,membershipResult]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):Promise.resolve({data:[],error:null}),
+    userIds.length?sb.from('profiles').select('id,nama').in('id',userIds):Promise.resolve({data:[],error:null}),
+    userIds.length?sb.from('keanggotaan').select('akun_id,organisasi_id,status').in('akun_id',userIds).eq('status','aktif'):Promise.resolve({data:[],error:null})
   ]);
+  if(prokerResult.error)console.warn('Gagal memuat nama Proker galeri:',prokerResult.error.message);
+  if(userResult.error)console.warn('Gagal memuat nama pengunggah galeri:',userResult.error.message);
+  if(membershipResult.error)console.warn('Gagal memuat organisasi pengunggah foto:',membershipResult.error.message);
 
-  const pmap=Object.fromEntries((prokerRows.data||[]).map(x=>[x.id,x]));
-  const umap=Object.fromEntries((userRows.data||[]).map(x=>[x.id,x]));
-
-  // Resolve the uploader's organization from active memberships.
-  // Prefer the membership matching the Proker organization (important for
-  // users who belong to more than one organization).
-  let membershipRows=[];
-  let membershipError=null;
-  if(userIds.length){
-    const res=await sb.from('keanggotaan')
-      .select('akun_id,organisasi_id,status')
-      .in('akun_id',userIds)
-      .eq('status','aktif');
-    membershipRows=Array.isArray(res.data)?res.data:[];
-    membershipError=res.error||null;
-  }
-  if(membershipError){
-    console.warn('Gagal memuat organisasi pengunggah foto:',membershipError.message);
-  }
-
-  const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
-  const uploaderOrgRows=uploaderOrgIds.length
-    ? ((await sb.from('organisasi').select('id,nama,tipe').in('id',uploaderOrgIds)).data||[])
-    : [];
-  const uploaderOrgMap=Object.fromEntries(uploaderOrgRows.map(x=>[x.id,x]));
+  const pmap=Object.fromEntries((prokerResult.data||[]).map(x=>[x.id,x]));
+  const umap=Object.fromEntries((userResult.data||[]).map(x=>[x.id,x]));
+  const membershipRows=Array.isArray(membershipResult.data)?membershipResult.data:[];
   const membershipsByUser=new Map();
   membershipRows.forEach(row=>{
     if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);
     membershipsByUser.get(row.akun_id).push(row);
   });
+  const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
 
-  const hydrated=await Promise.all(rows.map(async x=>{
-    let thumb_url='';
-    if(x.thumb_path){
-      const signed=await sb.storage.from('activity-photos').createSignedUrl(x.thumb_path,600);
-      thumb_url=signed.data?.signedUrl||'';
-    }
-
-    const memberships=membershipsByUser.get(x.diunggah_oleh)||[];
-    const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[x.proker_id]?.organisasi_id||'')) || memberships[0] || null;
-    return {
-      ...x,
-      proker:pmap[x.proker_id]||null,
-      uploader:umap[x.diunggah_oleh]||null,
-      uploader_organization:preferred ? (uploaderOrgMap[preferred.organisasi_id]||null) : null,
-      thumb_url
-    };
+  const hydrated=rows.map(x=>({
+    ...x,
+    proker:pmap[x.proker_id]||null,
+    uploader:umap[x.diunggah_oleh]||null,
+    thumb_url:''
   }));
-
-  // One gallery card per Proker. The cover photo is intentionally randomized.
   const grouped=new Map();
   hydrated.forEach(photo=>{
     const key=String(photo.proker_id);
-    if(!grouped.has(key)){
-      grouped.set(key,{
-        proker_id:photo.proker_id,
-        proker:photo.proker,
-        photos:[]
-      });
-    }
+    if(!grouped.has(key))grouped.set(key,{proker_id:photo.proker_id,proker:photo.proker,photos:[]});
     grouped.get(key).photos.push(photo);
   });
-
-  S.gallery=[...grouped.values()].map(group=>{
+  const groups=[...grouped.values()].map(group=>{
     const photos=[...group.photos].sort((a,b)=>Number(a.urutan||0)-Number(b.urutan||0));
-    const cover=photos[Math.floor(Math.random()*photos.length)]||photos[0]||null;
-    return {
-      ...group,
-      photos,
-      cover,
-      photo_count:photos.length
-    };
+    const cover=photos.find(x=>x.thumb_path)||photos[0]||null;
+    return {...group,photos,cover,photo_count:photos.length};
+  });
+
+  // Organization labels and signed URLs are independent; keep them in one second wave.
+  const [uploaderOrgResult,coverUrls]=await Promise.all([
+    uploaderOrgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',uploaderOrgIds):Promise.resolve({data:[],error:null}),
+    getActivityThumbnailUrls(groups.map(x=>x.cover?.thumb_path).filter(Boolean))
+  ]);
+  if(uploaderOrgResult.error)console.warn('Gagal memuat label organisasi galeri:',uploaderOrgResult.error.message);
+  const uploaderOrgMap=Object.fromEntries((uploaderOrgResult.data||[]).map(x=>[x.id,x]));
+  S.gallery=groups.map(group=>{
+    const photos=group.photos.map(photo=>{
+      const memberships=membershipsByUser.get(photo.diunggah_oleh)||[];
+      const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[photo.proker_id]?.organisasi_id||''))||memberships[0]||null;
+      return {
+        ...photo,
+        uploader_organization:preferred?(uploaderOrgMap[preferred.organisasi_id]||null):null,
+        thumb_url:photo.thumb_path?(coverUrls.get(photo.thumb_path)||''):''
+      };
+    });
+    const cover=photos.find(x=>String(x.id)===String(group.cover?.id))||photos[0]||null;
+    return {...group,photos,cover};
   });
 }
 
@@ -1223,31 +1225,28 @@ async function loadBudgets() {
   const activePeriod=S.periods.find(x=>x.status==='aktif');
   if(!activePeriod?.id)return;
 
-  const {data:budget,error}=await sb.from('anggaran_periode')
-    .select('id,periode_id,plafon,diatur_oleh,diatur_pada')
-    .eq('periode_id',activePeriod.id)
-    .maybeSingle();
-  if(error){
-    toast('Gagal memuat plafon periode: '+error.message);
+  const [budgetResult,statusResult,campusProkerResult]=await Promise.all([
+    sb.from('anggaran_periode').select('id,periode_id,plafon,diatur_oleh,diatur_pada').eq('periode_id',activePeriod.id).maybeSingle(),
+    sb.rpc('get_anggaran_periode_status',{p_periode_id:activePeriod.id}),
+    sb.rpc('get_anggaran_periode_proposals',{p_periode_id:activePeriod.id})
+  ]);
+  if(budgetResult.error){
+    toast('Gagal memuat plafon periode: '+budgetResult.error.message);
+    return;
+  }
+  if(statusResult.error){
+    toast('Gagal menghitung penggunaan plafon: '+statusResult.error.message);
     return;
   }
 
-  const {data:statusData,error:statusError}=await sb.rpc('get_anggaran_periode_status',{p_periode_id:activePeriod.id});
-  if(statusError){
-    toast('Gagal menghitung penggunaan plafon: '+statusError.message);
-    return;
-  }
-
+  const budget=budgetResult.data;
+  const statusData=statusResult.data;
   const status=Array.isArray(statusData)?(statusData[0]||null):(statusData||null);
-
-  const {data:campusProkers,error:campusProkersError}=await sb.rpc('get_anggaran_periode_proposals',{
-    p_periode_id:activePeriod.id
-  });
-  if(campusProkersError){
-    console.error('Gagal memuat proposal pengguna plafon:',campusProkersError);
+  if(campusProkerResult.error){
+    console.error('Gagal memuat proposal pengguna plafon:',campusProkerResult.error);
     S.approvedCampusProkers=[];
   }else{
-    S.approvedCampusProkers=Array.isArray(campusProkers)?campusProkers:[];
+    S.approvedCampusProkers=Array.isArray(campusProkerResult.data)?campusProkerResult.data:[];
   }
 
   S.budgets=budget?[{
@@ -1361,9 +1360,12 @@ async function loadOrganizationRelations() {
   S.organizationRelations=(data||[]).map(x=>({...x,organisasi:om[x.organisasi_id],terhubung:om[x.terhubung_dengan_id]}));
 }
 
-async function loadCoordinatorAssignments() {
-  S.coordinatorAssignments=[];
+async function loadCoordinatorAssignments({force=false}={}) {
   if(!sb)return;
+  const cacheKey=String(S.user?.id||'')+'|'+String(S.orgId||'global');
+  if(!force && S.coordinatorAssignmentsCacheKey===cacheKey
+    && Date.now()-Number(S.coordinatorAssignmentsLoadedAt||0)<30000)return;
+  S.coordinatorAssignments=[];
 
   const fields='id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada,berakhir_pada';
   const current=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
@@ -1407,6 +1409,7 @@ async function loadCoordinatorAssignments() {
     : [];
   const pm=Object.fromEntries(profiles.map(x=>[String(x.id),x]));
   S.coordinatorAssignments=rows.map(x=>({...x,akun:pm[String(x.akun_id)]||null}));
+  if(!ownRes.error && !managedRes.error){S.coordinatorAssignmentsCacheKey=cacheKey;S.coordinatorAssignmentsLoadedAt=Date.now();}
 }
 async function loadClubMembers() {
   S.clubMembers=[];
@@ -1571,7 +1574,7 @@ async function loadViewData(view){
       break;
     case 'koordinator':
       await loadOrganizations();
-      await loadCoordinatorAssignments();
+      await loadCoordinatorAssignments({force:true});
       break;
     case 'profil':
       await loadMemberships();
@@ -1681,6 +1684,8 @@ function resetClientState() {
   S.proker=[];S.fundUsageProkers=[];S.detail=null;S.selectedProkerId=null;S.editProkerId=null;S.reviewDocId=null;
   S.undangan=[];S.inbox=[];S.gallery=[];S.reports=[];S.structure=[];S.meetings=[];S.budgets=[];S.approvedCampusProkers=[];S.payouts=[];S.periods=[];S.audit=[];S.accounts=[];S.sources=[];S.units=[];S.anggota=[];S.anggotaPeriodId=null;S.anggotaQ='';
   S.csvData=[];S.lastCredentials=[];S.tempSb=null;S.renderToken++;
+  S.activityThumbUrlCache=new Map();S.coordinatorAssignmentsLoadedAt=0;S.coordinatorAssignmentsCacheKey='';
+  S.notificationsLoadedAt=0;S.notificationsLoadPromise=null;
 S.viewCache={};
 S.viewCacheTtl=15000;
 S.htmlCache={};
@@ -1810,50 +1815,46 @@ function closeActivityGallery() {
   if(modal)modal.remove();
 }
 
-function openActivityGallery(prokerId) {
+async function openActivityGallery(prokerId) {
   const album=(S.gallery||[]).find(x=>String(x.proker_id)===String(prokerId));
   if(!album)return toast('Album kegiatan tidak ditemukan.');
-
   closeActivityGallery();
 
   const modal=document.createElement('div');
   modal.id='activityGalleryModal';
   modal.className='fixed inset-0 z-[100] bg-slate-950/80 p-4 sm:p-6 overflow-y-auto';
-  modal.innerHTML=
-    '<div class="min-h-full flex items-start justify-center py-4 sm:py-8">'+
-      '<div class="w-full max-w-6xl rounded-3xl bg-white shadow-2xl overflow-hidden">'+
-        '<div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-4">'+
-          '<div class="min-w-0">'+
-            '<p class="text-xs font-semibold uppercase tracking-wide text-sima-600">Dokumentasi kegiatan</p>'+
-            '<h2 class="text-xl font-bold mt-1 truncate">'+esc(album.proker?.nama||'Kegiatan')+'</h2>'+
-            '<p class="text-sm text-slate-500 mt-1">'+album.photos.length+' foto</p>'+
-          '</div>'+
-          '<button type="button" data-gallery-close class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 grid place-items-center text-slate-600 text-xl" aria-label="Tutup">×</button>'+
-        '</div>'+
-        '<div class="p-4 sm:p-6">'+
-          '<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
-            album.photos.map(photo=>
-              '<div class="rounded-2xl border border-slate-200 overflow-hidden bg-white">'+
-                (photo.thumb_url
-                  ? '<img src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-56 object-cover bg-slate-100">'
-                  : '<div class="w-full h-56 bg-slate-100 grid place-items-center text-slate-400">Pratinjau tidak tersedia</div>')+
-                '<div class="p-3">'+
-                  '<p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p>'+
-                  '<p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p>'+
-                  '<p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p>'+
-                  '<p class="text-xs text-sima-700 font-semibold mt-1">Organisasi: '+esc(photo.uploader_organization?.nama||'Tidak terdeteksi')+'</p>'+
-                '</div>'+
-              '</div>'
-            ).join('')+
-          '</div>'+
-        '</div>'+
-      '</div>'+
-    '</div>';
-
+  modal.innerHTML='<div class="min-h-full flex items-start justify-center py-4 sm:py-8"><div class="w-full max-w-6xl rounded-3xl bg-white shadow-2xl overflow-hidden"><div class="px-5 py-4 flex items-center justify-between gap-4"><div><p class="text-xs font-semibold uppercase tracking-wide text-sima-600">Dokumentasi kegiatan</p><h2 class="text-xl font-bold mt-1">'+esc(album.proker?.nama||'Kegiatan')+'</h2></div><button type="button" data-gallery-close class="h-10 w-10 rounded-xl border border-slate-200 text-slate-600 text-xl" aria-label="Tutup">×</button></div><div class="p-6 text-sm text-slate-500">Memuat foto album…</div></div></div>';
   modal.addEventListener('click',event=>{
     if(event.target===modal || event.target.closest('[data-gallery-close]'))closeActivityGallery();
   });
   document.body.append(modal);
+
+  const urls=await getActivityThumbnailUrls(album.photos.map(photo=>photo.thumb_path));
+  if(!document.body.contains(modal))return;
+  album.photos=album.photos.map(photo=>({...photo,thumb_url:photo.thumb_path?(urls.get(photo.thumb_path)||'') : ''}));
+  album.cover=album.photos.find(photo=>String(photo.id)===String(album.cover?.id))||album.photos[0]||null;
+
+  modal.innerHTML=
+    '<div class="min-h-full flex items-start justify-center py-4 sm:py-8">'+
+      '<div class="w-full max-w-6xl rounded-3xl bg-white shadow-2xl overflow-hidden">'+
+        '<div class="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-4">'+
+          '<div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-wide text-sima-600">Dokumentasi kegiatan</p>'+
+            '<h2 class="text-xl font-bold mt-1 truncate">'+esc(album.proker?.nama||'Kegiatan')+'</h2>'+
+            '<p class="text-sm text-slate-500 mt-1">'+album.photos.length+' foto</p></div>'+
+          '<button type="button" data-gallery-close class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 grid place-items-center text-slate-600 text-xl" aria-label="Tutup">×</button>'+
+        '</div>'+
+        '<div class="p-4 sm:p-6"><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
+          album.photos.map(photo=>
+            '<div class="rounded-2xl border border-slate-200 overflow-hidden bg-white">'+
+              (photo.thumb_url
+                ? '<img loading="lazy" decoding="async" src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-56 object-cover bg-slate-100">'
+                : '<div class="w-full h-56 bg-slate-100 grid place-items-center text-slate-400">Pratinjau tidak tersedia</div>')+
+              '<div class="p-3"><p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p>'+
+                '<p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p>'+
+                '<p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p>'+
+                '<p class="text-xs text-sima-700 font-semibold mt-1">Organisasi: '+esc(photo.uploader_organization?.nama||'Tidak terdeteksi')+'</p></div></div>'
+          ).join('')+
+        '</div></div></div></div>';
 }
 
 document.addEventListener('keydown',event=>{
@@ -1889,6 +1890,20 @@ function renderProfileMenu() {
 
 
 async function hydrateUser(authUser) {
+  const userId=String(authUser?.id||'');
+  if(!userId)return;
+  const active=S.hydrateUserPromise;
+  if(active && active.userId===userId)return active.promise;
+  const promise=hydrateUserOnce(authUser);
+  S.hydrateUserPromise={userId,promise};
+  try{
+    return await promise;
+  }finally{
+    if(S.hydrateUserPromise?.promise===promise)S.hydrateUserPromise=null;
+  }
+}
+
+async function hydrateUserOnce(authUser) {
   let profile = {};
   if (sb) {
     const { data } = await sb.from('profiles').select('*').eq('id', authUser.id).single();
@@ -1947,6 +1962,8 @@ async function hydrateUser(authUser) {
   S.structureOrgId = null;
   S.organizationRelations = [];
   S.coordinatorAssignments = [];
+  S.coordinatorAssignmentsLoadedAt=0;S.coordinatorAssignmentsCacheKey='';
+  S.activityThumbUrlCache=new Map();S.notificationsLoadedAt=0;S.notificationsLoadPromise=null;
   S.clubMembers = [];
   S.revealedCredential = null;
 
@@ -1975,12 +1992,6 @@ async function hydrateUser(authUser) {
     loadStorageStatus().catch(error=>console.warn('Storage status gagal dimuat:',error));
   }
 
-  const idle=window.requestIdleCallback||((fn)=>setTimeout(fn,600));
-  idle(()=>{
-    if(S.user.peran!=='admin' && S.view==='beranda'){
-      loadViewData('proker').catch(error=>console.warn('Prefetch proker gagal:',error));
-    }
-  });
 }
 
 async function logout() {
@@ -2869,7 +2880,7 @@ const V = {
             ? '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">'+d.photos.map(photo=>
                 '<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">'+
                   (photo.thumb_url
-                    ? '<img src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
+                    ? '<img loading="lazy" decoding="async" src="'+esc(photo.thumb_url)+'" alt="'+esc(photo.file_name||'Foto kegiatan')+'" class="w-full h-48 object-cover bg-slate-100">'
                     : '<div class="w-full h-48 bg-slate-100 grid place-items-center text-slate-400 text-sm">Pratinjau tidak tersedia</div>')+
                   '<div class="p-3"><p class="font-semibold text-sm break-words">'+esc(photo.file_name||'Foto kegiatan')+'</p><p class="text-xs text-slate-500 mt-1">'+dateTimeID(photo.uploaded_at||'')+'</p><p class="text-xs text-slate-500">Oleh: '+esc(photo.uploader?.nama||photo.diunggah_oleh||'-')+'</p><p class="text-xs text-sima-700 font-semibold mt-1">Organisasi: '+esc(photo.uploader_organization?.nama||'Tidak terdeteksi')+'</p></div>'+
                 '</div>'
@@ -3555,7 +3566,7 @@ document.addEventListener('click', async e => {
 
     // Refresh once when the bell is opened so the inbox stays correct even
     // when Realtime was temporarily unavailable.
-    if(p && !p.hidden) await loadNotifications({silent:true});
+    if(p && !p.hidden) await loadNotifications({silent:true,force:true});
     return;
   }
 
