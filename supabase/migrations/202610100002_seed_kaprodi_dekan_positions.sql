@@ -65,6 +65,9 @@ begin
 
   select * into v_profile from public.profiles where id=p_account_id;
   if not found then raise exception 'ACCOUNT_NOT_FOUND'; end if;
+  if v_profile.peran='dekan' then
+    raise exception 'DEKAN_GLOBAL_ROLE_DOES_NOT_USE_ORG_MEMBERSHIP';
+  end if;
 
   select * into v_org from public.organisasi where id=p_organisasi_id;
   if not found then raise exception 'ORGANIZATION_INVALID'; end if;
@@ -83,9 +86,7 @@ begin
   if v_profile.peran='kaprodi' and (v_org.tipe<>'HMJ' or v_position.kode<>'kaprodi') then
     raise exception 'KAPRODI_MUST_USE_HMJ_KAPRODI_POSITION';
   end if;
-  if v_profile.peran='dekan' then
-    raise exception 'DEKAN_GLOBAL_ROLE_DOES_NOT_USE_ORG_MEMBERSHIP';
-  end if;
+
 
   if v_position.unit_wajib and p_unit_id is null then raise exception 'UNIT_REQUIRED_FOR_POSITION'; end if;
   if p_unit_id is not null then
