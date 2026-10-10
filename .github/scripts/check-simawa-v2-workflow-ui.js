@@ -5,6 +5,7 @@ const fs = require('node:fs');
 
 const app = fs.readFileSync('app.js', 'utf8');
 const html = fs.readFileSync('index.html', 'utf8');
+const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');
 
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
@@ -15,6 +16,10 @@ requireMatch(app, /const NEW_DEKAN_STAGES=new Set\(\['dekan_hmj','dekan_hmj_lpj'
 requireMatch(app, /function isNewWorkflowDekan\(p\)\s*\{\s*return S\.user\.peran==='dekan'/, 'Dekan review must be based on the global Dekan role');
 requireMatch(app, /data-go="review:'\+esc\(p\.id\)\+'"/, 'Proker list detail navigation must carry the selected proker ID');
 requireMatch(app, /data-go="review:'\+esc\(x\.proker_id\|\|''\)\+'"/, 'Inbox and report detail navigation must carry the selected proker ID');
+requireMatch(adminCreateUser, /\["user","admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor","kaprodi","dekan"\]\.includes\(peran\)/, 'Account creation must accept Kaprodi and Dekan roles');
+requireMatch(adminCreateUser, /peran === "kaprodi" && \(!organisasiId \|\| jabatanKode !== "kaprodi" \|\| !unitId\)/, 'Kaprodi account creation must require HMJ, the Kaprodi position, and a program-study unit');
+requireMatch(adminCreateUser, /callerProfile\?\.aktif !== true/, 'Account creation must only be available to active administrator profiles');
+
 
 
 const loadProkerStart = app.indexOf('async function loadProker(');
