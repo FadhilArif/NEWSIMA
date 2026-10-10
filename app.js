@@ -501,7 +501,8 @@ const S = {
   contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
   uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null,
   activityThumbUrlCache:new Map(),coordinatorAssignmentsLoadedAt:0,coordinatorAssignmentsCacheKey:'',
-  notificationsLoadedAt:0,notificationsLoadPromise:null,hydrateUserPromise:null
+  notificationsLoadedAt:0,notificationsLoadPromise:null,hydrateUserPromise:null,
+  dekanDirectory:[],dekanDirectoryLoadedAt:0,dekanDirectoryPromise:null,dekanDirectoryError:'',dekanDirectoryHmjId:'',dekanDirectoryHmjQ:'',dekanDirectoryMemberQ:''
 }
 
 const MENU = [
@@ -1279,6 +1280,44 @@ async function loadReports() {
   S.reports=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
 }
 
+async function loadDekanDirectory({force=false}={}) {
+  if(!sb||S.user?.peran!=='dekan')return;
+  if(!force&&S.dekanDirectoryLoadedAt&&Date.now()-S.dekanDirectoryLoadedAt<60000)return;
+  if(!force&&S.dekanDirectoryPromise)return S.dekanDirectoryPromise;
+  const request=(async()=>{
+    const {data,error}=await sb.rpc('get_dekan_hmj_directory');
+    if(error){S.dekanDirectoryError=error.message||'Tidak dapat memuat direktori HMJ.';console.warn('Gagal memuat direktori HMJ Dekan:',error);return;}
+    S.dekanDirectory=Array.isArray(data)?data:[];
+    S.dekanDirectoryError='';
+    S.dekanDirectoryLoadedAt=Date.now();
+  })();
+  S.dekanDirectoryPromise=request;
+  try{return await request;}finally{if(S.dekanDirectoryPromise===request)S.dekanDirectoryPromise=null;}
+}
+function dekanDirectoryRowsHtml(){
+  if(S.dekanDirectoryError)return '<div class="card border border-red-200 bg-red-50"><h3 class="!text-red-900">Direktori HMJ gagal dimuat</h3><p class="text-sm text-red-800">'+esc(S.dekanDirectoryError)+'</p><button type="button" class="btn mt-3" data-dekan-directory-refresh>Muat ulang</button></div>';
+  if(!S.dekanDirectory.length)return emptyCard('Belum ada data HMJ yang bisa ditampilkan.');
+  const hmjOptions=new Map();
+  S.dekanDirectory.forEach(row=>{if(!hmjOptions.has(row.hmj_id))hmjOptions.set(row.hmj_id,{nama:row.hmj_nama,jumlah:0});if(row.akun_id)hmjOptions.get(row.hmj_id).jumlah++;});
+  const hmjQuery=String(S.dekanDirectoryHmjQ||'').trim().toLocaleLowerCase('id-ID');
+  const memberQuery=String(S.dekanDirectoryMemberQ||'').trim().toLocaleLowerCase('id-ID');
+  const filtered=S.dekanDirectory.filter(row=>{
+    if(S.dekanDirectoryHmjId&&String(row.hmj_id)!==String(S.dekanDirectoryHmjId))return false;
+    if(hmjQuery&&!String(row.hmj_nama||'').toLocaleLowerCase('id-ID').includes(hmjQuery))return false;
+    if(memberQuery){const name=String(row.nama_anggota||'').toLocaleLowerCase('id-ID'),nim=String(row.nim||'').toLocaleLowerCase('id-ID');if(!row.akun_id||(!name.includes(memberQuery)&&!nim.includes(memberQuery)))return false;}
+    return true;
+  });
+  const memberCount=filtered.filter(row=>row.akun_id).length;
+  const visibleHmj=new Set(filtered.map(row=>row.hmj_id));
+  return '<div class="card mb-3"><div class="flex flex-wrap items-center justify-between gap-3"><p class="sub mb-0"><b>'+memberCount+'</b> anggota · <b>'+visibleHmj.size+'</b> HMJ sesuai filter</p><button type="button" class="btn s" data-dekan-directory-reset>Reset filter</button></div></div>'+
+    (filtered.length
+      ? '<div class="card overflow-x-auto"><table><thead><tr><th>HMJ</th><th>Nama anggota</th><th>NIM</th><th>Jabatan</th><th>Unit / program studi</th></tr></thead><tbody>'+
+        filtered.map(row=>'<tr><td><b>'+esc(row.hmj_nama||'-')+'</b></td><td>'+(row.akun_id?'<b>'+esc(row.nama_anggota||'-')+'</b>':'<span class="text-slate-400">Belum ada anggota aktif</span>')+'</td><td>'+esc(row.nim||'-')+'</td><td>'+esc(row.jabatan||'-')+'</td><td>'+esc(row.unit_kerja||'-')+'</td></tr>').join('')+
+        '</tbody></table></div>'
+      : emptyCard('Tidak ada HMJ atau anggota yang sesuai dengan filter.'));
+}
+function refreshDekanDirectoryResults(){const container=document.querySelector('#dekan-directory-results');if(container)container.innerHTML=dekanDirectoryRowsHtml();}
+
 async function loadStructure() {
   S.structure=[];
   if(!sb)return;
@@ -1649,7 +1688,8 @@ async function loadViewData(view){
       await loadAnggota();
       break;
     case 'struktur':
-      await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
+      if(S.user.peran==='dekan')await loadDekanDirectory();
+      else await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
       break;
     case 'rapat':
       await loadMeetings();
@@ -3102,6 +3142,17 @@ const V = {
   },
 
   struktur:function(){
+    if(S.user.peran==='dekan'){
+      const hmjOptions=new Map();
+      S.dekanDirectory.forEach(row=>{if(!hmjOptions.has(row.hmj_id))hmjOptions.set(row.hmj_id,{nama:row.hmj_nama,jumlah:0});if(row.akun_id)hmjOptions.get(row.hmj_id).jumlah++;});
+      return pageHeader('Direktori HMJ dan anggota','Lihat seluruh HMJ beserta anggota aktif lintas program studi.')+
+        '<div class="card mb-4"><div class="grid gap-3 md:grid-cols-3">'+
+          '<div><label for="dekan-hmj-filter">Filter per HMJ</label><select id="dekan-hmj-filter"><option value="">Semua HMJ</option>'+[...hmjOptions.entries()].map(([id,x])=>'<option value="'+esc(id)+'" '+(String(S.dekanDirectoryHmjId)===String(id)?'selected':'')+'>'+esc(x.nama)+' ('+x.jumlah+' anggota)</option>').join('')+'</select></div>'+
+          '<div><label for="dekan-hmj-q">Cari nama HMJ</label><input id="dekan-hmj-q" type="search" placeholder="Contoh: MERSA" value="'+esc(S.dekanDirectoryHmjQ||'')+'"></div>'+
+          '<div><label for="dekan-member-q">Cari nama anggota / NIM</label><input id="dekan-member-q" type="search" placeholder="Nama mahasiswa atau NIM" value="'+esc(S.dekanDirectoryMemberQ||'')+'"></div>'+
+        '</div><p class="sub mt-3 mb-0">Filter bisa dipakai sendiri atau digabung. Daftar memuat akun anggota yang aktif.</p></div>'+
+        '<div id="dekan-directory-results">'+dekanDirectoryRowsHtml()+'</div>';
+    }
     const isPrivileged=['admin','wakil_rektor'].includes(S.user.peran);
     const selectedId=isPrivileged ? (S.structureOrgId||'') : (S.orgId||'');
     const org=(S.organizations||[]).find(o=>o.id===selectedId);
@@ -3685,6 +3736,20 @@ async function prosesBulkCSV() {
 
 // --- Event Listeners ---
 document.addEventListener('click', async e => {
+  if(e.target.closest('[data-dekan-directory-reset]')){
+    S.dekanDirectoryHmjId='';S.dekanDirectoryHmjQ='';S.dekanDirectoryMemberQ='';
+    const hmjQ=$('#dekan-hmj-q'),memberQ=$('#dekan-member-q'),hmjFilter=$('#dekan-hmj-filter');
+    if(hmjQ)hmjQ.value='';
+    if(memberQ)memberQ.value='';
+    if(hmjFilter)hmjFilter.value='';
+    refreshDekanDirectoryResults();return;
+  }
+  if(e.target.closest('[data-dekan-directory-refresh]')){
+    S.dekanDirectoryLoadedAt=0;S.dekanDirectoryError='';
+    await loadDekanDirectory({force:true});
+    const root=$('#v');if(root)root.innerHTML=buildViewHtml('struktur');
+    renderShell();return;
+  }
   if (e.target.closest('#backBtn')) return goBack();
 
   if (e.target.closest('#notifBtn')) {
@@ -4213,6 +4278,8 @@ document.addEventListener('focusout', e => {
 });
 
 document.addEventListener('input', e => {
+  if(e.target.id==='dekan-hmj-q'){S.dekanDirectoryHmjQ=e.target.value;refreshDekanDirectoryResults();}
+  if(e.target.id==='dekan-member-q'){S.dekanDirectoryMemberQ=e.target.value;refreshDekanDirectoryResults();}
   if(e.target.id==='q'){
     S.q=e.target.value;
     clearHtmlCache();
@@ -4236,6 +4303,7 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('change', async e => {
+  if(e.target.id==='dekan-hmj-filter'){S.dekanDirectoryHmjId=e.target.value||'';refreshDekanDirectoryResults();return;}
   if(e.target.id==='activity-photo-input'){
     renderActivityPhotoSelection(e.target.files);
     return;
