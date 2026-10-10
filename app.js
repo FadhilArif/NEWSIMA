@@ -501,10 +501,7 @@ const S = {
   contextSwitchTimer:null,contextSwitchSeq:0,authRecoveryPromise:null,
   uploadLockPromise:null,lastKnownSession:null,intentionalSignOut:false,authRecoveryTimer:null,
   activityThumbUrlCache:new Map(),coordinatorAssignmentsLoadedAt:0,coordinatorAssignmentsCacheKey:'',
-  notificationsLoadedAt:0,notificationsLoadPromise:null,hydrateUserPromise:null,
-  dekanDirectory:[],dekanDirectoryLoadedAt:0,dekanDirectoryPromise:null,dekanDirectoryError:'',
-  dekanDirectoryHmjId:'',dekanDirectoryHmjQ:'',dekanDirectoryMemberQ:'',
-  galleryLoadedAt:0,galleryLoadPromise:null
+  notificationsLoadedAt:0,notificationsLoadPromise:null,hydrateUserPromise:null
 }
 
 const MENU = [
@@ -767,20 +764,15 @@ async function loadProker(_retry=false) {
     && (x.berakhir_pada==null||x.berakhir_pada>=new Date().toISOString().slice(0,10))).map(x=>x.organisasi_id))];
   const coordinatorStages=['koordinator_hmj','koordinator_ukm','koordinator_hmj_lpj','koordinator_ukm_lpj','koordinator_hmj_revisi','koordinator_ukm_revisi','koordinator_hmj_lpj_revisi','koordinator_ukm_lpj_revisi','ukm_koordinator','ukm_koordinator_lpj'];
   const presidentStages=['presiden_bem_hmj','presiden_bem_ukm','presiden_bem_hmj_lpj','presiden_bem_ukm_lpj','ukm_presiden_bem','ukm_presiden_bem_lpj'];
+  const coordinatorQuery=!isWakil&&coordinatorOrgIds.length
+    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds).in('review_stage',coordinatorStages).order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
   const isBemPresident=(S.memberships||[]).some(m=>{
     if(!m.jabatan_id||String(m.akun_id)!==String(S.user.id)||m.status!=='aktif')return false;
     const org=(S.organizations||[]).find(o=>String(o.id)===String(m.organisasi_id));
     const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
     return org?.tipe==='BEM'&&pos?.kode==='presiden';
   });
-  const coordinatorQuery=!isWakil&&coordinatorOrgIds.length
-    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds).in('review_stage',coordinatorStages).order('tanggal_mulai',{ascending:true})
-    : Promise.resolve({data:[],error:null});
-  const coordinatorFollowupQuery=!isWakil&&!isBemPresident&&coordinatorOrgIds.length
-    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds)
-      .or('and(status.eq.proposal_diajukan,review_stage.in.(presiden_bem_hmj,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj),and(status.eq.lpj_diajukan,review_stage.in.(presiden_bem_hmj_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
-      .order('tanggal_mulai',{ascending:true})
-    : Promise.resolve({data:[],error:null});
   const presidentQuery=!isWakil&&isBemPresident&&bemChildIds.length
     ? sb.from('proker').select(selectFields).in('organisasi_id',bemChildIds).in('review_stage',presidentStages).order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
@@ -796,15 +788,13 @@ async function loadProker(_retry=false) {
   const [
     {data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError},
     {data:bemHmjRows,error:bemHmjError},{data:coordinatorRows,error:coordinatorError},
-    {data:coordinatorFollowupRows,error:coordinatorFollowupError},
     {data:presidentRows,error:presidentError},{data:visibleUkmRows,error:visibleUkmError},
     {data:dekanRows,error:dekanError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,coordinatorFollowupQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
   if(coordinatorError)console.warn('Gagal memuat proker Koordinator BEM:',coordinatorError.message);
-  if(coordinatorFollowupError)console.warn('Gagal memuat proker pantauan koordinator:',coordinatorFollowupError.message);
   if(presidentError)console.warn('Gagal memuat proker review Presiden BEM:',presidentError.message);
   if(visibleUkmError)console.warn('Gagal memuat proker setelah persetujuan Presiden BEM:',visibleUkmError.message);
   if(dekanError)console.warn('Gagal memuat antrean review Dekan Fakultas:',dekanError.message);
@@ -812,13 +802,11 @@ async function loadProker(_retry=false) {
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
   const coordinatorRowsMarked=(coordinatorRows||[]).map(x=>({...x,__collaborator:false,__coordinatorReview:true}));
-  const coordinatorFollowupRowsMarked=(coordinatorFollowupRows||[]).map(x=>({...x,__collaborator:false,__coordinatorReadOnly:true}));
   const presidentRowsMarked=(presidentRows||[]).map(x=>({...x,__collaborator:false,__presidentReview:true}));
   const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
   const dekanReviewRows=(dekanRows||[]).map(x=>({...x,__collaborator:false,__dekanReview:true}));
   const map=new Map();
   [...own,...collab,...childHmjs,...coordinatorRowsMarked,...presidentRowsMarked,...visibleUkm,...dekanReviewRows].forEach(x=>map.set(x.id,{...(map.get(x.id)||{}),...x}));
-  coordinatorFollowupRowsMarked.forEach(x=>{if(!map.has(x.id))map.set(x.id,x);});
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -975,8 +963,6 @@ async function loadProkerDetail() {
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
-  const readOnlyAssignedCoordinator=(S.proker||[]).some(row=>String(row.id)===String(S.selectedProkerId)&&row.__coordinatorReadOnly===true);
-
   // Read all documents authorized for this account under dokumen RLS.
   // Do not use the Wakil Rektor review-only RPC here: it filters out documents
   // that have already passed the active stage and would hide their history.
@@ -1031,7 +1017,7 @@ async function loadProkerDetail() {
   const photoWithUrls=photos.map(x=>({...x,thumb_url:x.thumb_path?(thumbUrls.get(x.thumb_path)||''):'',uploader:uploaderMap[x.diunggah_oleh]||null}));
 
   S.detail = {
-    proker:{...proker,organisasi:orgRes.data || null,__coordinatorReadOnly:readOnlyAssignedCoordinator},
+    proker:{...proker,organisasi:orgRes.data || null},
     docs:docsRows,
     kolaborator:kolab.data || [],
     keputusan:decisionRows.map(x=>({
@@ -1043,8 +1029,7 @@ async function loadProkerDetail() {
     photos:photoWithUrls,
     budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
-      (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung'),
-    readOnlyAssignedCoordinator
+      (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung')
   };
   S.reviewDocId = S.detail.docs.find(x=>x.jenis==='proposal')?.id || null;
 }
@@ -1129,76 +1114,74 @@ async function loadInbox() {
     .filter(x=>x.status==='aktif' && String(x.akun_id)===String(S.user.id))
     .map(x=>x.organisasi_id))];
   if(coordinatorUkmIds.length){
-    const {data:ukmDocs,error:ukmInboxError}=await sb.fromasync function loadGallery({force=false}={}) {
-  if(!sb)return;
-  const now=Date.now();
-  if(!force&&S.galleryLoadedAt&&now-S.galleryLoadedAt<45000)return S.gallery;
-  if(!force&&S.galleryLoadPromise)return S.galleryLoadPromise;
-  const request=(async()=>{
-    const {data,error}=await sb.from('foto_kegiatan')
-      .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
-      .order('proker_id').order('urutan');
-    if(error){
-      console.warn('Gagal memuat galeri:',error.message);
-      if(!S.gallery.length)toast('Gagal memuat galeri: '+error.message);
-      return S.gallery;
+    const {data:ukmDocs,error:ukmInboxError}=await sb.from('dokumen')
+      .select('id,organisasi_id,proker_id,jenis,status,tahap')
+      .in('organisasi_id',coordinatorUkmIds)
+      .in('jenis',['proposal','laporan_akhir'])
+      .in('tahap',['koordinator_hmj','koordinator_ukm','koordinator_hmj_lpj','koordinator_ukm_lpj','koordinator_hmj_revisi','koordinator_ukm_revisi','koordinator_hmj_lpj_revisi','koordinator_ukm_lpj_revisi','ukm_koordinator','ukm_koordinator_lpj'])
+      .eq('status','diajukan')
+      .order('id',{ascending:false});
+    if(ukmInboxError){
+      console.warn('Gagal memuat inbox Koordinator UKM:',ukmInboxError.message);
+    }else{
+      const seen=new Set(rows.map(x=>String(x.id)));
+      (ukmDocs||[]).forEach(x=>{if(!seen.has(String(x.id)))rows.push(x);});
     }
-    const rows=Array.isArray(data)?data:[];
-    const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
-    const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
-    const grouped=new Map();
-    rows.forEach(photo=>{const key=String(photo.proker_id);if(!grouped.has(key))grouped.set(key,{proker_id:photo.proker_id,photos:[]});grouped.get(key).photos.push(photo);});
-    const groups=[...grouped.values()].map(group=>{
-      const photos=[...group.photos].sort((a,b)=>Number(a.urutan||0)-Number(b.urutan||0));
-      const cover=photos.find(x=>x.thumb_path)||photos[0]||null;
-      return {...group,photos,cover,photo_count:photos.length};
-    });
-    const coverPaths=groups.map(group=>group.cover?.thumb_path).filter(Boolean);
-    const organizationLoad=(Array.isArray(S.organizations)&&S.organizations.length)?Promise.resolve():loadOrganizations();
-    const [prokerResult,userResult,membershipResult,coverUrls]=await Promise.all([
-      ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):Promise.resolve({data:[],error:null}),
-      userIds.length?sb.from('profiles').select('id,nama').in('id',userIds):Promise.resolve({data:[],error:null}),
-      userIds.length?sb.from('keanggotaan').select('akun_id,organisasi_id,status').in('akun_id',userIds).eq('status','aktif'):Promise.resolve({data:[],error:null}),
-      getActivityThumbnailUrls(coverPaths),
-      organizationLoad
-    ]);
-    if(prokerResult.error)console.warn('Gagal memuat nama Proker galeri:',prokerResult.error.message);
-    if(userResult.error)console.warn('Gagal memuat nama pengunggah galeri:',userResult.error.message);
-    if(membershipResult.error)console.warn('Gagal memuat organisasi pengunggah foto:',membershipResult.error.message);
-    const pmap=Object.fromEntries((prokerResult.data||[]).map(x=>[x.id,x]));
-    const umap=Object.fromEntries((userResult.data||[]).map(x=>[x.id,x]));
-    const membershipRows=Array.isArray(membershipResult.data)?membershipResult.data:[];
-    const membershipsByUser=new Map();
-    membershipRows.forEach(row=>{if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);membershipsByUser.get(row.akun_id).push(row);});
-    const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
-    const knownOrganizations=Array.isArray(S.organizations)?S.organizations:[];
-    const knownIds=new Set(knownOrganizations.map(x=>String(x.id)));
-    const missingOrgIds=uploaderOrgIds.filter(id=>!knownIds.has(String(id)));
-    let fallbackOrganizations=[];
-    if(missingOrgIds.length){
-      const fallback=await sb.from('organisasi').select('id,nama,tipe').in('id',missingOrgIds);
-      if(fallback.error)console.warn('Gagal memuat label organisasi galeri:',fallback.error.message);
-      fallbackOrganizations=fallback.data||[];
-    }
-    const uploaderOrgMap=Object.fromEntries([...knownOrganizations,...fallbackOrganizations].map(x=>[x.id,x]));
-    S.gallery=groups.map(group=>{
-      const photos=group.photos.map(photo=>{
-        const memberships=membershipsByUser.get(photo.diunggah_oleh)||[];
-        const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[photo.proker_id]?.organisasi_id||''))||memberships[0]||null;
-        return {...photo,proker:pmap[photo.proker_id]||null,uploader:umap[photo.diunggah_oleh]||null,
-          uploader_organization:preferred?(uploaderOrgMap[preferred.organisasi_id]||null):null,
-          thumb_url:photo.thumb_path?(coverUrls.get(photo.thumb_path)||''):''};
-      });
-      const cover=photos.find(x=>String(x.id)===String(group.cover?.id))||photos[0]||null;
-      return {...group,proker:pmap[group.proker_id]||null,photos,cover};
-    });
-    S.galleryLoadedAt=Date.now();
-    return S.gallery;
-  })();
-  S.galleryLoadPromise=request;
-  try{return await request;}finally{if(S.galleryLoadPromise===request)S.galleryLoadPromise=null;}
+  }
+
+  const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
+  const orgIds=[...new Set(rows.map(x=>x.organisasi_id).filter(Boolean))];
+  const [prokerRes,orgRes]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,status,review_stage').in('id',ids):Promise.resolve({data:[],error:null}),
+    orgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',orgIds):Promise.resolve({data:[],error:null})
+  ]);
+  if(prokerRes.error)console.warn('Gagal memuat nama proker di inbox:',prokerRes.error.message);
+  if(orgRes.error)console.warn('Gagal memuat organisasi di inbox:',orgRes.error.message);
+  const pmap=Object.fromEntries((prokerRes.data||[]).map(x=>[x.id,x]));
+  const omap=Object.fromEntries((orgRes.data||[]).map(x=>[x.id,x]));
+  S.inbox=rows.map(x=>({...x,proker:pmap[x.proker_id],organisasi:omap[x.organisasi_id]}));
 }
-et(key,{proker_id:photo.proker_id,proker:photo.proker,photos:[]});
+
+async function loadGallery() {
+  S.gallery=[];
+  if(!sb)return;
+  const {data,error}=await sb.from('foto_kegiatan')
+    .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
+    .order('proker_id').order('urutan');
+  if(error)return toast('Gagal memuat galeri: '+error.message);
+
+  const rows=Array.isArray(data)?data:[];
+  const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
+  const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
+  const [prokerResult,userResult,membershipResult]=await Promise.all([
+    ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):Promise.resolve({data:[],error:null}),
+    userIds.length?sb.from('profiles').select('id,nama').in('id',userIds):Promise.resolve({data:[],error:null}),
+    userIds.length?sb.from('keanggotaan').select('akun_id,organisasi_id,status').in('akun_id',userIds).eq('status','aktif'):Promise.resolve({data:[],error:null})
+  ]);
+  if(prokerResult.error)console.warn('Gagal memuat nama Proker galeri:',prokerResult.error.message);
+  if(userResult.error)console.warn('Gagal memuat nama pengunggah galeri:',userResult.error.message);
+  if(membershipResult.error)console.warn('Gagal memuat organisasi pengunggah foto:',membershipResult.error.message);
+
+  const pmap=Object.fromEntries((prokerResult.data||[]).map(x=>[x.id,x]));
+  const umap=Object.fromEntries((userResult.data||[]).map(x=>[x.id,x]));
+  const membershipRows=Array.isArray(membershipResult.data)?membershipResult.data:[];
+  const membershipsByUser=new Map();
+  membershipRows.forEach(row=>{
+    if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);
+    membershipsByUser.get(row.akun_id).push(row);
+  });
+  const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
+
+  const hydrated=rows.map(x=>({
+    ...x,
+    proker:pmap[x.proker_id]||null,
+    uploader:umap[x.diunggah_oleh]||null,
+    thumb_url:''
+  }));
+  const grouped=new Map();
+  hydrated.forEach(photo=>{
+    const key=String(photo.proker_id);
+    if(!grouped.has(key))grouped.set(key,{proker_id:photo.proker_id,proker:photo.proker,photos:[]});
     grouped.get(key).photos.push(photo);
   });
   const groups=[...grouped.values()].map(group=>{
@@ -1295,46 +1278,6 @@ async function loadReports() {
   const pmap=Object.fromEntries(pm.map(x=>[x.id,x]));
   S.reports=(data||[]).map(x=>({...x,proker:pmap[x.proker_id]}));
 }
-
-async function loadDekanDirectory({force=false}={}) {
-  if(!sb||S.user?.peran!=='dekan')return;
-  if(!force&&S.dekanDirectoryLoadedAt&&Date.now()-S.dekanDirectoryLoadedAt<60000)return;
-  if(!force&&S.dekanDirectoryPromise)return S.dekanDirectoryPromise;
-  const request=(async()=>{
-    const {data,error}=await sb.rpc('get_dekan_hmj_directory');
-    if(error){S.dekanDirectoryError=error.message||'Tidak dapat memuat direktori HMJ.';console.warn('Gagal memuat direktori HMJ Dekan:',error);return;}
-    S.dekanDirectory=Array.isArray(data)?data:[];
-    S.dekanDirectoryError='';
-    S.dekanDirectoryLoadedAt=Date.now();
-  })();
-  S.dekanDirectoryPromise=request;
-  try{return await request;}finally{if(S.dekanDirectoryPromise===request)S.dekanDirectoryPromise=null;}
-}
-function dekanDirectoryRowsHtml(){
-  if(S.dekanDirectoryError)return '<div class="card border border-red-200 bg-red-50"><h3 class="!text-red-900">Direktori HMJ gagal dimuat</h3><p class="text-sm text-red-800">'+esc(S.dekanDirectoryError)+'</p><button type="button" class="btn mt-3" data-dekan-directory-refresh>Muat ulang</button></div>';
-  if(!S.dekanDirectory.length)return emptyCard('Belum ada data HMJ yang bisa ditampilkan.');
-  const hmjOptions=new Map();
-  S.dekanDirectory.forEach(row=>{if(!hmjOptions.has(row.hmj_id))hmjOptions.set(row.hmj_id,{nama:row.hmj_nama,jumlah:0});if(row.akun_id)hmjOptions.get(row.hmj_id).jumlah++;});
-  const hmjQuery=String(S.dekanDirectoryHmjQ||'').trim().toLocaleLowerCase('id-ID');
-  const memberQuery=String(S.dekanDirectoryMemberQ||'').trim().toLocaleLowerCase('id-ID');
-  const filtered=S.dekanDirectory.filter(row=>{
-    if(S.dekanDirectoryHmjId&&String(row.hmj_id)!==String(S.dekanDirectoryHmjId))return false;
-    if(hmjQuery&&!String(row.hmj_nama||'').toLocaleLowerCase('id-ID').includes(hmjQuery))return false;
-    if(memberQuery){
-      const name=String(row.nama_anggota||'').toLocaleLowerCase('id-ID'),nim=String(row.nim||'').toLocaleLowerCase('id-ID');
-      if(!row.akun_id||(!name.includes(memberQuery)&&!nim.includes(memberQuery)))return false;
-    }
-    return true;
-  });
-  const memberCount=filtered.filter(row=>row.akun_id).length,visibleHmj=new Set(filtered.map(row=>row.hmj_id));
-  return '<div class="card mb-3"><div class="flex flex-wrap items-center justify-between gap-3"><p class="sub mb-0"><b>'+memberCount+'</b> anggota · <b>'+visibleHmj.size+'</b> HMJ sesuai filter</p><button type="button" class="btn s" data-dekan-directory-reset>Reset filter</button></div></div>'+
-    (filtered.length
-      ? '<div class="card overflow-x-auto"><table><thead><tr><th>HMJ</th><th>Nama anggota</th><th>NIM</th><th>Jabatan</th><th>Unit / program studi</th></tr></thead><tbody>'+
-        filtered.map(row=>'<tr><td><b>'+esc(row.hmj_nama||'-')+'</b></td><td>'+(row.akun_id?'<b>'+esc(row.nama_anggota||'-')+'</b>':'<span class="text-slate-400">Belum ada anggota aktif</span>')+'</td><td>'+esc(row.nim||'-')+'</td><td>'+esc(row.jabatan||'-')+'</td><td>'+esc(row.unit_kerja||'-')+'</td></tr>').join('')+
-        '</tbody></table></div>'
-      : emptyCard('Tidak ada HMJ atau anggota yang sesuai dengan filter.'));
-}
-function refreshDekanDirectoryResults(){const container=document.querySelector('#dekan-directory-results');if(container)container.innerHTML=dekanDirectoryRowsHtml();}
 
 async function loadStructure() {
   S.structure=[];
@@ -1706,8 +1649,7 @@ async function loadViewData(view){
       await loadAnggota();
       break;
     case 'struktur':
-      if(S.user.peran==='dekan')await loadDekanDirectory();
-      else await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
+      await Promise.all([loadStructure(),loadUnits(),loadJabatanAndUnits(),loadClubMembers()]);
       break;
     case 'rapat':
       await loadMeetings();
@@ -2672,7 +2614,6 @@ const V = {
     };
     const actionLabel=(p)=>{
       if(isStageReviewerFor(p)) return 'Review pengajuan';
-      if(p.__coordinatorReadOnly)return 'Lihat proker';
       if(S.user.peran==='wakil_rektor'){
         if(['proposal_diajukan','lpj_diajukan'].includes(p.status)) return 'Review pengajuan';
         return 'Lihat proker';
@@ -2700,7 +2641,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':p.__coordinatorReadOnly?'<br><span class="chip bl">Koordinator · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -2763,8 +2704,9 @@ const V = {
 
     // A Wakil Rektor is never downgraded to collaborator/read-only mode while
     // the workflow is explicitly routed to the Wakil Rektor.
-    const readOnlyAssignedCoordinator=!!d.readOnlyAssignedCoordinator||p.__coordinatorReadOnly===true;
-    const readOnlyCollaborator=(!!d.readOnlyCollaborator&&!isStageReviewer)||readOnlyAssignedCoordinator;
+    const readOnlyCollaborator=
+      !!d.readOnlyCollaborator &&
+      !isStageReviewer;
 
     const wakilReadOnly=
       S.user.peran==='wakil_rektor' &&
@@ -3098,7 +3040,7 @@ const V = {
           S.gallery.map(x=>
             '<button type="button" class="card !p-0 overflow-hidden text-left group hover:-translate-y-0.5 transition" data-gallery-proker="'+esc(x.proker_id)+'">'+
               (x.cover?.thumb_url
-                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img loading="lazy" decoding="async" src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105">'+
+                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105">'+
                     '<div class="absolute top-3 left-3 max-w-[75%]"><span class="chip bl bg-white/95">'+esc(x.cover.uploader_organization?.nama||'Organisasi pengunggah tidak terdeteksi')+'</span></div>'+
                     '<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>'
                 : '<div class="relative h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan'+
@@ -3160,17 +3102,6 @@ const V = {
   },
 
   struktur:function(){
-    if(S.user.peran==='dekan'){
-      const hmjOptions=new Map();
-      S.dekanDirectory.forEach(row=>{if(!hmjOptions.has(row.hmj_id))hmjOptions.set(row.hmj_id,{nama:row.hmj_nama,jumlah:0});if(row.akun_id)hmjOptions.get(row.hmj_id).jumlah++;});
-      return pageHeader('Direktori HMJ dan anggota','Lihat seluruh HMJ beserta anggota aktif lintas program studi.')+
-        '<div class="card mb-4"><div class="grid gap-3 md:grid-cols-3">'+
-          '<div><label for="dekan-hmj-filter">Filter per HMJ</label><select id="dekan-hmj-filter"><option value="">Semua HMJ</option>'+[...hmjOptions.entries()].map(([id,x])=>'<option value="'+esc(id)+'" '+(String(S.dekanDirectoryHmjId)===String(id)?'selected':'')+'>'+esc(x.nama)+' ('+x.jumlah+' anggota)</option>').join('')+'</select></div>'+
-          '<div><label for="dekan-hmj-q">Cari nama HMJ</label><input id="dekan-hmj-q" type="search" placeholder="Contoh: MERSA" value="'+esc(S.dekanDirectoryHmjQ||'')+'"></div>'+
-          '<div><label for="dekan-member-q">Cari nama anggota / NIM</label><input id="dekan-member-q" type="search" placeholder="Nama mahasiswa atau NIM" value="'+esc(S.dekanDirectoryMemberQ||'')+'"></div>'+
-        '</div><p class="sub mt-3 mb-0">Filter bisa dipakai sendiri atau digabung. Daftar memuat akun anggota yang aktif.</p></div>'+
-        '<div id="dekan-directory-results">'+dekanDirectoryRowsHtml()+'</div>';
-    }
     const isPrivileged=['admin','wakil_rektor'].includes(S.user.peran);
     const selectedId=isPrivileged ? (S.structureOrgId||'') : (S.orgId||'');
     const org=(S.organizations||[]).find(o=>o.id===selectedId);
@@ -3754,18 +3685,6 @@ async function prosesBulkCSV() {
 
 // --- Event Listeners ---
 document.addEventListener('click', async e => {
-  if(e.target.closest('[data-dekan-directory-reset]')){
-    S.dekanDirectoryHmjId='';S.dekanDirectoryHmjQ='';S.dekanDirectoryMemberQ='';
-    const hmjQ=$('#dekan-hmj-q'),memberQ=$('#dekan-member-q'),hmjFilter=$('#dekan-hmj-filter');
-    if(hmjQ)hmjQ.value='';if(memberQ)memberQ.value='';if(hmjFilter)hmjFilter.value='';
-    refreshDekanDirectoryResults();return;
-  }
-  if(e.target.closest('[data-dekan-directory-refresh]')){
-    S.dekanDirectoryLoadedAt=0;S.dekanDirectoryError='';
-    await loadDekanDirectory({force:true});
-    const root=$('#v');if(root)root.innerHTML=buildViewHtml('struktur');
-    renderShell();return;
-  }
   if (e.target.closest('#backBtn')) return goBack();
 
   if (e.target.closest('#notifBtn')) {
@@ -4099,9 +4018,8 @@ document.addEventListener('click', async e => {
       }
 
       updateActivityPhotoProgress(files.length,files.length,files.length+' foto berhasil diunggah.');
-      S.galleryLoadedAt=0;
       await loadProkerDetail();
-      await loadGallery({force:true});
+      await loadGallery();
 
       toast(files.length+' foto kegiatan berhasil diunggah sekaligus.');
       revokeActivityPhotoPreviews();
@@ -4295,8 +4213,6 @@ document.addEventListener('focusout', e => {
 });
 
 document.addEventListener('input', e => {
-  if(e.target.id==='dekan-hmj-q'){S.dekanDirectoryHmjQ=e.target.value;refreshDekanDirectoryResults();}
-  if(e.target.id==='dekan-member-q'){S.dekanDirectoryMemberQ=e.target.value;refreshDekanDirectoryResults();}
   if(e.target.id==='q'){
     S.q=e.target.value;
     clearHtmlCache();
@@ -4320,7 +4236,6 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('change', async e => {
-  if(e.target.id==='dekan-hmj-filter'){S.dekanDirectoryHmjId=e.target.value||'';refreshDekanDirectoryResults();return;}
   if(e.target.id==='activity-photo-input'){
     renderActivityPhotoSelection(e.target.files);
     return;
