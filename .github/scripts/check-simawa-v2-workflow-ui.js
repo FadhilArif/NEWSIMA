@@ -12,6 +12,7 @@ const approvalHistoryMigration = fs.readFileSync('supabase/migrations/2026101000
 const coordinatorAssignmentMigration = fs.readFileSync('supabase/migrations/202610100009_generalize_bem_coordinator_assignment.sql', 'utf8');
 const safeUnitDeletionMigration = fs.readFileSync('supabase/migrations/202610100010_safe_delete_organization_unit.sql', 'utf8');
 const dekanDirectoryMigration = fs.readFileSync('supabase/migrations/202610100011_dekan_hmj_directory_and_coordinator_readonly.sql', 'utf8');
+const secureDocumentAccessMigration = fs.readFileSync('supabase/migrations/202610100012_secure_document_file_access.sql', 'utf8');
 
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
@@ -108,6 +109,19 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase6-01/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase7-01/, 'UI bundle cache key must be refreshed');
+requireMatch(app, /const canManageProkerDocuments=!readOnlyCollaborator/, 'Document upload controls must use owner-management permission, not review permission');
+requireMatch(app, /\(canManageProkerDocuments&&p\.status==='selesai'/, 'LPJ upload must only be exposed to the owning organization when the Proker is finished');
+requireMatch(app, /if\(!ownsProkerContext\)return toast\('Hanya pengelola organisasi pemilik Proker/, 'Upload handler must validate the owning organization before sending a file');
+requireMatch(app, /if\(kind==='laporan_akhir'&&prokerSnapshot\.status!=='selesai'\)/, 'Upload handler must reject LPJ uploads while the LPJ is already under review');
+requireMatch(app, /async function openSignedDocument\(path\)/, 'Document viewer must use a shared signed-URL opener');
+requireMatch(app, /const viewer=window\.open\('about:blank','_blank'\)/, 'Document viewer must reserve a browser tab before requesting a signed URL');
+requireMatch(app, /viewer\.location\.replace\(data\.signedUrl\)/, 'Document viewer must navigate the reserved tab to the signed URL');
+requireMatch(secureDocumentAccessMigration, /CREATE OR REPLACE FUNCTION private\.can_read_document_path/, 'Signed URL authorization must check document access explicitly');
+requireMatch(secureDocumentAccessMigration, /private\.can_read_approval_history\(d\.id\)/, 'Storage read authorization must reuse the same scoped access rules as approval history');
+requireMatch(secureDocumentAccessMigration, /CREATE OR REPLACE FUNCTION private\.can_manage_proker_document/, 'Document writes must have a dedicated owner-and-stage permission guard');
+requireMatch(secureDocumentAccessMigration, /DROP POLICY IF EXISTS documents_insert_member ON storage\.objects/, 'Storage upload policy must be tightened server-side');
+requireMatch(secureDocumentAccessMigration, /DROP POLICY IF EXISTS dokumen_insert_authorized ON public\.dokumen/, 'Document metadata inserts must be tightened server-side');
+requireMatch(secureDocumentAccessMigration, /DROP POLICY IF EXISTS dokumen_update_authorized ON public\.dokumen/, 'Document metadata updates must be tightened server-side');
 
 console.log('SIMAWA-V2 workflow UI checks passed.');
