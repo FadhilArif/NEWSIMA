@@ -2,9 +2,9 @@ name: Client Security Scan
 
 on:
   push:
-    branches: ["main", "New-UI"]
+    branches: ["main", "New-UI", "New-Proces", "SIMAWA-V2"]
   pull_request:
-    branches: ["main", "New-UI"]
+    branches: ["main", "New-UI", "New-Proces", "SIMAWA-V2"]
 
 jobs:
   scan-client-secrets:
@@ -12,6 +12,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check client JavaScript syntax
+        run: node --check app.js
+
+      - name: Validate SIMAWA-V2 workflow UI invariants
+        run: node .github/scripts/check-simawa-v2-workflow-ui.js
 
       - name: Block Supabase secret keys in client files
         shell: bash

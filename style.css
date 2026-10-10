@@ -1187,3 +1187,145 @@ body.mobile-menu-open{overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .workflow-step-icon{transition:none}
 }
+
+
+/* SIMAWA V2 Phase 4: keep the timeline heading above the scrollable steps on phones. */
+@media(max-width:820px){
+  .workflow-steps{
+    display:block!important;
+    flex:none!important;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    overflow:visible!important;
+    padding-bottom:0;
+    cursor:default;
+  }
+  .workflow-steps-heading{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:8px;
+    width:100%;
+    min-width:0;
+  }
+  .workflow-steps-title{max-width:100%;white-space:normal}
+  .workflow-current-note{
+    display:inline-flex;
+    flex-wrap:wrap;
+    max-width:100%;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+  .workflow-steps-scroll{
+    display:block;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    margin-top:10px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+  .workflow-steps-track,
+  .workflow-steps-track.is-ukm{
+    display:flex!important;
+    width:max-content!important;
+    max-width:none;
+    min-width:0!important;
+    grid-template-columns:none!important;
+    gap:8px;
+  }
+  .workflow-step-item{
+    flex:0 0 132px!important;
+    width:132px;
+    min-width:132px!important;
+    min-height:72px;
+    box-sizing:border-box;
+    overflow-wrap:anywhere;
+  }
+  .workflow-step-label{white-space:normal;overflow-wrap:anywhere}
+}
+
+
+/* SIMAWA V2 Phase 6: enforce a non-collapsing workflow track at tablet and mobile widths. */
+@media (max-width:1199px){
+  #app main .workflow-steps,
+  #app main .workflow-steps.workflow-steps--ukm{
+    display:block!important;
+    position:relative;
+    flex:initial!important;
+    flex-direction:column!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    overflow:visible!important;
+    padding-bottom:0;
+    cursor:default;
+  }
+  #app main .workflow-steps .workflow-steps-heading{
+    display:flex!important;
+    flex:initial!important;
+    flex-direction:column!important;
+    align-items:flex-start!important;
+    gap:8px!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+  }
+  #app main .workflow-steps .workflow-steps-title,
+  #app main .workflow-steps .workflow-current-note{
+    max-width:100%!important;
+    white-space:normal!important;
+    overflow-wrap:anywhere;
+  }
+  #app main .workflow-steps .workflow-steps-scroll{
+    display:block!important;
+    flex:initial!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    margin-top:10px;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+  #app main .workflow-steps .workflow-steps-track,
+  #app main .workflow-steps .workflow-steps-track.is-ukm{
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    grid-template-columns:none!important;
+    width:max-content!important;
+    min-width:max-content!important;
+    max-width:none!important;
+    gap:8px!important;
+  }
+  #app main .workflow-steps .workflow-step-item{
+    flex:0 0 140px!important;
+    flex-shrink:0!important;
+    width:140px!important;
+    min-width:140px!important;
+    max-width:140px!important;
+    min-height:72px;
+    box-sizing:border-box;
+    overflow-wrap:anywhere;
+  }
+}
+@media (max-width:520px){
+  #app main .workflow-steps .workflow-step-item{
+    flex-basis:132px!important;
+    flex-shrink:0!important;
+    width:132px!important;
+    min-width:132px!important;
+    max-width:132px!important;
+    padding:10px 8px;
+  }
+  #app main .workflow-steps .workflow-step-label{
+    white-space:normal!important;
+    overflow-wrap:anywhere;
+    font-size:11px;
+  }
+}

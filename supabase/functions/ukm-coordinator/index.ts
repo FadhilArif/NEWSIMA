@@ -45,33 +45,43 @@ async function caller(req: Request) {
   return data.user;
 }
 
-async function presidentContext(userId: string, ukmId: string) {
-  const { data: ukm, error: ukmError } = await db
+async function bemPresidentContext(userId: string, organizationId: string) {
+  const { data: child, error: childError } = await db
     .from("organisasi")
     .select("id,nama,tipe,induk_organisasi_id")
-    .eq("id", ukmId)
+    .eq("id", organizationId)
     .single();
 
-  if (ukmError || !ukm || ukm.tipe !== "UKM" || !ukm.induk_organisasi_id) return null;
+  if (childError || !child || !["HMJ", "UKM", "CLUB"].includes(child.tipe) || !child.induk_organisasi_id) {
+    return null;
+  }
 
-  const { data: membership, error } = await db
+  const { data: profile, error: profileError } = await db
+    .from("profiles")
+    .select("id,aktif")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError || !profile?.aktif) return null;
+
+  const { data: memberships, error: membershipError } = await db
     .from("keanggotaan")
-    .select("id,jabatan_id")
+    .select("jabatan_id")
     .eq("akun_id", userId)
-    .eq("organisasi_id", ukm.induk_organisasi_id)
-    .eq("status", "aktif")
-    .limit(20);
+    .eq("organisasi_id", child.induk_organisasi_id)
+    .eq("status", "aktif");
 
-  if (error || !membership?.length) return null;
+  if (membershipError || !memberships?.length) return null;
+  const positionIds = [...new Set(memberships.map(x => x.jabatan_id).filter(Boolean))];
+  if (!positionIds.length) return null;
 
-  const ids = membership.map(x => x.jabatan_id).filter(Boolean);
-  const { data: positions } = await db
+  const { data: positions, error: positionError } = await db
     .from("jabatan_organisasi")
-    .select("id,kode")
-    .in("id", ids);
+    .select("id,kode,aktif")
+    .in("id", positionIds);
 
-  const isPresident = (positions || []).some(x => x.kode === "presiden");
-  return isPresident ? { ukm, bemId: ukm.induk_organisasi_id } : null;
+  if (positionError || !(positions || []).some(x => x.kode === "presiden" && x.aktif === true)) return null;
+  return { child, bemId: child.induk_organisasi_id };
 }
 
 Deno.serve(async (req) => {
@@ -81,73 +91,74 @@ Deno.serve(async (req) => {
   const user = await caller(req);
   if (!user) return json({ error: "UNAUTHORIZED" }, 401);
 
-  let body: { action?: string; ukm_id?: string; account_id?: string };
+  let body: { action?: string; organization_id?: string; ukm_id?: string; account_id?: string };
   try {
     body = await req.json();
   } catch (_) {
     return json({ error: "INVALID_REQUEST" }, 400);
   }
 
-  const ukmId = String(body.ukm_id || "").trim();
-  const context = await presidentContext(user.id, ukmId);
-  if (!context) return json({ error: "ONLY_BEM_PRESIDENT_CAN_MANAGE_THIS_UKM" }, 403);
+  // Keep accepting ukm_id for compatibility with cached clients; the target may now be HMJ, UKM, or CLUB.
+  const organizationId = String(body.organization_id || body.ukm_id || "").trim();
+  const context = await bemPresidentContext(user.id, organizationId);
+  if (!context) return json({ error: "ONLY_BEM_PRESIDENT_CAN_MANAGE_THIS_ORGANIZATION" }, 403);
 
   if (body.action === "candidates") {
-    const { data, error } = await db
+    const { data: memberships, error: membershipError } = await db
       .from("keanggotaan")
       .select("akun_id")
       .eq("organisasi_id", context.bemId)
       .eq("status", "aktif");
 
-    if (error) return json({ error: "CANDIDATES_LOAD_FAILED" }, 500);
+    if (membershipError) {
+      return json({ error: "CANDIDATES_LOAD_FAILED", detail: membershipError.message }, 500);
+    }
 
-    const ids = [...new Set((data || []).map(x => x.akun_id).filter(Boolean))];
-    const profiles = ids.length
-      ? (await db.from("profiles").select("id,nama,nim").in("id", ids)).data || []
-      : [];
+    const ids = [...new Set((memberships || []).map(x => x.akun_id).filter(Boolean))];
+    if (!ids.length) return json({ ok: true, candidates: [] });
 
-    return json({ ok: true, candidates: profiles });
+    const { data: profiles, error: profilesError } = await db
+      .from("profiles")
+      .select("id,nama,nim")
+      .eq("aktif", true)
+      .in("id", ids)
+      .order("nama");
+
+    if (profilesError) {
+      return json({ error: "CANDIDATES_LOAD_FAILED", detail: profilesError.message }, 500);
+    }
+
+    return json({ ok: true, candidates: profiles || [] });
   }
 
   if (body.action === "assign") {
     const accountId = String(body.account_id || "").trim();
     if (!accountId) return json({ error: "ACCOUNT_REQUIRED" }, 400);
 
-    const { data: candidate } = await db
-      .from("keanggotaan")
-      .select("id")
-      .eq("akun_id", accountId)
-      .eq("organisasi_id", context.bemId)
-      .eq("status", "aktif")
-      .limit(1);
+    const { data: assignment, error: assignmentError } = await db.rpc("assign_bem_coordinator", {
+      p_organization_id: organizationId,
+      p_account_id: accountId,
+      p_actor_id: user.id
+    });
 
-    if (!candidate?.length) return json({ error: "COORDINATOR_MUST_BE_ACTIVE_BEM_MEMBER" }, 400);
-
-    await db
-      .from("penugasan_koordinator")
-      .update({ status: "dicabut", berakhir_pada: new Date().toISOString().slice(0, 10) })
-      .eq("organisasi_id", ukmId)
-      .eq("status", "aktif");
-
-    const { data, error } = await db
-      .from("penugasan_koordinator")
-      .insert({
-        organisasi_id: ukmId,
-        akun_id: accountId,
-        status: "aktif",
-        ditunjuk_oleh: user.id,
-        ditunjuk_pada: new Date().toISOString(),
-        mulai_pada: new Date().toISOString().slice(0, 10)
-      })
-      .select("id,organisasi_id,akun_id,status,ditunjuk_oleh,ditunjuk_pada,mulai_pada")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") return json({ error: "ACTIVE_COORDINATOR_ALREADY_EXISTS" }, 409);
-      return json({ error: "COORDINATOR_ASSIGNMENT_FAILED", detail: error.message }, 500);
+    if (assignmentError) {
+      const message = assignmentError.message || "";
+      if (message.includes("ONLY_BEM_PRESIDENT_CAN_APPOINT_COORDINATOR")) {
+        return json({ error: "ONLY_BEM_PRESIDENT_CAN_MANAGE_THIS_ORGANIZATION" }, 403);
+      }
+      if (message.includes("COORDINATOR_MUST_BE_ACTIVE_BEM_MEMBER")) {
+        return json({ error: "COORDINATOR_MUST_BE_ACTIVE_BEM_MEMBER" }, 400);
+      }
+      if (message.includes("INVALID_CHILD_ORGANIZATION")) {
+        return json({ error: "INVALID_CHILD_ORGANIZATION" }, 400);
+      }
+      if (assignmentError.code === "23505") {
+        return json({ error: "ACTIVE_COORDINATOR_ALREADY_EXISTS" }, 409);
+      }
+      return json({ error: "COORDINATOR_ASSIGNMENT_FAILED", detail: message }, 500);
     }
 
-    return json({ ok: true, assignment: data });
+    return json({ ok: true, assignment });
   }
 
   return json({ error: "UNKNOWN_ACTION" }, 400);

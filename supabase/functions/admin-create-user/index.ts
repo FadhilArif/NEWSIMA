@@ -56,11 +56,11 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile, error: callerProfileError } = await adminClient
     .from("profiles")
-    .select("id,peran")
+    .select("id,peran,aktif")
     .eq("id", callerData.user.id)
     .single();
 
-  if (callerProfileError || callerProfile?.peran !== "admin") {
+  if (callerProfileError || callerProfile?.peran !== "admin" || callerProfile?.aktif !== true) {
     return json({ error: "FORBIDDEN" }, 403);
   }
 
@@ -94,8 +94,15 @@ Deno.serve(async (req) => {
     return json({ error: "INVALID_INPUT" }, 400);
   }
 
-  if (!["user","admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor"].includes(peran)) {
+  if (!["user","admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor","kaprodi","dekan"].includes(peran)) {
     return json({ error: "INVALID_ROLE" }, 400);
+  }
+  if (peran === "kaprodi" && (!organisasiId || jabatanKode !== "kaprodi" || !unitId)) {
+    return json({ error: "KAPRODI_REQUIRES_HMJ_AND_PROGRAM_STUDY" }, 400);
+  }
+  // Dekan is a faculty-wide application role, not a membership attached to one HMJ.
+  if (peran === "dekan" && (organisasiId || jabatanKode || unitId)) {
+    return json({ error: "DEKAN_GLOBAL_ROLE_NO_ORG_ASSIGNMENT" }, 400);
   }
 
   const temporaryPassword = randomPassword();
@@ -152,6 +159,10 @@ Deno.serve(async (req) => {
     if (orgError || !org) {
       await adminClient.auth.admin.deleteUser(userId);
       return json({ error: "ORGANIZATION_NOT_FOUND" }, 400);
+    }
+    if (["kaprodi","dekan"].includes(peran) && org.tipe !== "HMJ") {
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: "ACADEMIC_REVIEWER_MUST_BE_ASSIGNED_TO_HMJ" }, 400);
     }
 
     if (peran === "pembimbing") {
