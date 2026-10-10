@@ -461,7 +461,16 @@ function isNewWorkflowPresident(p){
 }
 function isNewWorkflowKaprodi(p){
  if(S.user.peran!=='kaprodi'||!p||!NEW_KAPRODI_STAGES.has(p.review_stage)||!isHmjProker(p))return false;
- return (S.memberships||[]).some(m=>{if(String(m.organisasi_id)!==String(p.organisasi_id)||String(m.akun_id)!==String(S.user.id)||m.status!=='aktif'||!m.jabatan_id)return false;const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id)),unit=(S.units||[]).find(u=>String(u.id)===String(m.unit_id));return pos?.kode==='kaprodi'&&unit?.jenis==='program_studi'&&String(unit.organisasi_id)===String(p.organisasi_id);});
+ const profileUnitId=String(S.user.unit_kerja_id||'');
+ if(!profileUnitId)return false;
+ return (S.memberships||[]).some(m=>
+   String(m.organisasi_id)===String(p.organisasi_id)&&
+   String(m.akun_id)===String(S.user.id)&&
+   m.status==='aktif'&&
+   String(m.unit_id||'')===profileUnitId&&
+   !!m.jabatan_id&&
+   (S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id))?.kode==='kaprodi'
+ );
 }
 function isNewWorkflowDekan(p){
  return S.user.peran==='dekan'&&!!p&&NEW_DEKAN_STAGES.has(p.review_stage)&&isHmjProker(p);
@@ -2115,7 +2124,8 @@ async function hydrateUserOnce(authUser) {
     nim: profile.nim || authUser.user_metadata?.nim || '',
     peran: role,
     avatar_url: profile.avatar_url || authUser.user_metadata?.avatar_url || '',
-    wajib_ganti_sandi: !!profile.wajib_ganti_sandi
+    wajib_ganti_sandi: !!profile.wajib_ganti_sandi,
+    unit_kerja_id: profile.unit_kerja_id || null
   };
   if (!sb) loadLocalProfile();
 
@@ -2866,6 +2876,16 @@ const V = {
     else if(isNewWorkflowOwnerForwardStage(p)&&p.status==='lpj_diajukan'){
       const next=p.review_stage==='hmj_lanjut_kaprodi_lpj'?['send_kaprodi','Ajukan LPJ ke Kaprodi']:p.review_stage==='hmj_lanjut_dekan_lpj'?['send_dekan','Ajukan LPJ ke Dekan untuk review']:['send_wakil_rektor','Ajukan LPJ ke Wakil Rektor 1'];
       actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):(lpj?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan LPJ sudah diunggah.</p>');
+    }
+    else if(isNewWorkflowKaprodi(p)&&p.status==='proposal_diajukan'&&p.review_stage==='kaprodi_hmj'&&isProposalReview){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : '<div class="w-full"><p class="text-sm text-slate-600 mb-3">Kaprodi meninjau proposal HMJ. Jika disetujui, proker kembali ke HMJ untuk diteruskan ke Dekan Fakultas.</p><label>Komentar review <span class="text-xs text-slate-500">(wajib jika revisi)</span></label><textarea id="workflow-comment" rows="3" placeholder="Isi alasan revisi jika proposal perlu diperbaiki."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('revise','Kembalikan ke HMJ untuk revisi','d')+action('approve','Setujui proposal')+'</div></div>';
+    }
+    else if(isNewWorkflowKaprodi(p)&&p.status==='lpj_diajukan'&&p.review_stage==='kaprodi_hmj_lpj'&&isLpjReview){
+      actions=!collabReady
+        ? collabGate+blockedAction('Menunggu konfirmasi kolaborator')
+        : '<div class="w-full"><p class="text-sm text-slate-600 mb-3">Kaprodi meninjau LPJ HMJ. Jika disetujui, LPJ kembali ke HMJ untuk diteruskan ke Dekan Fakultas.</p><label>Komentar review <span class="text-xs text-slate-500">(wajib jika dikembalikan)</span></label><textarea id="workflow-comment" rows="3" placeholder="Isi alasan jika LPJ perlu diperbaiki."></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj','Kembalikan LPJ untuk perbaikan','d')+action('approve_lpj','Setujui LPJ')+'</div></div>';
     }
     else if(isNewWorkflowDekan(p)&&p.status==='proposal_diajukan'){
       actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview kegiatan dan tidak memberi keputusan ACC/revisi.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review · teruskan ke Wakil Rektor 1')+'</div>';
