@@ -3133,7 +3133,7 @@ const V = {
       }
 
       if(units.length){
-        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="font-bold break-words">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>'+(canUnit&&['kementerian','divisi'].includes(x.jenis)?'<button type="button" class="btn d s shrink-0" data-unit-delete="'+esc(x.id)+'" data-unit-name="'+esc(x.nama)+'">Hapus</button>':'')+'</div></div>').join('')+'</div></div>';
+        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="font-bold break-words">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>'+(S.user.peran==='admin'&&['kementerian','divisi'].includes(x.jenis)?'<button type="button" class="btn d s shrink-0" data-unit-delete="'+esc(x.id)+'" data-unit-name="'+esc(x.nama)+'">Hapus</button>':'')+'</div></div>').join('')+'</div></div>';
       }else if(type==='BEM'||type==='HMJ'){
         html+='<div class="card mb-4"><p class="sub">Belum ada '+(type==='BEM'?'Kementerian.':'Divisi.')+'</p></div>';
       }
