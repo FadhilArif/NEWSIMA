@@ -2,9 +2,9 @@ name: Client Security Scan
 
 on:
   push:
-    branches: ["main", "New-UI", "New-Proces"]
+    branches: ["main", "New-UI", "New-Proces", "SIMAWA-V2"]
   pull_request:
-    branches: ["main", "New-UI", "New-Proces"]
+    branches: ["main", "New-UI", "New-Proces", "SIMAWA-V2"]
 
 jobs:
   scan-client-secrets:
