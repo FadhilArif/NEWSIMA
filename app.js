@@ -2785,10 +2785,10 @@ const V = {
       actions=!collabReady?collabGate+blockedAction('Menunggu konfirmasi kolaborator'):(lpj?.file_path?action(next[0],next[1]):'<p class="sub">Pastikan LPJ sudah diunggah.</p>');
     }
     else if(isNewWorkflowDekan(p)&&p.status==='proposal_diajukan'){
-      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview kegiatan dan tidak memberi keputusan ACC/revisi.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review · teruskan ke HMJ')+'</div>';
+      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview kegiatan dan tidak memberi keputusan ACC/revisi.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review · teruskan ke Wakil Rektor 1')+'</div>';
     }
     else if(isNewWorkflowDekan(p)&&p.status==='lpj_diajukan'){
-      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview LPJ untuk informasi fakultas.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review LPJ · teruskan ke HMJ')+'</div>';
+      actions='<p class="text-sm bg-slate-50 rounded-xl p-3">Dekan hanya mereview LPJ untuk informasi fakultas.</p><label>Komentar review (opsional)</label><textarea id="workflow-comment" rows="3"></textarea><div class="mt-3">'+action('review_forward','Selesai review LPJ · teruskan ke Wakil Rektor 1')+'</div>';
     }
     else if(isWakilProposalReview){
       const targetLabel=reviewStageLabel(p.review_stage);
