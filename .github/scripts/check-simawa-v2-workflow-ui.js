@@ -57,7 +57,18 @@ requireMatch(safeUnitDeletionMigration, /UNIT_IN_USE/, 'Unit deletion must be bl
 requireMatch(safeUnitDeletionMigration, /v_unit\.jenis NOT IN \('kementerian', 'divisi'\)/, 'Only ministries and divisions can be deleted through the admin tool');
 requireMatch(app, /sb\.rpc\('admin_delete_unit'/, 'Unit deletion must go through the server-side safe delete function');
 requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile timeline must preserve a vertical heading layout');
-requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase4-01/, 'Style cache key must be bumped for mobile timeline fix');
+
+requireMatch(cssSource, /SIMAWA V2 Phase 6: enforce a non-collapsing workflow track/, 'Narrow workflow layout must use the high-specificity phase 6 override');
+requireMatch(cssSource, /#app main \.workflow-steps \.workflow-steps-track/, 'Workflow track must keep fixed-width step cards inside its own scroll container');
+requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase6-01/, 'Style cache key must point to the new responsive layout');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase6-01/, 'UI bundle cache key must point to the Kaprodi action fix');
+requireMatch(app, /unit_kerja_id: profile\.unit_kerja_id \|\| null/, 'Kaprodi UI must load the profile program-study ID');
+requireMatch(app, /const profileUnitId=String\(S\.user\.unit_kerja_id\|\|''\)/, 'Kaprodi stage authorization must not depend on an unloaded units cache');
+requireMatch(app, /isNewWorkflowKaprodi\(p\)&&p\.status==='proposal_diajukan'&&p\.review_stage==='kaprodi_hmj'&&isProposalReview/, 'Kaprodi must have actions for a proposal assigned to its stage');
+requireMatch(app, /action\('revise','Kembalikan ke HMJ untuk revisi','d'\)\+action\('approve','Setujui proposal'\)/, 'Kaprodi proposal review must provide revise and approve actions');
+requireMatch(app, /isNewWorkflowKaprodi\(p\)&&p\.status==='lpj_diajukan'&&p\.review_stage==='kaprodi_hmj_lpj'&&isLpjReview/, 'Kaprodi must have actions for an LPJ assigned to its stage');
+requireMatch(app, /action\('reject_lpj','Kembalikan LPJ untuk perbaikan','d'\)\+action\('approve_lpj','Setujui LPJ'\)/, 'Kaprodi LPJ review must provide revise and approve actions');
+requireMatch(app, /const lpj=d\.docs\.find\(x=>\['laporan_akhir','lpj'\]\.includes\(x\.jenis\)\)/, 'LPJ review must recognize both supported document type names');
 
 
 
@@ -97,6 +108,6 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase5-01/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase6-01/, 'UI bundle cache key must be refreshed');
 
 console.log('SIMAWA-V2 workflow UI checks passed.');
