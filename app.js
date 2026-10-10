@@ -776,7 +776,7 @@ async function loadProker(_retry=false) {
     : Promise.resolve({data:[],error:null});
   const coordinatorFollowupQuery=!isWakil&&!isBemPresident&&coordinatorOrgIds.length
     ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds)
-      .or('and(status.eq.proposal_diajukan,review_stage.in.(presiden_bem_hmj,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj),and(status.eq.lpj_diajukan,review_stage.in.(presiden_bem_hmj_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+      .or('and(status.eq.proposal_diajukan,review_stage.in.(presiden_bem_hmj,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj)),and(status.eq.lpj_diajukan,review_stage.in.(presiden_bem_hmj_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj)),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
       .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
   const presidentQuery=!isWakil&&isBemPresident&&bemChildIds.length
