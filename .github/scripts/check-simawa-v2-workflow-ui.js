@@ -17,7 +17,7 @@ requireMatch(app, /function isNewWorkflowOwnerForwardStage\(p\).*String\(S\.orgI
 requireMatch(app, /return sb\.rpc\(useLegacy\?'transition_proker':'transition_proker_v2'/, 'New workflow actions must use the V2 RPC');
 requireMatch(app, /action\('review_forward','Selesai review · teruskan ke Wakil Rektor 1'\)/, 'Dekan proposal review must forward directly to WR1');
 requireMatch(app, /action\('review_forward','Selesai review LPJ · teruskan ke Wakil Rektor 1'\)/, 'Dekan LPJ review must forward directly to WR1');
-requireMatch(app, /'<th>Tahap<\/th>'/, 'The Proker table must display the active workflow stage');
+requireMatch(app, /<th>Tahap<\/th>/, 'The Proker table must display the active workflow stage');
 requireMatch(app, /return organizationType==='CLUB'\?label\.replace\(\/UKM\/g,'UKM Minat Bakat'\):label/, 'Club workflow labels must use UKM Minat Bakat');
 
 const timelineStart = app.indexOf("const steps=processKind==='bem'");
