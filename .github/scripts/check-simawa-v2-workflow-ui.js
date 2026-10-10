@@ -37,6 +37,7 @@ requireMatch(app, /Cari nama anggota \/ NIM/, 'Dekan must be able to search memb
 requireMatch(app, /coordinatorFollowupQuery/, 'Assigned coordinators must still see their HMJ proker after handoff');
 
 requireMatch(app, /const dekanFollowupQuery=isDekan/, 'Dekan must query HMJ proker that remain visible after the active review stage');
+requireMatch(app, /review_stage\.eq\.wakil_rektor_hmj_lpj.*lpj_disetujui/s, 'Dekan follow-up query must include HMJ prokers after handoff and in completed states');
 requireMatch(app, /dekanFollowupRowsMarked/, 'Dekan follow-up rows must be marked read-only');
 requireMatch(app, /if\(readOnlyDekanFollowup\)actions=/, 'Dekan follow-up details must not expose review or workflow actions');
 requireMatch(app, /Pantauan Dekan · baca saja/, 'The proker list must label Dekan follow-up rows as read-only');
