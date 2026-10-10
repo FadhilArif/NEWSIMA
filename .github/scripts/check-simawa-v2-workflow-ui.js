@@ -40,7 +40,9 @@ requireMatch(app, /const dekanFollowupQuery=isDekan/, 'Dekan must query HMJ prok
 requireMatch(app, /review_stage\.eq\.wakil_rektor_hmj_lpj.*lpj_disetujui/s, 'Dekan follow-up query must include HMJ prokers after handoff and in completed states');
 requireMatch(app, /dekanFollowupRowsMarked/, 'Dekan follow-up rows must be marked read-only');
 requireMatch(app, /if\(readOnlyDekanFollowup\)actions=/, 'Dekan follow-up details must not expose review or workflow actions');
-requireMatch(app, /Pantauan Dekan · baca saja/, 'The proker list must label Dekan follow-up rows as read-only');
+assert.doesNotMatch(app, /Mode pantauan Dekan · baca saja|Pantauan Dekan · baca saja|Kolaborasi · lihat saja|Koordinator · lihat saja|Anda merupakan kolaborator yang sudah bergabung/, 'Read-only UI must not add redundant banners or list badges');
+requireMatch(app, /if\(p.__coordinatorReadOnly\|\|p.__dekanReadOnly\)return 'Lihat proker'/, 'Read-only workflow rows must still use the view-only action label');
+requireMatch(app, /readOnlyDekanFollowup/, 'Read-only follow-up state must remain enforced');
 requireMatch(dekanFollowupMigration, /CREATE OR REPLACE FUNCTION private\.can_read_dekan_followup/, 'Dekan follow-up access must be scoped by a reviewed HMJ proker');
 requireMatch(dekanFollowupMigration, /a\.sebagai = 'dekan'/, 'Dekan follow-up access must require a recorded Dekan decision');
 requireMatch(dekanFollowupMigration, /proker_select_global_dekan_followup/, 'RLS must allow Dekan to read previously reviewed HMJ proker');
@@ -75,7 +77,7 @@ requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile t
 requireMatch(cssSource, /SIMAWA V2 Phase 6: enforce a non-collapsing workflow track/, 'Narrow workflow layout must use the high-specificity phase 6 override');
 requireMatch(cssSource, /#app main \.workflow-steps \.workflow-steps-track/, 'Workflow track must keep fixed-width step cards inside its own scroll container');
 requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase6-01/, 'Style cache key must point to the new responsive layout');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase8-01/, 'UI bundle cache key must point to the Dekan follow-up visibility fix');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase9-01/, 'UI bundle cache key must point to the Dekan follow-up visibility fix');
 requireMatch(app, /unit_kerja_id: profile\.unit_kerja_id \|\| null/, 'Kaprodi UI must load the profile program-study ID');
 requireMatch(app, /const profileUnitId=String\(S\.user\.unit_kerja_id\|\|''\)/, 'Kaprodi stage authorization must not depend on an unloaded units cache');
 requireMatch(app, /isNewWorkflowKaprodi\(p\)&&p\.status==='proposal_diajukan'&&p\.review_stage==='kaprodi_hmj'&&isProposalReview/, 'Kaprodi must have actions for a proposal assigned to its stage');
@@ -122,7 +124,7 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase8-01/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase9-01/, 'UI bundle cache key must be refreshed');
 requireMatch(app, /const canManageProkerDocuments=!readOnlyCollaborator/, 'Document upload controls must use owner-management permission, not review permission');
 requireMatch(app, /\(canManageProkerDocuments&&p\.status==='selesai'/, 'LPJ upload must only be exposed to the owning organization when the Proker is finished');
 requireMatch(app, /if\(!ownsProkerContext\)return toast\('Hanya pengelola organisasi pemilik Proker/, 'Upload handler must validate the owning organization before sending a file');
