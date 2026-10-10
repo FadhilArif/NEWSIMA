@@ -2764,7 +2764,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':p.__coordinatorReadOnly?'<br><span class="chip bl">Koordinator · lihat saja</span>':p.__dekanReadOnly?'<br><span class="chip bl">Pantauan Dekan · baca saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-') '</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -3066,8 +3066,6 @@ const V = {
     }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','presiden_bem_ukm_lpj','presiden_bem_hmj_lpj','kaprodi_hmj_lpj','wakil_rektor_lpj','wakil_rektor_ukm_lpj','wakil_rektor_hmj_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',['presiden_bem_ukm_lpj','presiden_bem_hmj_lpj'].includes(p.review_stage)?'Kembalikan ke Koordinator BEM':'Kembalikan untuk revisi','d')+action('approve_lpj',['ukm_koordinator_lpj','koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage)?'Setujui & teruskan ke Presiden BEM':['ukm_presiden_bem_lpj','presiden_bem_ukm_lpj'].includes(p.review_stage)?'ACC & teruskan ke Wakil Rektor 1':p.review_stage==='presiden_bem_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Kaprodi':p.review_stage==='kaprodi_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Dekan':NEW_WR_STAGES.has(p.review_stage)?'ACC LPJ':'Setujui LPJ','')+'</div></div>';
 
-    if(readOnlyDekanFollowup)actions='<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><b>Mode pantauan Dekan · baca saja.</b> Proker ini sudah pernah diteruskan oleh Dekan ke tahap berikutnya. Anda tetap dapat melihat detail, dokumen, tracking, dan riwayat persetujuan tanpa mengubah workflow.</div>';
-
     const ukmJourney=isUkmProker(p),hmjJourney=isHmjProker(p);
     const processKind=hmjJourney?'hmj':ukmJourney?'ukm':'bem';
     const steps=processKind==='bem'
@@ -3081,9 +3079,7 @@ const V = {
     const currentStepKey=isReturnedForRevision?'direncanakan':isCoordinatorReturningRevision?String(rawStepKey).replace('_revisi',''):rawStepKey;
     const currentIndex=Math.max(steps.findIndex(x=>x[0]===currentStepKey),0);
     const currentStepLabel=isReturnedForRevision?('Revisi · kembali ke '+(hmjJourney?'HMJ':ukmJourney?'UKM Minat Bakat':'BEM')):isCoordinatorReturningRevision?'Revisi · koordinator mengembalikan ke organisasi':(steps[currentIndex]?.[1]||ST[p.status]?.[0]||p.status);
-    const collaboratorBanner=readOnlyCollaborator
-      ? '<div class="card mb-4 border border-blue-200 bg-blue-50"><p class="text-sm text-blue-800"><b>Mode lihat saja.</b> Anda merupakan kolaborator yang sudah bergabung. Anda dapat melihat perkembangan Proker, dokumen, riwayat persetujuan, dan dokumentasi kegiatan, tetapi tidak dapat melakukan perubahan atau tindakan workflow.</p></div>'
-      : '';
+    // Read-only mode remains enforced by permission/action guards; avoid duplicating it with banners.
 
     return pageHeader(
       p.nama,
@@ -3103,7 +3099,6 @@ const V = {
           (p.review_stage ? ' · Tahap: '+reviewStageLabel(p.review_stage,p.organisasi?.tipe) : ''),
       chip(p.status)
     )+
-      collaboratorBanner+
       '<section class="workflow-steps '+(ukmJourney?'workflow-steps--ukm':'')+'" aria-label="Perjalanan program kerja">'+
         '<div class="workflow-steps-heading"><span class="workflow-steps-title">Perjalanan Proker</span><span class="workflow-current-note '+(isReturnedForRevision?'is-revision':'')+'"><i></i>'+esc(currentStepLabel)+'</span></div>'+
         '<div class="workflow-steps-scroll"><div class="workflow-steps-track '+(ukmJourney?'is-ukm':'')+'">'+steps.map((s,i)=>'<div class="workflow-step-item '+(i<currentIndex?'done':i===currentIndex?'active':'pending')+'" aria-current="'+(i===currentIndex?'step':'false')+'"><span class="workflow-step-icon">'+icon(i<currentIndex?'check':s[2])+'</span><span class="workflow-step-label">'+esc(s[1])+'</span></div>').join('')+'</div></div>'+
@@ -3112,7 +3107,7 @@ const V = {
       '<div class="card"><h3>Tindak lanjut</h3><p class="sub">Status saat ini: <b>'+esc(ST[p.status]?.[0]||p.status)+'</b></p>'+
         ((!readOnlyCollaborator&&(canEdit||S.user.peran==='admin')&&['direncanakan','revisi'].includes(p.status))
           ? '<button class="btn s mb-3" data-proker-edit="'+esc(p.id)+'">Edit proker</button>' : '')+
-        (actions||'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>')+
+        (actions||((readOnlyCollaborator||readOnlyAssignedCoordinator||readOnlyDekanFollowup)?'':'<p class="sub">Belum ada tindakan yang tersedia untuk akun dan status saat ini.</p>'))+
         (((S.user.peran!=='wakil_rektor')&&(canEdit||S.user.peran==='admin')&&['draft','direncanakan','revisi'].includes(p.status))?
           '<div class="mt-4 pt-4 border-t border-slate-200">'+
             '<button class="btn d" data-proker-delete="'+esc(p.id)+'">Hapus proker secara permanen</button>'+
