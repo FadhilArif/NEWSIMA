@@ -6,9 +6,11 @@ const fs = require('node:fs');
 const app = fs.readFileSync('app.js', 'utf8');
 const html = fs.readFileSync('index.html', 'utf8');
 const cssSource = fs.readFileSync('style.css', 'utf8');
-const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');const coordinatorFunction = fs.readFileSync('supabase/functions/ukm-coordinator/index.ts', 'utf8');
+const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');
+const coordinatorFunction = fs.readFileSync('supabase/functions/ukm-coordinator/index.ts', 'utf8');
 const approvalHistoryMigration = fs.readFileSync('supabase/migrations/202610100008_approval_history_rls_timeout.sql', 'utf8');
 const coordinatorAssignmentMigration = fs.readFileSync('supabase/migrations/202610100009_generalize_bem_coordinator_assignment.sql', 'utf8');
+const safeUnitDeletionMigration = fs.readFileSync('supabase/migrations/202610100010_safe_delete_organization_unit.sql', 'utf8');
 
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
@@ -31,7 +33,10 @@ requireMatch(coordinatorFunction, /db\.rpc\("assign_bem_coordinator"/, 'Coordina
 requireMatch(approvalHistoryMigration, /CREATE POLICY persetujuan_select_optimized/, 'Approval history must use the optimized RLS policy');
 requireMatch(approvalHistoryMigration, /private\.can_read_approval_history\(dokumen_id\)/, 'Approval history policy must not recurse through document RLS');
 requireMatch(coordinatorAssignmentMigration, /GRANT EXECUTE ON FUNCTION public\.assign_bem_coordinator\(uuid, uuid, uuid\) TO service_role/, 'Coordinator RPC must be restricted to the server-side role');
-requireMatch(app, /eq\('kementerian_id',unitId\)/, 'Unit deletion must check organization references before removing a ministry');
+requireMatch(safeUnitDeletionMigration, /IF NOT private\.is_admin\(\) THEN/, 'Unit deletion must be server-side and administrator-only');
+requireMatch(safeUnitDeletionMigration, /UNIT_IN_USE/, 'Unit deletion must be blocked when relations still reference the unit');
+requireMatch(safeUnitDeletionMigration, /v_unit\.jenis NOT IN \('kementerian', 'divisi'\)/, 'Only ministries and divisions can be deleted through the admin tool');
+requireMatch(app, /sb\.rpc\('admin_delete_unit'/, 'Unit deletion must go through the server-side safe delete function');
 requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile timeline must preserve a vertical heading layout');
 requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase4-01/, 'Style cache key must be bumped for mobile timeline fix');
 
