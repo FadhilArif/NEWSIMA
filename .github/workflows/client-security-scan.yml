@@ -16,6 +16,9 @@ jobs:
       - name: Check client JavaScript syntax
         run: node --check app.js
 
+      - name: Validate SIMAWA-V2 workflow UI invariants
+        run: node .github/scripts/check-simawa-v2-workflow-ui.js
+
       - name: Block Supabase secret keys in client files
         shell: bash
         run: |
