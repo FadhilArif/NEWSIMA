@@ -262,15 +262,15 @@ begin
       select * into v_doc from public.dokumen where proker_id=p_proker_id and jenis='proposal'::public.jenis_dok order by uploaded_at desc nulls last,id desc limit 1;
       if not found then raise exception 'PROPOSAL_NOT_FOUND'; end if;
       insert into public.persetujuan(dokumen_id,tahap,keputusan,komentar,oleh,sebagai) values(v_doc.id,'dekan','teruskan',v_comment,v_uid,'dekan');
-      update public.dokumen set status='diajukan',tahap='hmj_lanjut_wakil_rektor' where id=v_doc.id;
-      update public.proker set review_stage='hmj_lanjut_wakil_rektor' where id=p_proker_id returning * into v_p;
+      update public.dokumen set status='diajukan',tahap='wakil_rektor_hmj' where id=v_doc.id;
+      update public.proker set review_stage='wakil_rektor_hmj' where id=p_proker_id returning * into v_p;
       return v_p;
     elsif v_p.status='lpj_diajukan' and v_p.review_stage='dekan_hmj_lpj' then
       select * into v_doc from public.dokumen where proker_id=p_proker_id and jenis in ('laporan_akhir'::public.jenis_dok,'lpj'::public.jenis_dok) order by (jenis='laporan_akhir'::public.jenis_dok) desc,uploaded_at desc nulls last,id desc limit 1;
       if not found then raise exception 'LPJ_NOT_FOUND'; end if;
       insert into public.persetujuan(dokumen_id,tahap,keputusan,komentar,oleh,sebagai) values(v_doc.id,'dekan_lpj','teruskan',v_comment,v_uid,'dekan');
-      update public.dokumen set status='diajukan',tahap='hmj_lanjut_wakil_rektor_lpj' where id=v_doc.id;
-      update public.proker set review_stage='hmj_lanjut_wakil_rektor_lpj' where id=p_proker_id returning * into v_p;
+      update public.dokumen set status='diajukan',tahap='wakil_rektor_hmj_lpj' where id=v_doc.id;
+      update public.proker set review_stage='wakil_rektor_hmj_lpj' where id=p_proker_id returning * into v_p;
       return v_p;
     end if;
     raise exception 'INVALID_DEKAN_REVIEW_STAGE';
