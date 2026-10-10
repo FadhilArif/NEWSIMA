@@ -973,6 +973,35 @@ async function getActivityThumbnailUrls(paths) {
   return result;
 }
 
+async function openSignedDocument(path) {
+  if(!sb){toast('Supabase belum tersedia.');return false;}
+  if(!path){toast('Lokasi dokumen tidak tersedia.');return false;}
+
+  // Reserve a tab during the click gesture so browsers do not block it after the async signed-URL request.
+  const viewer=window.open('about:blank','_blank');
+  if(viewer){try{viewer.opener=null;}catch(_){}}
+  try{
+    const {data,error}=await sb.storage.from('documents').createSignedUrl(path,600);
+    if(error||!data?.signedUrl){
+      if(viewer){try{viewer.close();}catch(_){}}
+      console.error('Gagal membuat signed URL dokumen:',error||'signed URL kosong');
+      toast('Gagal membuat link dokumen: '+(error?.message||'Tidak dapat mengakses file.'));
+      return false;
+    }
+    if(viewer)viewer.location.replace(data.signedUrl);
+    else{
+      toast('Pop-up diblokir browser; dokumen dibuka di tab ini.');
+      window.location.assign(data.signedUrl);
+    }
+    return true;
+  }catch(error){
+    if(viewer){try{viewer.close();}catch(_){}}
+    console.error('Gagal membuka dokumen:',error);
+    toast('Gagal membuka dokumen: '+(error?.message||'Terjadi kesalahan.'));
+    return false;
+  }
+}
+
 async function loadProkerDetail() {
   S.detail = null;
   if (!sb || !S.selectedProkerId) return;
@@ -2795,6 +2824,12 @@ const V = {
       !isWakilReviewerForStage;
     const canEdit=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
     const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
+    // Review permission is not upload permission: only the owning organization may manage files.
+    const canManageProkerDocuments=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && (
+      S.user.peran==='admin' ||
+      (String(S.orgId||'')===String(p.organisasi_id||'') &&
+       (S.permissions?.has('proker.create')||S.permissions?.has('proker.edit')))
+    );
     const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
     const canReviewStage=
       isUkmStageReviewerFor ||
@@ -3070,14 +3105,14 @@ const V = {
           '</div>':'')+
       '</div></div>'+
       '<div class="card"><div class="flex items-start justify-between gap-3"><div><h3>Dokumen</h3><p class="sub mb-0">File proposal dan LPJ disimpan di Supabase Storage dan wajib ada sebelum pengajuan.</p></div></div>'+
-      ((S.user.peran!=='wakil_rektor')&&(!readOnlyCollaborator)&&(p.status==='direncanakan'||p.status==='revisi')&&(canCreate||canEdit)
+      (canManageProkerDocuments&&(p.status==='direncanakan'||p.status==='revisi')
         ? '<div class="mt-4 rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">Proposal</p><p class="text-xs text-slate-500">'+(proposal?.file_name?'Sudah diunggah: '+esc(proposal.file_name):'Belum ada file proposal.')+'</p></div><span class="chip '+(proposal?.file_path?'ok':'wa')+'">'+(proposal?.file_path?'Siap diajukan':'Wajib upload')+'</span></div><div class="flex flex-col sm:flex-row gap-2 mt-3"><input id="workflow-file" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="flex-1"><button class="btn" data-doc-upload="proposal" data-proker-id="'+esc(p.id)+'">Upload proposal</button>'+(proposal?.file_path?'<button class="btn" data-doc-download="'+esc(proposal.file_path)+'">Lihat file</button><button class="btn d" data-doc-delete="'+esc(proposal.id)+'">Hapus proposal</button>':'')+'</div></div>'
         : '')+
-      ((S.user.peran!=='wakil_rektor')&&(!readOnlyCollaborator)&&(p.status==='selesai'||p.status==='lpj_diajukan'||p.status==='lpj_disetujui')&&(canEdit||canReview)
+      (canManageProkerDocuments&&p.status==='selesai'
         ? '<div class="mt-4 rounded-2xl border border-slate-200 p-4"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">Laporan akhir / LPJ</p><p class="text-xs text-slate-500">'+(lpj?.file_name?'Sudah diunggah: '+esc(lpj.file_name):'Belum ada file LPJ.')+'</p></div><span class="chip '+(lpj?.file_path?'ok':'wa')+'">'+(lpj?.file_path?'Tersedia':'Wajib upload sebelum pengajuan')+'</span></div><div class="flex flex-col sm:flex-row gap-2 mt-3"><input id="workflow-file-lpj" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="flex-1"><button class="btn" data-doc-upload="laporan_akhir" data-proker-id="'+esc(p.id)+'">Upload LPJ</button>'+(lpj?.file_path?'<button class="btn" data-doc-download="'+esc(lpj.file_path)+'">Lihat file</button><button class="btn d" data-doc-delete="'+esc(lpj.id)+'">Hapus LPJ</button>':'')+'</div></div>'
         : '')+
       (d.docs.length?'<div class="mt-4">'+d.docs.map(doc=>'<div class="py-3 border-b border-slate-100 last:border-0"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold">'+esc(doc.jenis)+'</p><p class="text-xs text-slate-500">'+esc(doc.status||'-')+' · '+esc(doc.tahap||'-')+(doc.file_name?' · '+esc(doc.file_name):'')+'</p></div>'+(doc.file_path?'<button class="btn s" data-doc-download="'+esc(doc.file_path)+'">Buka</button>': '<span class="chip wa">Belum ada file</span>')+
-        ((doc.file_path && (doc.status==='draft'||doc.status==='revisi'))?'<button class="btn d" data-doc-delete="'+esc(doc.id)+'">Hapus</button>':'')+'</div></div>').join('')+'</div>':'<p class="sub mt-4">Belum ada dokumen.</p>')+
+        ((canManageProkerDocuments&&doc.file_path&&(doc.status==='draft'||doc.status==='revisi'))?'<button class="btn d" data-doc-delete="'+esc(doc.id)+'">Hapus</button>':'')+'</div></div>').join('')+'</div>':'<p class="sub mt-4">Belum ada dokumen.</p>')+
       '</div>'+
       ((['selesai','lpj_diajukan','lpj_disetujui'].includes(p.status))
         ? '<div class="card mt-4"><div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h3>Foto kegiatan</h3><p class="sub mb-0">Dokumentasi kegiatan setelah pelaksanaan selesai. Maksimal 5 foto, maksimal 10 MB per foto.</p></div><span class="chip '+(d.photos.length>=5?'wa':'bl')+'">'+d.photos.length+'/5 foto</span></div>'+
@@ -4184,6 +4219,17 @@ document.addEventListener('click', async e => {
 
     const prokerSnapshot=S.detail?.proker ? {...S.detail.proker} : null;
     if(!prokerSnapshot?.organisasi_id)return toast('Organisasi proker tidak ditemukan.');
+     if(!['proposal','laporan_akhir'].includes(kind))return toast('Jenis dokumen tidak valid.');
+     const ownsProkerContext=S.user.peran==='admin' || (
+       S.user.peran!=='wakil_rektor' &&
+       String(S.orgId||'')===String(prokerSnapshot.organisasi_id||'') &&
+       (S.permissions?.has('proker.create')||S.permissions?.has('proker.edit'))
+     );
+     if(!ownsProkerContext)return toast('Hanya pengelola organisasi pemilik Proker yang dapat mengunggah dokumen.');
+     if(kind==='proposal'&&!['direncanakan','revisi'].includes(prokerSnapshot.status))
+       return toast('Proposal hanya dapat diunggah saat Proker direncanakan atau dikembalikan untuk revisi.');
+     if(kind==='laporan_akhir'&&prokerSnapshot.status!=='selesai')
+       return toast('LPJ hanya dapat diunggah oleh pengelola saat Proker selesai atau dikembalikan untuk perbaikan.');
 
     return withUploadLock('dokumen',async()=>{
     const proker=prokerSnapshot;
@@ -4242,23 +4288,17 @@ document.addEventListener('click', async e => {
   if(docPrint){
     if(!S.detail?.readOnlyCollaborator)return toast('Aksi cetak ini hanya untuk kolaborator.');
     const path=docPrint.dataset.docPrint;
-    const doc=(S.detail?.docs||[]).find(x=>x.file_path===path);
-    if(!doc||doc.status!=='disetujui')return toast('Hanya dokumen final yang dapat dicetak.');
-    const {data,error}=await sb.storage.from('documents').createSignedUrl(path,600);
-    if(error||!data?.signedUrl)return toast('Gagal membuka dokumen final: '+(error?.message||''));
-    const win=window.open(data.signedUrl,'_blank','noopener,noreferrer');
-    if(win)toast('Dokumen final dibuka. Gunakan perintah Cetak pada penampil dokumen.');
-    return;
+     const doc=(S.detail?.docs||[]).find(x=>x.file_path===path);
+     if(!doc||doc.status!=='disetujui')return toast('Hanya dokumen final yang dapat dicetak.');
+     if(await openSignedDocument(path))toast('Dokumen final dibuka. Gunakan perintah Cetak pada penampil dokumen.');
+     return;
   }
 
   const docDownload=e.target.closest('[data-doc-download]');
   if(docDownload){
     const path=docDownload.dataset.docDownload;
-    if(!path)return;
-    const {data,error}=await sb.storage.from('documents').createSignedUrl(path,600);
-    if(error||!data?.signedUrl)return toast('Gagal membuat link dokumen: '+(error?.message||'Tidak dapat mengakses file.'));
-    window.open(data.signedUrl,'_blank','noopener,noreferrer');
-    return;
+     await openSignedDocument(path);
+     return;
   }
 
   const workflow=e.target.closest('[data-proker-action]');
