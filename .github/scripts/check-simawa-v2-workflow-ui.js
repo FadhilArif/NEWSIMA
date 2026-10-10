@@ -39,7 +39,7 @@ requireMatch(app, /coordinatorFollowupQuery/, 'Assigned coordinators must still 
 requireMatch(app, /const dekanFollowupQuery=isDekan/, 'Dekan must query HMJ proker that remain visible after the active review stage');
 requireMatch(app, /review_stage\.eq\.wakil_rektor_hmj_lpj.*lpj_disetujui/s, 'Dekan follow-up query must include HMJ prokers after handoff and in completed states');
 requireMatch(app, /dekanFollowupRowsMarked/, 'Dekan follow-up rows must be marked read-only');
-requireMatch(app, /if\(readOnlyDekanFollowup\)actions=/, 'Dekan follow-up details must not expose review or workflow actions');
+requireMatch(app, /readOnlyDekanFollowup/, 'Dekan follow-up must remain read-only without a banner');
 assert.doesNotMatch(app, /Mode pantauan Dekan · baca saja|Pantauan Dekan · baca saja|Kolaborasi · lihat saja|Koordinator · lihat saja|Anda merupakan kolaborator yang sudah bergabung/, 'Read-only UI must not add redundant banners or list badges');
 requireMatch(app, /if\(p.__coordinatorReadOnly\|\|p.__dekanReadOnly\)return 'Lihat proker'/, 'Read-only workflow rows must still use the view-only action label');
 requireMatch(app, /readOnlyDekanFollowup/, 'Read-only follow-up state must remain enforced');
