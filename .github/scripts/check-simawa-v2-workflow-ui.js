@@ -5,6 +5,7 @@ const fs = require('node:fs');
 
 const app = fs.readFileSync('app.js', 'utf8');
 const html = fs.readFileSync('index.html', 'utf8');
+const cssSource = fs.readFileSync('style.css', 'utf8');
 const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');
 
 function requireMatch(source, pattern, label) {
@@ -19,6 +20,10 @@ requireMatch(app, /data-go="review:'\+esc\(x\.proker_id\|\|''\)\+'"/, 'Inbox and
 requireMatch(adminCreateUser, /\["user","admin","pembimbing","staf_keuangan","mahasiswa","wakil_rektor","kaprodi","dekan"\]\.includes\(peran\)/, 'Account creation must accept Kaprodi and Dekan roles');
 requireMatch(adminCreateUser, /peran === "kaprodi" && \(!organisasiId \|\| jabatanKode !== "kaprodi" \|\| !unitId\)/, 'Kaprodi account creation must require HMJ, the Kaprodi position, and a program-study unit');
 requireMatch(adminCreateUser, /callerProfile\?\.aktif !== true/, 'Account creation must only be available to active administrator profiles');
+requireMatch(app, /data-unit-delete=/, 'Admin structure view must offer unit deletion');
+requireMatch(app, /Ketik HAPUS untuk melanjutkan/, 'Unit deletion must require typed confirmation');
+requireMatch(app, /organization_id:ukmId/, 'Coordinator assignment must support all child organization types');
+
 
 
 
@@ -33,6 +38,8 @@ requireMatch(app, /return sb\.rpc\(useLegacy\?'transition_proker':'transition_pr
 requireMatch(app, /action\('review_forward','Selesai review · teruskan ke Wakil Rektor 1'\)/, 'Dekan proposal review must forward directly to WR1');
 requireMatch(app, /action\('review_forward','Selesai review LPJ · teruskan ke Wakil Rektor 1'\)/, 'Dekan LPJ review must forward directly to WR1');
 requireMatch(app, /<th>Tahap<\/th>/, 'The Proker table must display the active workflow stage');
+requireMatch(cssSource, /SIMAWA V2 Phase 4: keep the timeline heading above/, 'Mobile timeline layout override must be present');
+
 requireMatch(app, /return organizationType==='CLUB'\?label\.replace\(\/UKM\/g,'UKM Minat Bakat'\):label/, 'Club workflow labels must use UKM Minat Bakat');
 
 const timelineStart = app.indexOf("const steps=processKind==='bem'");
