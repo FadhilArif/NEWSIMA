@@ -6,7 +6,9 @@ const fs = require('node:fs');
 const app = fs.readFileSync('app.js', 'utf8');
 const html = fs.readFileSync('index.html', 'utf8');
 const cssSource = fs.readFileSync('style.css', 'utf8');
-const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');
+const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');const coordinatorFunction = fs.readFileSync('supabase/functions/ukm-coordinator/index.ts', 'utf8');
+const approvalHistoryMigration = fs.readFileSync('supabase/migrations/202610100008_approval_history_rls_timeout.sql', 'utf8');
+const coordinatorAssignmentMigration = fs.readFileSync('supabase/migrations/202610100009_generalize_bem_coordinator_assignment.sql', 'utf8');
 
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
@@ -23,6 +25,15 @@ requireMatch(adminCreateUser, /callerProfile\?\.aktif !== true/, 'Account creati
 requireMatch(app, /data-unit-delete=/, 'Admin structure view must offer unit deletion');
 requireMatch(app, /Ketik HAPUS untuk melanjutkan/, 'Unit deletion must require typed confirmation');
 requireMatch(app, /organization_id:ukmId/, 'Coordinator assignment must support all child organization types');
+requireMatch(coordinatorFunction, /\["HMJ", "UKM", "CLUB"\]\.includes\(child\.tipe\)/, 'Coordinator endpoint must accept HMJ, UKM, and UKM Minat Bakat');
+requireMatch(coordinatorFunction, /body\.organization_id \|\| body\.ukm_id/, 'Coordinator endpoint must support the generalized organization ID and cached clients');
+requireMatch(coordinatorFunction, /db\.rpc\("assign_bem_coordinator"/, 'Coordinator assignment must use the atomic server-side RPC');
+requireMatch(approvalHistoryMigration, /CREATE POLICY persetujuan_select_optimized/, 'Approval history must use the optimized RLS policy');
+requireMatch(approvalHistoryMigration, /private\.can_read_approval_history\(dokumen_id\)/, 'Approval history policy must not recurse through document RLS');
+requireMatch(coordinatorAssignmentMigration, /GRANT EXECUTE ON FUNCTION public\.assign_bem_coordinator\(uuid, uuid, uuid\) TO service_role/, 'Coordinator RPC must be restricted to the server-side role');
+requireMatch(app, /eq\('kementerian_id',unitId\)/, 'Unit deletion must check organization references before removing a ministry');
+requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile timeline must preserve a vertical heading layout');
+requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase4-01/, 'Style cache key must be bumped for mobile timeline fix');
 
 
 
@@ -62,6 +73,6 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase3-02/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase4-01/, 'UI bundle cache key must be refreshed');
 
 console.log('SIMAWA-V2 workflow UI checks passed.');
