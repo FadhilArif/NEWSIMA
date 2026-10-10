@@ -1,6 +1,6 @@
--- Account/position support for Kaprodi and Dekan reviewers.
--- Both roles are explicitly scoped to an HMJ; Kaprodi must also belong to
--- that HMJ's program_studi unit. Dekan is a review-only position without a unit.
+-- Account/position support for the new academic workflow.
+-- Kaprodi is scoped to an HMJ and its program_studi unit.
+-- Dekan is a faculty-wide profile role and must not be assigned to a keanggotaan row.
 
 alter table public.profiles drop constraint if exists profiles_peran_allowed;
 alter table public.profiles
@@ -19,8 +19,7 @@ alter table public.profiles
 insert into public.jabatan_organisasi
   (kode,nama,tingkat,cakupan,aktif,berlaku_tipe,unit_wajib,unit_jenis_wajib)
 values
-  ('kaprodi','Kepala Program Studi',75,'organisasi',true,array['HMJ']::public.tipe_org[],true,'program_studi'),
-  ('dekan','Dekan Fakultas',75,'organisasi',true,array['HMJ']::public.tipe_org[],false,null)
+  ('kaprodi','Kepala Program Studi',75,'organisasi',true,array['HMJ']::public.tipe_org[],true,'program_studi')
 on conflict (kode) do update set
   nama=excluded.nama,
   cakupan=excluded.cakupan,
@@ -39,7 +38,7 @@ cross join (values
   ('laporan.review'),
   ('struktur.view')
 ) as perm(kode)
-where j.kode in ('kaprodi','dekan')
+where j.kode='kaprodi'
 on conflict (jabatan_id,kode) do nothing;
 
 create or replace function public.assign_organization_membership(
@@ -83,8 +82,8 @@ begin
   if v_profile.peran='kaprodi' and (v_org.tipe<>'HMJ' or v_position.kode<>'kaprodi') then
     raise exception 'KAPRODI_MUST_USE_HMJ_KAPRODI_POSITION';
   end if;
-  if v_profile.peran='dekan' and (v_org.tipe<>'HMJ' or v_position.kode<>'dekan') then
-    raise exception 'DEKAN_MUST_USE_HMJ_DEKAN_POSITION';
+  if v_profile.peran='dekan' then
+    raise exception 'DEKAN_GLOBAL_ROLE_DOES_NOT_USE_ORG_MEMBERSHIP';
   end if;
 
   if v_position.unit_wajib and p_unit_id is null then raise exception 'UNIT_REQUIRED_FOR_POSITION'; end if;
