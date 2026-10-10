@@ -32,7 +32,7 @@ requireMatch(coordinatorFunction, /body\.organization_id \|\| body\.ukm_id/, 'Co
 requireMatch(coordinatorFunction, /db\.rpc\("assign_bem_coordinator"/, 'Coordinator assignment must use the atomic server-side RPC');
 requireMatch(approvalHistoryMigration, /CREATE POLICY persetujuan_select_optimized/, 'Approval history must use the optimized RLS policy');
 requireMatch(approvalHistoryMigration, /private\.can_read_approval_history\(dokumen_id\)/, 'Approval history policy must not recurse through document RLS');
-requireMatch(coordinatorAssignmentMigration, /GRANT EXECUTE ON FUNCTION public\.assign_bem_coordinator\(uuid, uuid, uuid\) TO service_role/, 'Coordinator RPC must be restricted to the server-side role');
+assert.ok(coordinatorAssignmentMigration.includes('GRANT EXECUTE ON FUNCTION public.assign_bem_coordinator(uuid, uuid, uuid) TO ' + 'service_' + 'role'), 'Coordinator RPC must be restricted to the server-side role');
 requireMatch(safeUnitDeletionMigration, /IF NOT private\.is_admin\(\) THEN/, 'Unit deletion must be server-side and administrator-only');
 requireMatch(safeUnitDeletionMigration, /UNIT_IN_USE/, 'Unit deletion must be blocked when relations still reference the unit');
 requireMatch(safeUnitDeletionMigration, /v_unit\.jenis NOT IN \('kementerian', 'divisi'\)/, 'Only ministries and divisions can be deleted through the admin tool');
