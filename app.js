@@ -189,6 +189,19 @@ function syncSpecialAccountRole() {
     return;
   }
 
+  if(role==='dekan'){
+    setNimMode(false,true);
+    orgEl.innerHTML='<option value="">Seluruh program studi</option>';
+    orgEl.value='';
+    orgEl.disabled=true;
+    jabEl.innerHTML='<option value="dekan">Dekan Fakultas · cakupan seluruh program studi</option>';
+    jabEl.value='dekan';
+    jabEl.disabled=true;
+    unitLabel.textContent='Cakupan kewenangan';
+    setUnitOptions([],'Semua program studi di fakultas',true,false);
+    return;
+  }
+
   orgEl.disabled=false;
   jabEl.disabled=false;
 
@@ -263,12 +276,32 @@ function syncAdditionalAssignment() {
   const account=(S.accounts||[]).find(x=>String(x.id)===String(accountEl.value||''));
   const role=account?.peran||'';
   const allOrgs=S.organizations||[];
+  orgEl.disabled=false;
+  orgEl.required=true;
+  jabEl.required=true;
 
   const setOrgOptions=(items,placeholder)=>{
     const current=orgEl.value;
     orgEl.innerHTML='<option value="">'+esc(placeholder)+'</option>'+items.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama)+' · '+esc(o.tipe)+'</option>').join('');
     if(items.some(o=>String(o.id)===String(current)))orgEl.value=current;
   };
+
+  if(role==='dekan'){
+    orgEl.innerHTML='<option value="">Cakupan global · seluruh program studi</option>';
+    orgEl.value='';
+    orgEl.disabled=true;
+    orgEl.required=false;
+    jabEl.innerHTML='<option value="">Tidak perlu penetapan organisasi</option>';
+    jabEl.value='';
+    jabEl.disabled=true;
+    jabEl.required=false;
+    unitLabel.textContent='Cakupan';
+    unitEl.innerHTML='<option value="">Semua program studi pada fakultas</option>';
+    unitEl.value='';
+    unitEl.disabled=true;
+    unitEl.required=false;
+    return;
+  }
 
   if(role==='pembimbing'){
     const hmjs=allOrgs.filter(o=>o.tipe==='HMJ');
@@ -429,8 +462,7 @@ function isNewWorkflowKaprodi(p){
  return (S.memberships||[]).some(m=>{if(String(m.organisasi_id)!==String(p.organisasi_id)||String(m.akun_id)!==String(S.user.id)||m.status!=='aktif'||!m.jabatan_id)return false;const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id)),unit=(S.units||[]).find(u=>String(u.id)===String(m.unit_id));return pos?.kode==='kaprodi'&&unit?.jenis==='program_studi'&&String(unit.organisasi_id)===String(p.organisasi_id);});
 }
 function isNewWorkflowDekan(p){
- if(S.user.peran!=='dekan'||!p||!NEW_DEKAN_STAGES.has(p.review_stage)||!isHmjProker(p))return false;
- return (S.memberships||[]).some(m=>String(m.organisasi_id)===String(p.organisasi_id)&&String(m.akun_id)===String(S.user.id)&&m.status==='aktif'&&m.jabatan_id&&(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id))?.kode==='dekan');
+ return S.user.peran==='dekan'&&!!p&&NEW_DEKAN_STAGES.has(p.review_stage)&&isHmjProker(p);
 }
 function isNewWorkflowWR(p){return S.user.peran==='wakil_rektor'&&!!p&&NEW_WR_STAGES.has(p.review_stage);}
 function isNewWorkflowReviewer(p){return isNewWorkflowCoordinator(p)||isNewWorkflowPresident(p)||isNewWorkflowKaprodi(p)||isNewWorkflowDekan(p)||isNewWorkflowWR(p);}
@@ -569,6 +601,10 @@ async function loadPermissionsForOrganization(orgId) {
     ]);
     return;
   }
+  if (S.user.peran==='dekan') {
+    S.permissions = new Set(['beranda.view','proker.view','struktur.view','dokumen.review','laporan.review']);
+    return;
+  }
   if (!sb || !orgId) {
     S.permissions = new Set();
     return;
@@ -604,6 +640,16 @@ async function loadContexts() {
       'beranda.view','proker.view','kolaborasi.view','struktur.view',
       'dokumen.review','laporan.review','organisasi.view'
     ]);
+  } else if (S.user.peran==='dekan') {
+    S.ctxs = [{
+      orgId:null,
+      org:'Seluruh program studi',
+      peran:'Dekan Fakultas',
+      roleCode:'dekan',
+      global:true,
+      permissionAll:false
+    }];
+    S.permissions = new Set(['beranda.view','proker.view','struktur.view','dokumen.review','laporan.review']);
   } else {
     const memberships = S.memberships || [];
     S.ctxs = memberships.map(m => {
@@ -645,7 +691,8 @@ async function loadContexts() {
 async function loadProker(_retry=false) {
   if (!sb) return;
   const requestContextSeq=S.contextSwitchSeq;
-  const coordinatorAssignmentsPromise=loadCoordinatorAssignments().catch(()=>{});
+  const isDekan=S.user.peran==='dekan';
+  const coordinatorAssignmentsPromise=isDekan?Promise.resolve():loadCoordinatorAssignments().catch(()=>{});
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
@@ -726,25 +773,32 @@ async function loadProker(_retry=false) {
       .or('and(status.eq.proposal_diajukan,review_stage.in.(wakil_rektor_ukm,wakil_rektor,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj)),and(status.eq.lpj_diajukan,review_stage.in.(wakil_rektor_ukm_lpj,wakil_rektor_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj)),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
       .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
+  // A Dekan reviews active HMJ proposal/LPJ stages across every program study.
+  const dekanQuery=isDekan
+    ? sb.from('proker').select(selectFields).in('review_stage',['dekan_hmj','dekan_hmj_lpj']).order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
   const [
     {data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError},
     {data:bemHmjRows,error:bemHmjError},{data:coordinatorRows,error:coordinatorError},
-    {data:presidentRows,error:presidentError},{data:visibleUkmRows,error:visibleUkmError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,presidentQuery,visibleUkmQuery]);
+    {data:presidentRows,error:presidentError},{data:visibleUkmRows,error:visibleUkmError},
+    {data:dekanRows,error:dekanError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
   if(coordinatorError)console.warn('Gagal memuat proker Koordinator BEM:',coordinatorError.message);
   if(presidentError)console.warn('Gagal memuat proker review Presiden BEM:',presidentError.message);
   if(visibleUkmError)console.warn('Gagal memuat proker setelah persetujuan Presiden BEM:',visibleUkmError.message);
+  if(dekanError)console.warn('Gagal memuat antrean review Dekan Fakultas:',dekanError.message);
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
   const coordinatorRowsMarked=(coordinatorRows||[]).map(x=>({...x,__collaborator:false,__coordinatorReview:true}));
   const presidentRowsMarked=(presidentRows||[]).map(x=>({...x,__collaborator:false,__presidentReview:true}));
   const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
+  const dekanReviewRows=(dekanRows||[]).map(x=>({...x,__collaborator:false,__dekanReview:true}));
   const map=new Map();
-  [...own,...collab,...childHmjs,...coordinatorRowsMarked,...presidentRowsMarked,...visibleUkm].forEach(x=>map.set(x.id,{...(map.get(x.id)||{}),...x}));
+  [...own,...collab,...childHmjs,...coordinatorRowsMarked,...presidentRowsMarked,...visibleUkm,...dekanReviewRows].forEach(x=>map.set(x.id,{...(map.get(x.id)||{}),...x}));
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -994,7 +1048,7 @@ async function loadInbox() {
   S.inbox=[];
   if(!sb)return;
 
-  await loadCoordinatorAssignments();
+  if(!isAcademicReviewerRole(S.user.peran))await loadCoordinatorAssignments();
   const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
   let rows=[];
 
@@ -2261,12 +2315,7 @@ async function handleTransientAuthError(error,context='request'){
     return {retry:false,sessionValid:true,rateLimited:true};
   }
 
-  const sessionRes=await sb.auth.getSession().catch(()=>({data:{session:null},error:null}));
-  if(sessionRes?.data?.session?.user){
-    return {retry:true,sessionValid:true};
-  }
-
-  return {retry:false,sessionValid:false};
+  return {retry:false,sessionValid:false,reason:recovered.reason||'no_active_session'};
 }
 
 async function initAuth() {
@@ -3245,7 +3294,7 @@ const V = {
     const orgOpts=(S.organizations||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.nama+' · '+organizationTypeLabel(o.tipe))+'</option>').join('');
     const jabatanOpts=(S.positions||[]).map(j=>'<option value="'+esc(j.kode)+'">'+esc(j.nama)+'</option>').join('');
     const unitOpts=(S.units||[]).map(u=>'<option value="'+esc(u.id)+'">'+esc(u.nama+' · '+u.jenis)+'</option>').join('');
-    return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Setiap organisasi mempunyai jabatan dan ruang lingkupnya sendiri.')+
+    return pageHeader('Akun dan penetapan','Akun dapat menjadi anggota banyak organisasi. Dekan Fakultas memiliki cakupan global untuk seluruh program studi.')+
       '<div class="row2"><div class="card"><h3>Buat akun</h3><form id="form-akun"><label>Nama lengkap *</label><input id="an-nama" required><label>Email *</label><input id="an-email" type="email" required><label id="an-nim-label">NIM *</label><input id="an-nim" required><label>Role aplikasi *</label><select id="an-peran" required><option value="user">User</option><option value="mahasiswa">Mahasiswa</option><option value="pembimbing">Pembimbing</option><option value="staf_keuangan">Staf Keuangan</option><option value="kaprodi">Kepala Program Studi</option><option value="dekan">Dekan Fakultas</option><option value="wakil_rektor">Wakil Rektor 1</option><option value="admin">Admin</option></select><label>Organisasi awal</label><select id="an-org"><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan organisasi</label><select id="an-jabatan"><option value="">Pilih organisasi dulu</option></select><label id="an-unit-label">Unit kerja</label><select id="an-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><small>Setelah akun dibuat, akun yang sama bisa ditambahkan ke organisasi lain melalui Penetapan tambahan.</small><button class="btn full mt-4">Buat akun</button></form></div>'+
       '<div class="card"><h3>Penetapan tambahan</h3><form id="form-penetapan"><label>Akun *</label><select id="p-akun" required><option value="">Pilih akun</option>'+(S.accounts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+' · '+esc(x.email)+'</option>').join('')+'</select><label>Organisasi *</label><select id="p-org" required><option value="">Pilih organisasi</option>'+orgOpts+'</select><label>Jabatan *</label><select id="p-jabatan" required><option value="">Pilih organisasi dulu</option></select><label id="p-unit-label">Unit kerja</label><select id="p-unit" disabled><option value="">Pilih jabatan terlebih dahulu</option></select><button class="btn full mt-4">Tambahkan ke organisasi</button></form></div></div>'+
       (S.revealedCredential?'<div class="card border border-amber-200 bg-amber-50 mb-4"><div class="flex items-start justify-between gap-3"><div><h3>Password sementara</h3><p class="sub !text-amber-900">Password lama tidak bisa dibaca kembali. Ini adalah password sementara baru yang baru saja direset dan wajib diganti saat login.</p><p class="font-bold">'+esc(S.revealedCredential.nama||S.revealedCredential.email||'Akun')+'</p></div><button class="text-sm underline" data-account-action="close-credential">Tutup</button></div><div class="flex gap-2 mt-3"><input readonly value="'+esc(S.revealedCredential.password)+'" id="revealed-password" class="font-mono flex-1"><button class="btn" data-account-action="copy-credential">Salin</button></div></div>':'')+
@@ -3255,7 +3304,7 @@ const V = {
           (x.aktif?'<button class="btn" data-account-action="deactivate" data-account-id="'+esc(x.id)+'">Nonaktifkan</button>':'<button class="btn" data-account-action="activate" data-account-id="'+esc(x.id)+'">Aktifkan</button>')+
           '<button class="btn" data-account-action="delete" data-account-id="'+esc(x.id)+'">Hapus akun</button>'+
           '</div>';
-        return '<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):(x.unitInfo?'<div class="mb-2"><b>Unit kerja:</b> '+esc(x.unitInfo.nama)+'</div>':'Belum ditetapkan'))+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td><td>'+actionButtons+'</td></tr>';
+        return '<tr><td><b>'+esc(x.nama)+'</b></td><td>'+esc(x.email)+'</td><td>'+roleChip(x.peran)+'</td><td>'+(x.peran==='dekan'?'<div><b>Cakupan:</b> seluruh program studi</div>':((x.memberships||[]).length?x.memberships.map(m=>'<div class="mb-2 last:mb-0"><b>'+esc(m.organisasiInfo?.nama||'-')+'</b> · '+esc(m.jabatanInfo?.nama||m.jabatan||'-')+(m.unitInfo?.nama?' · '+esc(m.unitInfo.nama):'')+'</div>').join(''):(x.unitInfo?'<div class="mb-2"><b>Unit kerja:</b> '+esc(x.unitInfo.nama)+'</div>':'Belum ditetapkan')) )+'</td><td>'+(x.aktif?'<span class="chip ok">Aktif</span>':'<span class="chip er">Nonaktif</span>')+'</td><td>'+actionButtons+'</td></tr>';
       }).join('')+'</tbody></table></div>':emptyCard('Belum ada akun.'))+
       (S.lastCredentials?.length?'<div class="card"><h3>Password sementara dari import terakhir</h3><p class="sub">Disimpan hanya di memori halaman.</p><div class="overflow-x-auto"><table><thead><tr><th>Nama</th><th>Email</th><th>Password</th></tr></thead><tbody>'+S.lastCredentials.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.email)+'</td><td><code>'+esc(x.temporary_password)+'</code></td></tr>').join('')+'</tbody></table></div></div>':'');
   },
@@ -3599,9 +3648,10 @@ async function prosesBulkCSV() {
   let sukses=0,gagal=0;const credentials=[];
   for(const row of S.csvData){
     const [nama,email,nim,peran,organisasi_id,jabatan_kode,unit_id]=row;
-    if(!email||!nama||!nim){gagal++;continue;}
+    const effectiveRole=peran||'user';
+    if(!email||!nama||(['user','mahasiswa'].includes(effectiveRole)&&!nim)){gagal++;continue;}
     try{
-      const {data,error}=await sb.functions.invoke('admin-create-user',{body:{nama,email:email.trim().toLowerCase(),nim,peran:peran||'user',organisasi_id:organisasi_id||null,jabatan_kode:jabatan_kode||null,unit_id:unit_id||null}});
+      const {data,error}=await sb.functions.invoke('admin-create-user',{body:{nama,email:email.trim().toLowerCase(),nim:nim||null,peran:effectiveRole,organisasi_id:effectiveRole==='dekan'?null:(organisasi_id||null),jabatan_kode:effectiveRole==='dekan'?null:(jabatan_kode||null),unit_id:effectiveRole==='dekan'?null:(unit_id||null)}});
       if(error||!data?.ok){console.error(error||data);gagal++;continue;}
       credentials.push({nama,email,temporary_password:data.temporary_password});sukses++;
     }catch(error){console.error(error);gagal++;}
@@ -4428,9 +4478,9 @@ document.addEventListener('submit', async e => {
     e.preventDefault();
     if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh membuat akun.');
     const role=$('#an-peran').value;
-    const orgId=$('#an-org').value||null;
-    const jabatanKode=$('#an-jabatan').value||null;
-    const unitId=$('#an-unit').value||null;
+    const orgId=role==='dekan'?null:($('#an-org').value||null);
+    const jabatanKode=role==='dekan'?null:($('#an-jabatan').value||null);
+    const unitId=role==='dekan'?null:($('#an-unit').value||null);
     const org=(S.organizations||[]).find(o=>String(o.id)===String(orgId||''));
     const position=(S.positions||[]).find(j=>String(j.kode)===String(jabatanKode||''));
     const unit=(S.units||[]).find(u=>String(u.id)===String(unitId||''));
