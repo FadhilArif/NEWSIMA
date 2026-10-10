@@ -3133,7 +3133,7 @@ const V = {
       }
 
       if(units.length){
-        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="font-bold break-words">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>'+(canUnit?'<button type="button" class="btn d s shrink-0" data-unit-delete="'+esc(x.id)+'" data-unit-name="'+esc(x.nama)+'">Hapus</button>':'')+'</div></div>').join('')+'</div></div>';
+        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="font-bold break-words">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>'+(canUnit&&['kementerian','divisi'].includes(x.jenis)?'<button type="button" class="btn d s shrink-0" data-unit-delete="'+esc(x.id)+'" data-unit-name="'+esc(x.nama)+'">Hapus</button>':'')+'</div></div>').join('')+'</div></div>';
       }else if(type==='BEM'||type==='HMJ'){
         html+='<div class="card mb-4"><p class="sub">Belum ada '+(type==='BEM'?'Kementerian.':'Divisi.')+'</p></div>';
       }
@@ -3832,38 +3832,28 @@ document.addEventListener('click', async e => {
 
   const unitDelete=e.target.closest('[data-unit-delete]');
   if(unitDelete){
-    if(S.user.peran!=='admin'&&!S.permissions?.has('unit.manage')){
-      return toast('Hanya admin atau pemilik hak unit.manage yang boleh menghapus unit.');
-    }
+    if(S.user.peran!=='admin')return toast('Hanya administrator yang boleh menghapus Kementerian atau Divisi.');
     if(!sb)return toast('Supabase belum tersedia.');
     const unitId=String(unitDelete.dataset.unitDelete||'').trim();
     const unitName=String(unitDelete.dataset.unitName||'unit ini').trim();
-    const organisasiId=['admin','wakil_rektor'].includes(S.user.peran)?(S.structureOrgId||S.orgId):S.orgId;
-    if(!unitId||!organisasiId)return toast('Pilih organisasi dan unit yang akan dihapus.');
-    if(window.prompt('Penghapusan unit "'+unitName+'" hanya diizinkan jika belum dipakai. Ketik HAPUS untuk melanjutkan:')!=='HAPUS')return;
-    const references=await Promise.all([
-      sb.from('keanggotaan').select('id',{count:'exact',head:true}).eq('unit_id',unitId),
-      sb.from('organisasi').select('id',{count:'exact',head:true}).eq('kementerian_id',unitId),
-      sb.from('profiles').select('id',{count:'exact',head:true}).eq('unit_kerja_id',unitId),
-      sb.from('proker').select('id',{count:'exact',head:true}).eq('unit_id',unitId)
-    ]);
-    const referenceError=references.find(x=>x.error)?.error;
-    if(referenceError)return toast('Gagal memeriksa pemakaian unit: '+referenceError.message);
-    const usage=[
-      ['keanggotaan',references[0].count||0],
-      ['organisasi di bawah kementerian',references[1].count||0],
-      ['profil akun',references[2].count||0],
-      ['program kerja',references[3].count||0]
-    ].filter(([,count])=>count>0);
-    if(usage.length){
-      return toast('Unit masih dipakai: '+usage.map(([label,count])=>count+' '+label).join(', ')+'. Pindahkan relasi terlebih dahulu.');
-    }
-    const {data,error}=await sb.from('unit_kerja').delete().eq('id',unitId).eq('organisasi_id',organisasiId).select('id');
+    const selectedOrgId=S.structureOrgId||S.orgId;
+    const targetUnit=(S.units||[]).find(x=>String(x.id)===unitId);
+    if(!targetUnit||!unitId)return toast('Unit tidak ditemukan. Muat ulang struktur organisasi.');
+    if(!selectedOrgId||String(targetUnit.organisasi_id)!==String(selectedOrgId))return toast('Unit tidak termasuk organisasi yang sedang dipilih.');
+    if(!['kementerian','divisi'].includes(targetUnit.jenis))return toast('Hanya Kementerian atau Divisi yang dapat dihapus dari halaman ini.');
+    if(window.prompt('Penghapusan unit "'+unitName+'". Ketik HAPUS untuk melanjutkan:')!=='HAPUS')return;
+    const {error}=await sb.rpc('admin_delete_unit',{p_unit_id:unitId});
     if(error){
-      if(error.code==='23503')return toast('Unit tidak dapat dihapus karena masih memiliki relasi data.');
-      return toast('Gagal menghapus unit: '+error.message);
+      const message=error.message||'Terjadi kesalahan.';
+      if(message.includes('UNIT_IN_USE')){
+        const detail=message.split('UNIT_IN_USE:')[1]?.trim()||'unit masih dipakai data lain';
+        return toast('Tidak dapat menghapus unit yang masih dipakai. '+detail+'. Pindahkan relasinya terlebih dahulu.');
+      }
+      if(message.includes('UNIT_TYPE_NOT_DELETABLE'))return toast('Hanya Kementerian atau Divisi yang dapat dihapus.');
+      if(message.includes('UNIT_NOT_FOUND'))return toast('Unit sudah tidak ditemukan. Muat ulang halaman.');
+      if(message.includes('ADMIN_REQUIRED'))return toast('Akses ditolak. Hanya admin yang dapat menghapus unit.');
+      return toast('Gagal menghapus unit: '+message);
     }
-    if(!data?.length)return toast('Unit tidak ditemukan atau akses penghapusan ditolak.');
     toast(unitName+' berhasil dihapus.');
     S.viewCache={};S.htmlCache={};
     return render({force:true});
