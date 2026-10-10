@@ -25,6 +25,7 @@ requireMatch(adminCreateUser, /\["user","admin","pembimbing","staf_keuangan","ma
 requireMatch(adminCreateUser, /peran === "kaprodi" && \(!organisasiId \|\| jabatanKode !== "kaprodi" \|\| !unitId\)/, 'Kaprodi account creation must require HMJ, the Kaprodi position, and a program-study unit');
 requireMatch(adminCreateUser, /callerProfile\?\.aktif !== true/, 'Account creation must only be available to active administrator profiles');
 requireMatch(app, /data-unit-delete=/, 'Admin structure view must offer unit deletion');
+requireMatch(app, /S\.user\.peran==='admin'&&\['kementerian','divisi'\]\.includes\(x\.jenis\)/, 'Unit deletion button must be limited to admins and only ministry/division units');
 requireMatch(app, /Ketik HAPUS untuk melanjutkan/, 'Unit deletion must require typed confirmation');
 requireMatch(app, /organization_id:ukmId/, 'Coordinator assignment must support all child organization types');
 requireMatch(coordinatorFunction, /\["HMJ", "UKM", "CLUB"\]\.includes\(child\.tipe\)/, 'Coordinator endpoint must accept HMJ, UKM, and UKM Minat Bakat');
