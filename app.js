@@ -562,11 +562,16 @@ async function loadMemberships() {
   S.positionsLoaded = false;
   if (!sb || !S.user.id) return;
 
+  // Dekan is a global application role and does not need organization memberships.
+  // Keep the position catalog for labels/history, but avoid an unnecessary membership query.
+  const membershipQuery=S.user.peran==='dekan'
+    ? Promise.resolve({data:[],error:null})
+    : sb.from('keanggotaan')
+        .select('id,akun_id,organisasi_id,unit_id,jabatan_id,jabatan,status')
+        .eq('akun_id', S.user.id)
+        .eq('status','aktif');
   const [mRes,pRes] = await Promise.all([
-    sb.from('keanggotaan')
-      .select('id,akun_id,organisasi_id,unit_id,jabatan_id,jabatan,status')
-      .eq('akun_id', S.user.id)
-      .eq('status','aktif'),
+    membershipQuery,
     sb.from('jabatan_organisasi')
       .select('id,kode,nama,tingkat,cakupan,unit_wajib,aktif')
       .eq('aktif',true)
