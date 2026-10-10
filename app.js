@@ -2764,7 +2764,7 @@ const V = {
     if(!d?.proker)return emptyCard('Detail proker tidak ditemukan.','<button class="btn" data-go="proker">Kembali</button>');
     const p=d.proker;
     const proposal=d.docs.find(x=>x.jenis==='proposal');
-    const lpj=d.docs.find(x=>x.jenis==='laporan_akhir');
+    const lpj=d.docs.find(x=>['laporan_akhir','lpj'].includes(x.jenis));
     const isBemReviewerForStage=
       ['bem','bem_from_wakil_rektor','bem_lpj'].includes(p.review_stage) &&
       p.organisasi?.tipe==='HMJ' &&
