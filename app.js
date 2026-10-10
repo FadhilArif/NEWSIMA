@@ -1155,74 +1155,94 @@ async function loadInbox() {
   S.inbox=rows.map(x=>({...x,proker:pmap[x.proker_id],organisasi:omap[x.organisasi_id]}));
 }
 
-async function loadGallery() {
-  S.gallery=[];
+async function loadGallery({force=false}={}) {
   if(!sb)return;
-  const {data,error}=await sb.from('foto_kegiatan')
-    .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
-    .order('proker_id').order('urutan');
-  if(error)return toast('Gagal memuat galeri: '+error.message);
+  const now=Date.now();
+  if(!force&&S.galleryLoadedAt&&now-S.galleryLoadedAt<45000)return S.gallery;
+  if(!force&&S.galleryLoadPromise)return S.galleryLoadPromise;
 
-  const rows=Array.isArray(data)?data:[];
-  const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
-  const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
-  const [prokerResult,userResult,membershipResult]=await Promise.all([
-    ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):Promise.resolve({data:[],error:null}),
-    userIds.length?sb.from('profiles').select('id,nama').in('id',userIds):Promise.resolve({data:[],error:null}),
-    userIds.length?sb.from('keanggotaan').select('akun_id,organisasi_id,status').in('akun_id',userIds).eq('status','aktif'):Promise.resolve({data:[],error:null})
-  ]);
-  if(prokerResult.error)console.warn('Gagal memuat nama Proker galeri:',prokerResult.error.message);
-  if(userResult.error)console.warn('Gagal memuat nama pengunggah galeri:',userResult.error.message);
-  if(membershipResult.error)console.warn('Gagal memuat organisasi pengunggah foto:',membershipResult.error.message);
+  const request=(async()=>{
+    const {data,error}=await sb.from('foto_kegiatan')
+      .select('id,proker_id,dokumen_id,drive_file_id,thumb_path,file_name,mime_type,ukuran_byte,urutan,keterangan,diunggah_oleh,uploaded_at')
+      .order('proker_id').order('urutan');
+    if(error){
+      console.warn('Gagal memuat galeri:',error.message);
+      if(!S.gallery.length)toast('Gagal memuat galeri: '+error.message);
+      return S.gallery;
+    }
 
-  const pmap=Object.fromEntries((prokerResult.data||[]).map(x=>[x.id,x]));
-  const umap=Object.fromEntries((userResult.data||[]).map(x=>[x.id,x]));
-  const membershipRows=Array.isArray(membershipResult.data)?membershipResult.data:[];
-  const membershipsByUser=new Map();
-  membershipRows.forEach(row=>{
-    if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);
-    membershipsByUser.get(row.akun_id).push(row);
-  });
-  const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
-
-  const hydrated=rows.map(x=>({
-    ...x,
-    proker:pmap[x.proker_id]||null,
-    uploader:umap[x.diunggah_oleh]||null,
-    thumb_url:''
-  }));
-  const grouped=new Map();
-  hydrated.forEach(photo=>{
-    const key=String(photo.proker_id);
-    if(!grouped.has(key))grouped.set(key,{proker_id:photo.proker_id,proker:photo.proker,photos:[]});
-    grouped.get(key).photos.push(photo);
-  });
-  const groups=[...grouped.values()].map(group=>{
-    const photos=[...group.photos].sort((a,b)=>Number(a.urutan||0)-Number(b.urutan||0));
-    const cover=photos.find(x=>x.thumb_path)||photos[0]||null;
-    return {...group,photos,cover,photo_count:photos.length};
-  });
-
-  // Organization labels and signed URLs are independent; keep them in one second wave.
-  const [uploaderOrgResult,coverUrls]=await Promise.all([
-    uploaderOrgIds.length?sb.from('organisasi').select('id,nama,tipe').in('id',uploaderOrgIds):Promise.resolve({data:[],error:null}),
-    getActivityThumbnailUrls(groups.map(x=>x.cover?.thumb_path).filter(Boolean))
-  ]);
-  if(uploaderOrgResult.error)console.warn('Gagal memuat label organisasi galeri:',uploaderOrgResult.error.message);
-  const uploaderOrgMap=Object.fromEntries((uploaderOrgResult.data||[]).map(x=>[x.id,x]));
-  S.gallery=groups.map(group=>{
-    const photos=group.photos.map(photo=>{
-      const memberships=membershipsByUser.get(photo.diunggah_oleh)||[];
-      const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[photo.proker_id]?.organisasi_id||''))||memberships[0]||null;
-      return {
-        ...photo,
-        uploader_organization:preferred?(uploaderOrgMap[preferred.organisasi_id]||null):null,
-        thumb_url:photo.thumb_path?(coverUrls.get(photo.thumb_path)||''):''
-      };
+    const rows=Array.isArray(data)?data:[];
+    const ids=[...new Set(rows.map(x=>x.proker_id).filter(Boolean))];
+    const userIds=[...new Set(rows.map(x=>x.diunggah_oleh).filter(Boolean))];
+    const grouped=new Map();
+    rows.forEach(photo=>{
+      const key=String(photo.proker_id);
+      if(!grouped.has(key))grouped.set(key,{proker_id:photo.proker_id,photos:[]});
+      grouped.get(key).photos.push(photo);
     });
-    const cover=photos.find(x=>String(x.id)===String(group.cover?.id))||photos[0]||null;
-    return {...group,photos,cover};
-  });
+    const groups=[...grouped.values()].map(group=>{
+      const photos=[...group.photos].sort((a,b)=>Number(a.urutan||0)-Number(b.urutan||0));
+      const cover=photos.find(x=>x.thumb_path)||photos[0]||null;
+      return {...group,photos,cover,photo_count:photos.length};
+    });
+    const coverPaths=groups.map(group=>group.cover?.thumb_path).filter(Boolean);
+    const organizationLoad=(Array.isArray(S.organizations)&&S.organizations.length)
+      ? Promise.resolve()
+      : loadOrganizations();
+
+    const [prokerResult,userResult,membershipResult,coverUrls]=await Promise.all([
+      ids.length?sb.from('proker').select('id,nama,organisasi_id,tanggal_mulai,tanggal_selesai').in('id',ids):Promise.resolve({data:[],error:null}),
+      userIds.length?sb.from('profiles').select('id,nama').in('id',userIds):Promise.resolve({data:[],error:null}),
+      userIds.length?sb.from('keanggotaan').select('akun_id,organisasi_id,status').in('akun_id',userIds).eq('status','aktif'):Promise.resolve({data:[],error:null}),
+      getActivityThumbnailUrls(coverPaths),
+      organizationLoad
+    ]);
+    if(prokerResult.error)console.warn('Gagal memuat nama Proker galeri:',prokerResult.error.message);
+    if(userResult.error)console.warn('Gagal memuat nama pengunggah galeri:',userResult.error.message);
+    if(membershipResult.error)console.warn('Gagal memuat organisasi pengunggah foto:',membershipResult.error.message);
+
+    const pmap=Object.fromEntries((prokerResult.data||[]).map(x=>[x.id,x]));
+    const umap=Object.fromEntries((userResult.data||[]).map(x=>[x.id,x]));
+    const membershipRows=Array.isArray(membershipResult.data)?membershipResult.data:[];
+    const membershipsByUser=new Map();
+    membershipRows.forEach(row=>{
+      if(!membershipsByUser.has(row.akun_id))membershipsByUser.set(row.akun_id,[]);
+      membershipsByUser.get(row.akun_id).push(row);
+    });
+    const uploaderOrgIds=[...new Set(membershipRows.map(x=>x.organisasi_id).filter(Boolean))];
+    const knownOrganizations=Array.isArray(S.organizations)?S.organizations:[];
+    const knownIds=new Set(knownOrganizations.map(x=>String(x.id)));
+    const missingOrgIds=uploaderOrgIds.filter(id=>!knownIds.has(String(id)));
+    let fallbackOrganizations=[];
+    if(missingOrgIds.length){
+      const fallback=await sb.from('organisasi').select('id,nama,tipe').in('id',missingOrgIds);
+      if(fallback.error)console.warn('Gagal memuat label organisasi galeri:',fallback.error.message);
+      fallbackOrganizations=fallback.data||[];
+    }
+    const uploaderOrgMap=Object.fromEntries([...knownOrganizations,...fallbackOrganizations].map(x=>[x.id,x]));
+
+    S.gallery=groups.map(group=>{
+      const photos=group.photos.map(photo=>{
+        const memberships=membershipsByUser.get(photo.diunggah_oleh)||[];
+        const preferred=memberships.find(m=>String(m.organisasi_id)===String(pmap[photo.proker_id]?.organisasi_id||''))||memberships[0]||null;
+        return {
+          ...photo,
+          proker:pmap[photo.proker_id]||null,
+          uploader:umap[photo.diunggah_oleh]||null,
+          uploader_organization:preferred?(uploaderOrgMap[preferred.organisasi_id]||null):null,
+          thumb_url:photo.thumb_path?(coverUrls.get(photo.thumb_path)||''):''
+        };
+      });
+      const cover=photos.find(x=>String(x.id)===String(group.cover?.id))||photos[0]||null;
+      return {...group,proker:pmap[group.proker_id]||null,photos,cover};
+    });
+    S.galleryLoadedAt=Date.now();
+    return S.gallery;
+  })();
+
+  S.galleryLoadPromise=request;
+  try{return await request;}
+  finally{if(S.galleryLoadPromise===request)S.galleryLoadPromise=null;}
 }
 
 async function loadAnggota() {
