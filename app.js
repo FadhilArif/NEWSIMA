@@ -765,15 +765,20 @@ async function loadProker(_retry=false) {
     && (x.berakhir_pada==null||x.berakhir_pada>=new Date().toISOString().slice(0,10))).map(x=>x.organisasi_id))];
   const coordinatorStages=['koordinator_hmj','koordinator_ukm','koordinator_hmj_lpj','koordinator_ukm_lpj','koordinator_hmj_revisi','koordinator_ukm_revisi','koordinator_hmj_lpj_revisi','koordinator_ukm_lpj_revisi','ukm_koordinator','ukm_koordinator_lpj'];
   const presidentStages=['presiden_bem_hmj','presiden_bem_ukm','presiden_bem_hmj_lpj','presiden_bem_ukm_lpj','ukm_presiden_bem','ukm_presiden_bem_lpj'];
-  const coordinatorQuery=!isWakil&&coordinatorOrgIds.length
-    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds).in('review_stage',coordinatorStages).order('tanggal_mulai',{ascending:true})
-    : Promise.resolve({data:[],error:null});
   const isBemPresident=(S.memberships||[]).some(m=>{
     if(!m.jabatan_id||String(m.akun_id)!==String(S.user.id)||m.status!=='aktif')return false;
     const org=(S.organizations||[]).find(o=>String(o.id)===String(m.organisasi_id));
     const pos=(S.positions||[]).find(j=>String(j.id)===String(m.jabatan_id));
     return org?.tipe==='BEM'&&pos?.kode==='presiden';
   });
+  const coordinatorQuery=!isWakil&&coordinatorOrgIds.length
+    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds).in('review_stage',coordinatorStages).order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
+  const coordinatorFollowupQuery=!isWakil&&!isBemPresident&&coordinatorOrgIds.length
+    ? sb.from('proker').select(selectFields).in('organisasi_id',coordinatorOrgIds)
+      .or('and(status.eq.proposal_diajukan,review_stage.in.(presiden_bem_hmj,hmj_lanjut_kaprodi,kaprodi_hmj,hmj_lanjut_dekan,dekan_hmj,hmj_lanjut_wakil_rektor,wakil_rektor_hmj),and(status.eq.lpj_diajukan,review_stage.in.(presiden_bem_hmj_lpj,hmj_lanjut_kaprodi_lpj,kaprodi_hmj_lpj,hmj_lanjut_dekan_lpj,dekan_hmj_lpj,hmj_lanjut_wakil_rektor_lpj,wakil_rektor_hmj_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+      .order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
   const presidentQuery=!isWakil&&isBemPresident&&bemChildIds.length
     ? sb.from('proker').select(selectFields).in('organisasi_id',bemChildIds).in('review_stage',presidentStages).order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
@@ -789,13 +794,15 @@ async function loadProker(_retry=false) {
   const [
     {data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError},
     {data:bemHmjRows,error:bemHmjError},{data:coordinatorRows,error:coordinatorError},
+    {data:coordinatorFollowupRows,error:coordinatorFollowupError},
     {data:presidentRows,error:presidentError},{data:visibleUkmRows,error:visibleUkmError},
     {data:dekanRows,error:dekanError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,coordinatorFollowupQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
   if(coordinatorError)console.warn('Gagal memuat proker Koordinator BEM:',coordinatorError.message);
+  if(coordinatorFollowupError)console.warn('Gagal memuat proker pantauan koordinator:',coordinatorFollowupError.message);
   if(presidentError)console.warn('Gagal memuat proker review Presiden BEM:',presidentError.message);
   if(visibleUkmError)console.warn('Gagal memuat proker setelah persetujuan Presiden BEM:',visibleUkmError.message);
   if(dekanError)console.warn('Gagal memuat antrean review Dekan Fakultas:',dekanError.message);
@@ -803,11 +810,13 @@ async function loadProker(_retry=false) {
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
   const coordinatorRowsMarked=(coordinatorRows||[]).map(x=>({...x,__collaborator:false,__coordinatorReview:true}));
+  const coordinatorFollowupRowsMarked=(coordinatorFollowupRows||[]).map(x=>({...x,__collaborator:false,__coordinatorReadOnly:true}));
   const presidentRowsMarked=(presidentRows||[]).map(x=>({...x,__collaborator:false,__presidentReview:true}));
   const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
   const dekanReviewRows=(dekanRows||[]).map(x=>({...x,__collaborator:false,__dekanReview:true}));
   const map=new Map();
   [...own,...collab,...childHmjs,...coordinatorRowsMarked,...presidentRowsMarked,...visibleUkm,...dekanReviewRows].forEach(x=>map.set(x.id,{...(map.get(x.id)||{}),...x}));
+  coordinatorFollowupRowsMarked.forEach(x=>{if(!map.has(x.id))map.set(x.id,x);});
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -964,6 +973,8 @@ async function loadProkerDetail() {
     .eq('id', S.selectedProkerId).single();
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
+  const readOnlyAssignedCoordinator=(S.proker||[]).some(row=>String(row.id)===String(S.selectedProkerId)&&row.__coordinatorReadOnly===true);
+
   // Read all documents authorized for this account under dokumen RLS.
   // Do not use the Wakil Rektor review-only RPC here: it filters out documents
   // that have already passed the active stage and would hide their history.
@@ -1018,7 +1029,7 @@ async function loadProkerDetail() {
   const photoWithUrls=photos.map(x=>({...x,thumb_url:x.thumb_path?(thumbUrls.get(x.thumb_path)||''):'',uploader:uploaderMap[x.diunggah_oleh]||null}));
 
   S.detail = {
-    proker:{...proker,organisasi:orgRes.data || null},
+    proker:{...proker,organisasi:orgRes.data || null,__coordinatorReadOnly:readOnlyAssignedCoordinator},
     docs:docsRows,
     kolaborator:kolab.data || [],
     keputusan:decisionRows.map(x=>({
@@ -1030,7 +1041,8 @@ async function loadProkerDetail() {
     photos:photoWithUrls,
     budgetStatus,
     readOnlyCollaborator: String(proker.organisasi_id)!==String(S.orgId||'') &&
-      (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung')
+      (kolab.data||[]).some(x=>String(x.organisasi_id)===String(S.orgId||'') && x.status==='bergabung'),
+    readOnlyAssignedCoordinator
   };
   S.reviewDocId = S.detail.docs.find(x=>x.jenis==='proposal')?.id || null;
 }
@@ -2654,6 +2666,7 @@ const V = {
     };
     const actionLabel=(p)=>{
       if(isStageReviewerFor(p)) return 'Review pengajuan';
+      if(p.__coordinatorReadOnly)return 'Lihat proker';
       if(S.user.peran==='wakil_rektor'){
         if(['proposal_diajukan','lpj_diajukan'].includes(p.status)) return 'Review pengajuan';
         return 'Lihat proker';
@@ -2681,7 +2694,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':p.__coordinatorReadOnly?'<br><span class="chip bl">Koordinator · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -2744,9 +2757,8 @@ const V = {
 
     // A Wakil Rektor is never downgraded to collaborator/read-only mode while
     // the workflow is explicitly routed to the Wakil Rektor.
-    const readOnlyCollaborator=
-      !!d.readOnlyCollaborator &&
-      !isStageReviewer;
+    const readOnlyAssignedCoordinator=!!d.readOnlyAssignedCoordinator||p.__coordinatorReadOnly===true;
+    const readOnlyCollaborator=(!!d.readOnlyCollaborator&&!isStageReviewer)||readOnlyAssignedCoordinator;
 
     const wakilReadOnly=
       S.user.peran==='wakil_rektor' &&
