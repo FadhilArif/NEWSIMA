@@ -3112,7 +3112,7 @@ const V = {
           S.gallery.map(x=>
             '<button type="button" class="card !p-0 overflow-hidden text-left group hover:-translate-y-0.5 transition" data-gallery-proker="'+esc(x.proker_id)+'">'+
               (x.cover?.thumb_url
-                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105">'+
+                ? '<div class="relative h-48 overflow-hidden bg-slate-100"><img loading="lazy" decoding="async" src="'+esc(x.cover.thumb_url)+'" alt="'+esc(x.proker?.nama||'Foto kegiatan')+'" class="w-full h-full object-cover transition duration-300 group-hover:scale-105">'+
                     '<div class="absolute top-3 left-3 max-w-[75%]"><span class="chip bl bg-white/95">'+esc(x.cover.uploader_organization?.nama||'Organisasi pengunggah tidak terdeteksi')+'</span></div>'+
                     '<span class="absolute top-3 right-3 chip bl bg-white/95">'+x.photo_count+' foto</span></div>'
                 : '<div class="relative h-48 bg-slate-100 grid place-items-center text-slate-400">Foto kegiatan'+
@@ -4115,8 +4115,9 @@ document.addEventListener('click', async e => {
       }
 
       updateActivityPhotoProgress(files.length,files.length,files.length+' foto berhasil diunggah.');
+      S.galleryLoadedAt=0;
       await loadProkerDetail();
-      await loadGallery();
+      await loadGallery({force:true});
 
       toast(files.length+' foto kegiatan berhasil diunggah sekaligus.');
       revokeActivityPhotoPreviews();
