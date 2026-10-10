@@ -3133,7 +3133,7 @@ const V = {
       }
 
       if(units.length){
-        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><h4 class="font-bold">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>').join('')+'</div></div>';
+        html+='<div class="card mb-4"><h3>Unit kerja</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">'+units.map(x=>'<div class="rounded-2xl border border-slate-200 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><h4 class="font-bold break-words">'+esc(x.nama)+'</h4><p class="text-xs text-slate-500 mt-1">'+esc(x.jenis)+' · '+esc(org.nama)+'</p></div>'+(canUnit?'<button type="button" class="btn d s shrink-0" data-unit-delete="'+esc(x.id)+'" data-unit-name="'+esc(x.nama)+'">Hapus</button>':'')+'</div></div>').join('')+'</div></div>';
       }else if(type==='BEM'||type==='HMJ'){
         html+='<div class="card mb-4"><p class="sub">Belum ada '+(type==='BEM'?'Kementerian.':'Divisi.')+'</p></div>';
       }
@@ -3448,7 +3448,7 @@ async function render(options={}) {
       const button=form.querySelector('button[type="submit"]');
       if(!select || S.user.peran==='admin')return;
       try{
-        const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',ukm_id:ukmId}});
+        const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'candidates',organization_id:ukmId}});
         const candidates=data?.candidates||[];
         if(!error&&data?.ok){
           select.disabled=false;
@@ -3463,7 +3463,7 @@ async function render(options={}) {
           select.innerHTML='<option value="">Gagal memuat kandidat</option>';
           select.disabled=true;
           if(button)button.disabled=true;
-          console.error('UKM coordinator candidates failed:',{ukmId,reason});
+          console.error('BEM coordinator candidates failed:',{ukmId,reason});
           toast('Kandidat koordinator gagal dimuat: '+reason);
         }
       }catch(error){
@@ -3828,6 +3828,45 @@ document.addEventListener('click', async e => {
   if(galleryClose){
     closeActivityGallery();
     return;
+  }
+
+  const unitDelete=e.target.closest('[data-unit-delete]');
+  if(unitDelete){
+    if(S.user.peran!=='admin'&&!S.permissions?.has('unit.manage')){
+      return toast('Hanya admin atau pemilik hak unit.manage yang boleh menghapus unit.');
+    }
+    if(!sb)return toast('Supabase belum tersedia.');
+    const unitId=String(unitDelete.dataset.unitDelete||'').trim();
+    const unitName=String(unitDelete.dataset.unitName||'unit ini').trim();
+    const organisasiId=['admin','wakil_rektor'].includes(S.user.peran)?(S.structureOrgId||S.orgId):S.orgId;
+    if(!unitId||!organisasiId)return toast('Pilih organisasi dan unit yang akan dihapus.');
+    if(window.prompt('Penghapusan unit "'+unitName+'" hanya diizinkan jika belum dipakai. Ketik HAPUS untuk melanjutkan:')!=='HAPUS')return;
+    const references=await Promise.all([
+      sb.from('keanggotaan').select('id',{count:'exact',head:true}).eq('unit_id',unitId),
+      sb.from('organisasi').select('id',{count:'exact',head:true}).eq('kementerian_id',unitId),
+      sb.from('profiles').select('id',{count:'exact',head:true}).eq('unit_kerja_id',unitId),
+      sb.from('proker').select('id',{count:'exact',head:true}).eq('unit_id',unitId)
+    ]);
+    const referenceError=references.find(x=>x.error)?.error;
+    if(referenceError)return toast('Gagal memeriksa pemakaian unit: '+referenceError.message);
+    const usage=[
+      ['keanggotaan',references[0].count||0],
+      ['organisasi di bawah kementerian',references[1].count||0],
+      ['profil akun',references[2].count||0],
+      ['program kerja',references[3].count||0]
+    ].filter(([,count])=>count>0);
+    if(usage.length){
+      return toast('Unit masih dipakai: '+usage.map(([label,count])=>count+' '+label).join(', ')+'. Pindahkan relasi terlebih dahulu.');
+    }
+    const {data,error}=await sb.from('unit_kerja').delete().eq('id',unitId).eq('organisasi_id',organisasiId).select('id');
+    if(error){
+      if(error.code==='23503')return toast('Unit tidak dapat dihapus karena masih memiliki relasi data.');
+      return toast('Gagal menghapus unit: '+error.message);
+    }
+    if(!data?.length)return toast('Unit tidak ditemukan atau akses penghapusan ditolak.');
+    toast(unitName+' berhasil dihapus.');
+    S.viewCache={};S.htmlCache={};
+    return render({force:true});
   }
 
   const prokerRef=e.target.closest('[data-proker-id]');
@@ -4698,14 +4737,14 @@ document.addEventListener('submit', async e => {
     if(!accountId)return toast('Pilih anggota BEM terlebih dahulu.');
     if(button){button.disabled=true;button.textContent='Menyimpan…';}
     try{
-      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',ukm_id:ukmId,account_id:accountId}});
+      const {data,error}=await sb.functions.invoke('ukm-coordinator',{body:{action:'assign',organization_id:ukmId,account_id:accountId}});
       if(error||!data?.ok){
         const reason=data?.error||error?.message||'Terjadi kesalahan.';
-        console.error('UKM coordinator assignment failed:',{ukmId,accountId,reason,error});
+        console.error('BEM coordinator assignment failed:',{ukmId,accountId,reason,error});
         toast('Gagal menunjuk koordinator: '+reason);
         return;
       }
-      toast('Koordinator UKM berhasil ditunjuk.');
+      toast('Koordinator BEM berhasil ditunjuk.');
       S.viewCache={};
       S.htmlCache={};
       return render({force:true});
