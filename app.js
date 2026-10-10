@@ -802,7 +802,9 @@ async function loadProker(_retry=false) {
     : Promise.resolve({data:[],error:null});
   // RLS returns only HMJ with a recorded successful Dekan forwarding decision.
   const dekanFollowupQuery=isDekan
-    ? sb.from('proker').select(selectFields).order('tanggal_mulai',{ascending:true})
+    ? sb.from('proker').select(selectFields)
+      .or('and(status.eq.proposal_diajukan,review_stage.eq.wakil_rektor_hmj),and(status.eq.lpj_diajukan,review_stage.eq.wakil_rektor_hmj_lpj),and(review_stage.is.null,status.in.(disetujui,berjalan,selesai,lpj_disetujui,tidak_terlaksana,arsip))')
+      .order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
   const [
     {data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError},
