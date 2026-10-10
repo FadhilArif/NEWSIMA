@@ -13,6 +13,9 @@ function requireMatch(source, pattern, label) {
 requireMatch(app, /const NEW_KAPRODI_STAGES=new Set\(\['kaprodi_hmj','kaprodi_hmj_lpj'\]\)/, 'Kaprodi review stages must be registered');
 requireMatch(app, /const NEW_DEKAN_STAGES=new Set\(\['dekan_hmj','dekan_hmj_lpj'\]\)/, 'Dekan review stages must be registered');
 requireMatch(app, /function isNewWorkflowDekan\(p\)\s*\{\s*return S\.user\.peran==='dekan'/, 'Dekan review must be based on the global Dekan role');
+requireMatch(app, /data-go="review:'\+esc\(p\.id\)\+'"/, 'Proker list detail navigation must carry the selected proker ID');
+requireMatch(app, /data-go="review:'\+esc\(x\.proker_id\|\|''\)\+'"/, 'Inbox and report detail navigation must carry the selected proker ID');
+
 
 const loadProkerStart = app.indexOf('async function loadProker(');
 const loadProkerEnd = app.indexOf('\nasync function loadNotifications', loadProkerStart);
