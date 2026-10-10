@@ -65,6 +65,7 @@ begin
 
   select * into v_profile from public.profiles where id=p_account_id;
   if not found then raise exception 'ACCOUNT_NOT_FOUND'; end if;
+
   select * into v_org from public.organisasi where id=p_organisasi_id;
   if not found then raise exception 'ORGANIZATION_INVALID'; end if;
   if v_profile.peran='staf_keuangan' then raise exception 'FINANCE_STAFF_HAS_NO_ORGANIZATION'; end if;
