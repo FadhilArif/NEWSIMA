@@ -11,6 +11,7 @@ const coordinatorFunction = fs.readFileSync('supabase/functions/ukm-coordinator/
 const approvalHistoryMigration = fs.readFileSync('supabase/migrations/202610100008_approval_history_rls_timeout.sql', 'utf8');
 const coordinatorAssignmentMigration = fs.readFileSync('supabase/migrations/202610100009_generalize_bem_coordinator_assignment.sql', 'utf8');
 const safeUnitDeletionMigration = fs.readFileSync('supabase/migrations/202610100010_safe_delete_organization_unit.sql', 'utf8');
+const dekanDirectoryMigration = fs.readFileSync('supabase/migrations/202610100011_dekan_hmj_directory_and_coordinator_readonly.sql', 'utf8');
 
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
@@ -28,6 +29,17 @@ requireMatch(app, /data-unit-delete=/, 'Admin structure view must offer unit del
 requireMatch(app, /S\.user\.peran==='admin'&&\['kementerian','divisi'\]\.includes\(x\.jenis\)/, 'Unit deletion button must be limited to admins and only ministry/division units');
 requireMatch(app, /Ketik HAPUS untuk melanjutkan/, 'Unit deletion must require typed confirmation');
 requireMatch(app, /organization_id:ukmId/, 'Coordinator assignment must support all child organization types');
+requireMatch(app, /sb\.rpc\('get_dekan_hmj_directory'\)/, 'Dekan HMJ directory must use its dedicated secure RPC');
+requireMatch(app, /Cari nama HMJ/, 'Dekan must be able to search HMJ names');
+requireMatch(app, /Cari nama anggota \/ NIM/, 'Dekan must be able to search members by name or NIM');
+requireMatch(app, /coordinatorFollowupQuery/, 'Assigned coordinators must still see their HMJ proker after handoff');
+requireMatch(app, /__coordinatorReadOnly/, 'Coordinator follow-up rows must be read-only');
+requireMatch(app, /galleryLoadedAt<45000/, 'Gallery data must be cached briefly to reduce repeat loading');
+requireMatch(app, /getActivityThumbnailUrls\(coverPaths\)/, 'Gallery cover URL creation must run in parallel with metadata');
+requireMatch(app, /loading="lazy" decoding="async"/, 'Gallery cover images must lazy-load');
+requireMatch(dekanDirectoryMigration, /CREATE OR REPLACE FUNCTION public\.get_dekan_hmj_directory/, 'Dekan directory must use a dedicated RPC');
+requireMatch(dekanDirectoryMigration, /private\.is_active_dekan\(\)/, 'Dekan directory RPC must enforce active Dekan role');
+requireMatch(dekanDirectoryMigration, /proker_select_assigned_coordinator_followup/, 'Assigned coordinator read-only visibility must be enforced by RLS');
 requireMatch(coordinatorFunction, /\["HMJ", "UKM", "CLUB"\]\.includes\(child\.tipe\)/, 'Coordinator endpoint must accept HMJ, UKM, and UKM Minat Bakat');
 requireMatch(coordinatorFunction, /body\.organization_id \|\| body\.ukm_id/, 'Coordinator endpoint must support the generalized organization ID and cached clients');
 requireMatch(coordinatorFunction, /db\.rpc\("assign_bem_coordinator"/, 'Coordinator assignment must use the atomic server-side RPC');
@@ -79,6 +91,6 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase4-01/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase5-01/, 'UI bundle cache key must be refreshed');
 
 console.log('SIMAWA-V2 workflow UI checks passed.');
