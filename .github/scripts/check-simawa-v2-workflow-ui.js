@@ -3,7 +3,32 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const app = fs.readFileSync('app.js', 'utf8');
+const vm = require('node:vm');
+
+const appFiles = [
+  'js/01-config-and-access.js',
+  'js/02-state-and-context.js',
+  'js/03-proker-notifications.js',
+  'js/04-proker-details-gallery.js',
+  'js/05-organization-loaders-cache.js',
+  'js/06-ui-helpers-navigation.js',
+  'js/07-auth-profile-storage.js',
+  'js/08-shell-and-view-registry.js',
+  'js/views/01-dashboard-and-proker.js',
+  'js/views/02-proker-form.js',
+  'js/views/03-proker-review.js',
+  'js/views/04-collaboration-inbox.js',
+  'js/views/05-gallery-reports.js',
+  'js/views/06-organization.js',
+  'js/views/07-budget-finance.js',
+  'js/views/08-organization-admin.js',
+  'js/views/09-account-admin.js',
+  'js/09-render-and-csv.js',
+  'js/10-events-click.js',
+  'js/11-events-input-change.js',
+  'js/12-events-submit-init.js',
+];
+const app = appFiles.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 const html = fs.readFileSync('index.html', 'utf8');
 const cssSource = fs.readFileSync('style.css', 'utf8');
 const adminCreateUser = fs.readFileSync('supabase/functions/admin-create-user/index.ts', 'utf8');
@@ -18,6 +43,15 @@ const dekanFollowupMigration = fs.readFileSync('supabase/migrations/202610100013
 function requireMatch(source, pattern, label) {
   assert.match(source, pattern, label);
 }
+
+assert.doesNotThrow(
+  () => new vm.Script(app, { filename: 'sima-mhs-refactored.js' }),
+  'Split classic scripts must remain valid when joined in page-load order'
+);
+const loadedAppFiles = [...html.matchAll(/<script defer src="(js\/[^"?]+\.js)\?v=20261010-refactor-01"><\/script>/g)].map(match => match[1]);
+assert.deepEqual(loadedAppFiles, appFiles, 'index.html must load each application module exactly once and in dependency order');
+assert.doesNotMatch(html, /<script[^>]+src="app\.js/, 'The monolithic app.js bundle must no longer be loaded');
+
 
 requireMatch(app, /const NEW_KAPRODI_STAGES=new Set\(\['kaprodi_hmj','kaprodi_hmj_lpj'\]\)/, 'Kaprodi review stages must be registered');
 requireMatch(app, /const NEW_DEKAN_STAGES=new Set\(\['dekan_hmj','dekan_hmj_lpj'\]\)/, 'Dekan review stages must be registered');
@@ -77,7 +111,7 @@ requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile t
 requireMatch(cssSource, /SIMAWA V2 Phase 6: enforce a non-collapsing workflow track/, 'Narrow workflow layout must use the high-specificity phase 6 override');
 requireMatch(cssSource, /#app main \.workflow-steps \.workflow-steps-track/, 'Workflow track must keep fixed-width step cards inside its own scroll container');
 requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase6-01/, 'Style cache key must point to the new responsive layout');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase9-01/, 'UI bundle cache key must point to the Dekan follow-up visibility fix');
+assert.ok(html.includes('<script defer src="js/12-events-submit-init.js?v=20261010-refactor-01"></script>'), 'Final app module must use the refactor cache key');
 requireMatch(app, /unit_kerja_id: profile\.unit_kerja_id \|\| null/, 'Kaprodi UI must load the profile program-study ID');
 requireMatch(app, /const profileUnitId=String\(S\.user\.unit_kerja_id\|\|''\)/, 'Kaprodi stage authorization must not depend on an unloaded units cache');
 requireMatch(app, /isNewWorkflowKaprodi\(p\)&&p\.status==='proposal_diajukan'&&p\.review_stage==='kaprodi_hmj'&&isProposalReview/, 'Kaprodi must have actions for a proposal assigned to its stage');
@@ -124,7 +158,7 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase9-01/, 'UI bundle cache key must be refreshed');
+assert.ok(html.includes('<script defer src="js/12-events-submit-init.js?v=20261010-refactor-01"></script>'), 'Final app module must use the refactor cache key');
 requireMatch(app, /const canManageProkerDocuments=!readOnlyCollaborator/, 'Document upload controls must use owner-management permission, not review permission');
 requireMatch(app, /\(canManageProkerDocuments&&p\.status==='selesai'/, 'LPJ upload must only be exposed to the owning organization when the Proker is finished');
 requireMatch(app, /if\(!ownsProkerContext\)return toast\('Hanya pengelola organisasi pemilik Proker/, 'Upload handler must validate the owning organization before sending a file');
