@@ -2764,7 +2764,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-') '</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
