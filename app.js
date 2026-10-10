@@ -2641,7 +2641,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -3030,7 +3030,7 @@ const V = {
       (S.inbox.length?'<div class="grid gap-3">'+S.inbox.map(x=>{
         const stageLabel=reviewStageLabel(x.tahap,x.organisasi?.tipe);
         const kind=x.jenis==='laporan_akhir'?'LPJ':'Proposal';
-        return '<article class="card"><div class="flex flex-wrap items-center justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2 mb-1"><span class="chip bl">'+esc(kind)+'</span><span class="chip wa">'+esc(stageLabel||x.status||'Menunggu review')+'</span></div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'Organisasi')+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka pengajuan</button></div></article>';
+        return '<article class="card"><div class="flex flex-wrap items-center justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2 mb-1"><span class="chip bl">'+esc(kind)+'</span><span class="chip wa">'+esc(stageLabel||x.status||'Menunggu review')+'</span></div><h3>'+esc(x.proker?.nama||'Dokumen')+'</h3><p class="sub mb-0">'+esc(x.organisasi?.nama||'Organisasi')+' · '+esc(x.status||'-')+'</p></div><button class="btn" data-go="review:'+esc(x.proker_id||'')+'">Buka pengajuan</button></div></article>';
       }).join('')+'</div>':emptyCard('Belum ada pengajuan yang menunggu tindakan Anda.'));
   },
   galeri:function(){
@@ -3058,7 +3058,7 @@ const V = {
   },
   laporan:function(){
     return pageHeader('Laporan akhir','Pantau laporan akhir kegiatan.')+
-      (S.reports.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Status</th><th>Tahap</th><th></th></tr></thead><tbody>'+S.reports.map(x=>'<tr><td><b>'+esc(x.proker?.nama||'-')+'</b></td><td>'+chip(x.status||'draft')+'</td><td>'+esc(x.tahap||'-')+'</td><td><button class="btn s" data-go="review" data-proker-id="'+esc(x.proker_id||'')+'">Buka</button></td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada laporan akhir.'));
+      (S.reports.length?'<div class="card overflow-x-auto"><table><thead><tr><th>Proker</th><th>Status</th><th>Tahap</th><th></th></tr></thead><tbody>'+S.reports.map(x=>'<tr><td><b>'+esc(x.proker?.nama||'-')+'</b></td><td>'+chip(x.status||'draft')+'</td><td>'+esc(x.tahap||'-')+'</td><td><button class="btn s" data-go="review:'+esc(x.proker_id||'')+'">Buka</button></td></tr>').join('')+'</tbody></table></div>':emptyCard('Belum ada laporan akhir.'));
   },
   anggota:function(){
     const role=S.user.peran;
