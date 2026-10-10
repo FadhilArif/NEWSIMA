@@ -55,6 +55,6 @@ assert.doesNotMatch(bemInbox, /ownRes/, 'BEM inbox must not include BEM-owned su
 
 requireMatch(app, /Dekan Fakultas.*seluruh program studi/s, 'Dekan Proker view must explain the global faculty scope');
 requireMatch(app, /Review informasi proposal dan LPJ HMJ dari seluruh program studi/, 'Dekan inbox must explain its review-only scope');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase3-01/, 'UI bundle cache key must be refreshed');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase3-02/, 'UI bundle cache key must be refreshed');
 
 console.log('SIMAWA-V2 workflow UI checks passed.');
