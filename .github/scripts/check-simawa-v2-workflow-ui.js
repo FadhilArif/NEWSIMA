@@ -33,6 +33,12 @@ requireMatch(app, /sb\.rpc\('get_dekan_hmj_directory'\)/, 'Dekan HMJ directory m
 requireMatch(app, /Cari nama HMJ/, 'Dekan must be able to search HMJ names');
 requireMatch(app, /Cari nama anggota \/ NIM/, 'Dekan must be able to search members by name or NIM');
 requireMatch(app, /coordinatorFollowupQuery/, 'Assigned coordinators must still see their HMJ proker after handoff');
+assert.ok(
+  app.includes(".or('and(status.eq.proposal_diajukan,review_stage.in.(presiden_bem_hmj") &&
+  app.includes("wakil_rektor_hmj)),and(status.eq.lpj_diajukan") &&
+  app.includes("wakil_rektor_hmj_lpj)),and(review_stage.is.null"),
+  'Coordinator follow-up filters must use three sibling OR clauses'
+);
 requireMatch(app, /__coordinatorReadOnly/, 'Coordinator follow-up rows must be read-only');
 requireMatch(app, /galleryLoadedAt<45000/, 'Gallery data must be cached briefly to reduce repeat loading');
 requireMatch(app, /getActivityThumbnailUrls\(coverPaths\)/, 'Gallery cover URL creation must run in parallel with metadata');
