@@ -62,7 +62,7 @@ requireMatch(cssSource, /workflow-steps\{\s*display:block!important;/, 'Mobile t
 requireMatch(cssSource, /SIMAWA V2 Phase 6: enforce a non-collapsing workflow track/, 'Narrow workflow layout must use the high-specificity phase 6 override');
 requireMatch(cssSource, /#app main \.workflow-steps \.workflow-steps-track/, 'Workflow track must keep fixed-width step cards inside its own scroll container');
 requireMatch(html, /style\.css\?v=20261010-simawa-v2-phase6-01/, 'Style cache key must point to the new responsive layout');
-requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase6-01/, 'UI bundle cache key must point to the Kaprodi action fix');
+requireMatch(html, /app\.js\?v=20261010-simawa-v2-phase7-01/, 'UI bundle cache key must point to the document access fix');
 requireMatch(app, /unit_kerja_id: profile\.unit_kerja_id \|\| null/, 'Kaprodi UI must load the profile program-study ID');
 requireMatch(app, /const profileUnitId=String\(S\.user\.unit_kerja_id\|\|''\)/, 'Kaprodi stage authorization must not depend on an unloaded units cache');
 requireMatch(app, /isNewWorkflowKaprodi\(p\)&&p\.status==='proposal_diajukan'&&p\.review_stage==='kaprodi_hmj'&&isProposalReview/, 'Kaprodi must have actions for a proposal assigned to its stage');
