@@ -800,13 +800,17 @@ async function loadProker(_retry=false) {
   const dekanQuery=isDekan
     ? sb.from('proker').select(selectFields).in('review_stage',['dekan_hmj','dekan_hmj_lpj']).order('tanggal_mulai',{ascending:true})
     : Promise.resolve({data:[],error:null});
+  // RLS returns only HMJ with a recorded successful Dekan forwarding decision.
+  const dekanFollowupQuery=isDekan
+    ? sb.from('proker').select(selectFields).order('tanggal_mulai',{ascending:true})
+    : Promise.resolve({data:[],error:null});
   const [
     {data:ownRows,error:ownError},{data:collabProkers,error:collabProkerError},
     {data:bemHmjRows,error:bemHmjError},{data:coordinatorRows,error:coordinatorError},
     {data:coordinatorFollowupRows,error:coordinatorFollowupError},
     {data:presidentRows,error:presidentError},{data:visibleUkmRows,error:visibleUkmError},
-    {data:dekanRows,error:dekanError}
-  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,coordinatorFollowupQuery,presidentQuery,visibleUkmQuery,dekanQuery]);
+    {data:dekanRows,error:dekanError},{data:dekanFollowupRows,error:dekanFollowupError}
+  ]=await Promise.all([ownQuery,collabQuery,bemHmjQuery,coordinatorQuery,coordinatorFollowupQuery,presidentQuery,visibleUkmQuery,dekanQuery,dekanFollowupQuery]);
   if(ownError)return toast('Gagal memuat proker: '+ownError.message);
   if(collabProkerError)console.warn('Gagal memuat proker kolaborasi:',collabProkerError.message);
   if(bemHmjError)console.warn('Gagal memuat proker HMJ yang menunggu review BEM:',bemHmjError.message);
@@ -815,6 +819,7 @@ async function loadProker(_retry=false) {
   if(presidentError)console.warn('Gagal memuat proker review Presiden BEM:',presidentError.message);
   if(visibleUkmError)console.warn('Gagal memuat proker setelah persetujuan Presiden BEM:',visibleUkmError.message);
   if(dekanError)console.warn('Gagal memuat antrean review Dekan Fakultas:',dekanError.message);
+  if(dekanFollowupError)console.warn('Gagal memuat proker pantauan Dekan Fakultas:',dekanFollowupError.message);
   const own=(ownRows||[]).map(x=>({...x,__collaborator:false}));
   const collab=(collabProkers||[]).map(x=>({...x,__collaborator:true}));
   const childHmjs=(bemHmjRows||[]).map(x=>({...x,__collaborator:false,__hmjReview:true}));
@@ -823,9 +828,11 @@ async function loadProker(_retry=false) {
   const presidentRowsMarked=(presidentRows||[]).map(x=>({...x,__collaborator:false,__presidentReview:true}));
   const visibleUkm=(visibleUkmRows||[]).map(x=>({...x,__collaborator:false,__ukmBphReadOnly:true}));
   const dekanReviewRows=(dekanRows||[]).map(x=>({...x,__collaborator:false,__dekanReview:true}));
+  const dekanFollowupRowsMarked=(dekanFollowupRows||[]).map(x=>({...x,__collaborator:false,__dekanReadOnly:true}));
   const map=new Map();
   [...own,...collab,...childHmjs,...coordinatorRowsMarked,...presidentRowsMarked,...visibleUkm,...dekanReviewRows].forEach(x=>map.set(x.id,{...(map.get(x.id)||{}),...x}));
   coordinatorFollowupRowsMarked.forEach(x=>{if(!map.has(x.id))map.set(x.id,x);});
+  dekanFollowupRowsMarked.forEach(x=>{if(!map.has(x.id))map.set(x.id,x);});
   const rows=[...map.values()];
 
   const ids=rows.map(x=>x.id);
@@ -1012,6 +1019,7 @@ async function loadProkerDetail() {
   if (error) return toast('Gagal memuat detail proker: ' + error.message);
 
   const readOnlyAssignedCoordinator=(S.proker||[]).some(row=>String(row.id)===String(S.selectedProkerId)&&row.__coordinatorReadOnly===true);
+  const readOnlyDekanFollowup=(S.proker||[]).some(row=>String(row.id)===String(S.selectedProkerId)&&row.__dekanReadOnly===true);
 
   // Read all documents authorized for this account under dokumen RLS.
   // Do not use the Wakil Rektor review-only RPC here: it filters out documents
@@ -1067,7 +1075,8 @@ async function loadProkerDetail() {
   const photoWithUrls=photos.map(x=>({...x,thumb_url:x.thumb_path?(thumbUrls.get(x.thumb_path)||''):'',uploader:uploaderMap[x.diunggah_oleh]||null}));
 
   S.detail = {
-    proker:{...proker,organisasi:orgRes.data || null,__coordinatorReadOnly:readOnlyAssignedCoordinator},
+    proker:{...proker,organisasi:orgRes.data || null,__coordinatorReadOnly:readOnlyAssignedCoordinator,__dekanReadOnly:readOnlyDekanFollowup},
+    readOnlyDekanFollowup,
     docs:docsRows,
     kolaborator:kolab.data || [],
     keputusan:decisionRows.map(x=>({
@@ -2725,7 +2734,7 @@ const V = {
     };
     const actionLabel=(p)=>{
       if(isStageReviewerFor(p)) return 'Review pengajuan';
-      if(p.__coordinatorReadOnly)return 'Lihat proker';
+      if(p.__coordinatorReadOnly||p.__dekanReadOnly)return 'Lihat proker';
       if(S.user.peran==='wakil_rektor'){
         if(['proposal_diajukan','lpj_diajukan'].includes(p.status)) return 'Review pengajuan';
         return 'Lihat proker';
@@ -2745,7 +2754,7 @@ const V = {
       return 'Lihat detail';
     };
     const prokerDescription=S.user.peran==='dekan'
-      ? 'Antrean proposal dan LPJ HMJ lintas seluruh program studi yang menunggu review Dekan Fakultas.'
+      ? 'Antrean review aktif Dekan dan pantauan proker HMJ yang sudah diteruskan atau selesai direview.'
       : S.user.peran==='kaprodi'
         ? 'Program kerja HMJ pada program studi Anda, termasuk pengajuan yang menunggu review Kaprodi.'
         : 'Kelola program kerja Anda.';
@@ -2753,7 +2762,7 @@ const V = {
       '<div class="bar2"><input id="q" placeholder="Cari proker atau ketua" value="'+esc(S.q)+'"></div>'+
       '<div class="tabs">'+tabs.map(x=>'<button class="'+(S.tab===x[0]?'on':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
       (f.length?'<div class="card overflow-x-auto proker-table"><table><thead><tr><th>Program</th><th>Organisasi</th><th>Jadwal</th><th>Diajukan</th><th>Cair</th><th>Status</th><th>Tahap</th><th>Tindak lanjut</th></tr></thead><tbody>'+
-        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':p.__coordinatorReadOnly?'<br><span class="chip bl">Koordinator · lihat saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
+        f.map(p=>'<tr><td><b>'+esc(p.nama)+'</b><br><small>Ketua: '+esc(p.ketua||'-')+'</small></td><td>'+esc(p.organisasi?.nama||'-')+((p.__collaborator&&!isStageReviewerFor(p))?'<br><span class="chip bl">Kolaborasi · lihat saja</span>':p.__coordinatorReadOnly?'<br><span class="chip bl">Koordinator · lihat saja</span>':p.__dekanReadOnly?'<br><span class="chip bl">Pantauan Dekan · baca saja</span>':'')+'</td><td>'+dateID(p.tanggal_mulai)+'</td><td>'+rp(p.ajuan)+'</td><td>'+rp(p.cair)+'</td><td>'+chip(p.status)+'</td><td>'+esc(reviewStageLabel(p.review_stage,p.organisasi?.tipe)||'—')+'</td><td><button class="btn s" data-go="review:'+esc(p.id)+'">'+esc(actionLabel(p))+'</button></td></tr>').join('')+
         '</tbody></table></div>':emptyCard('Belum ada proker yang sesuai.'));
   },
   form:function(){
@@ -2817,20 +2826,21 @@ const V = {
     // A Wakil Rektor is never downgraded to collaborator/read-only mode while
     // the workflow is explicitly routed to the Wakil Rektor.
     const readOnlyAssignedCoordinator=!!d.readOnlyAssignedCoordinator||p.__coordinatorReadOnly===true;
+    const readOnlyDekanFollowup=!!d.readOnlyDekanFollowup||p.__dekanReadOnly===true;
     const readOnlyCollaborator=(!!d.readOnlyCollaborator&&!isStageReviewer)||readOnlyAssignedCoordinator;
 
     const wakilReadOnly=
       S.user.peran==='wakil_rektor' &&
       !isWakilReviewerForStage;
-    const canEdit=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
-    const canCreate=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
+    const canEdit=!readOnlyCollaborator&&!readOnlyDekanFollowup && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.edit');
+    const canCreate=!readOnlyCollaborator&&!readOnlyDekanFollowup && S.user.peran!=='wakil_rektor' && S.permissions?.has('proker.create');
     // Review permission is not upload permission: only the owning organization may manage files.
-    const canManageProkerDocuments=!readOnlyCollaborator && S.user.peran!=='wakil_rektor' && (
+    const canManageProkerDocuments=!readOnlyCollaborator&&!readOnlyDekanFollowup && S.user.peran!=='wakil_rektor' && (
       S.user.peran==='admin' ||
       (String(S.orgId||'')===String(p.organisasi_id||'') &&
        (S.permissions?.has('proker.create')||S.permissions?.has('proker.edit')))
     );
-    const canReviewLegacy=!readOnlyCollaborator && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
+    const canReviewLegacy=!readOnlyCollaborator&&!readOnlyDekanFollowup && !wakilReadOnly && (S.permissions?.has('dokumen.review')||S.permissions?.has('laporan.review'));
     const canReviewStage=
       isUkmStageReviewerFor ||
       isWakilReviewerForStage ||
@@ -3053,6 +3063,8 @@ const V = {
         '</div></div>';
     }
     else if(isLpjReview) actions='<div class="w-full"><label>Komentar review LPJ'+(['ukm_koordinator_lpj','ukm_presiden_bem_lpj','presiden_bem_ukm_lpj','presiden_bem_hmj_lpj','kaprodi_hmj_lpj','wakil_rektor_lpj','wakil_rektor_ukm_lpj','wakil_rektor_hmj_lpj'].includes(p.review_stage)?' (wajib saat revisi)':'')+'</label><textarea id="workflow-comment" rows="3" placeholder="Catatan review LPJ"></textarea><div class="flex flex-wrap gap-2 mt-3">'+action('reject_lpj',['presiden_bem_ukm_lpj','presiden_bem_hmj_lpj'].includes(p.review_stage)?'Kembalikan ke Koordinator BEM':'Kembalikan untuk revisi','d')+action('approve_lpj',['ukm_koordinator_lpj','koordinator_hmj_lpj','koordinator_ukm_lpj'].includes(p.review_stage)?'Setujui & teruskan ke Presiden BEM':['ukm_presiden_bem_lpj','presiden_bem_ukm_lpj'].includes(p.review_stage)?'ACC & teruskan ke Wakil Rektor 1':p.review_stage==='presiden_bem_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Kaprodi':p.review_stage==='kaprodi_hmj_lpj'?'ACC & lanjut ke HMJ untuk pengajuan Dekan':NEW_WR_STAGES.has(p.review_stage)?'ACC LPJ':'Setujui LPJ','')+'</div></div>';
+
+    if(readOnlyDekanFollowup)actions='<div class="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><b>Mode pantauan Dekan · baca saja.</b> Proker ini sudah pernah diteruskan oleh Dekan ke tahap berikutnya. Anda tetap dapat melihat detail, dokumen, tracking, dan riwayat persetujuan tanpa mengubah workflow.</div>';
 
     const ukmJourney=isUkmProker(p),hmjJourney=isHmjProker(p);
     const processKind=hmjJourney?'hmj':ukmJourney?'ukm':'bem';
