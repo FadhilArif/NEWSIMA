@@ -56,11 +56,11 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile, error: callerProfileError } = await adminClient
     .from("profiles")
-    .select("id,peran")
+    .select("id,peran,aktif")
     .eq("id", callerData.user.id)
     .single();
 
-  if (callerProfileError || callerProfile?.peran !== "admin") {
+  if (callerProfileError || callerProfile?.peran !== "admin" || callerProfile?.aktif !== true) {
     return json({ error: "FORBIDDEN" }, 403);
   }
 
@@ -100,8 +100,9 @@ Deno.serve(async (req) => {
   if (peran === "kaprodi" && (!organisasiId || jabatanKode !== "kaprodi" || !unitId)) {
     return json({ error: "KAPRODI_REQUIRES_HMJ_AND_PROGRAM_STUDY" }, 400);
   }
-  if (peran === "dekan" && (!organisasiId || jabatanKode !== "dekan" || unitId)) {
-    return json({ error: "DEKAN_REQUIRES_HMJ_WITHOUT_UNIT" }, 400);
+  // Dekan is a faculty-wide application role, not a membership attached to one HMJ.
+  if (peran === "dekan" && (organisasiId || jabatanKode || unitId)) {
+    return json({ error: "DEKAN_GLOBAL_ROLE_NO_ORG_ASSIGNMENT" }, 400);
   }
 
   const temporaryPassword = randomPassword();
