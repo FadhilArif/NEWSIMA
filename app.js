@@ -703,6 +703,7 @@ async function loadProker(_retry=false) {
 
   const isWakil=S.user.peran==='wakil_rektor';
   const isPembimbing=S.user.peran==='pembimbing';
+  const isDekan=S.user.peran==='dekan';
   const activeOrg=(S.organizations||[]).find(o=>String(o.id)===String(S.orgId||''));
   const selectFields='id,organisasi_id,unit_id,nama,deskripsi,jadwal_rencana,tanggal_mulai,tanggal_selesai,batas_lpj,tempat,ketua_pelaksana,jenis,pengajuan,status,review_stage,alasan_tidak_terlaksana,dibuat_oleh,sumber_dana_kode,sumber_dana_detail,anggaran_total,anggaran_diajukan,anggaran_disetujui,anggaran_disetujui_oleh,anggaran_disetujui_pada';
 
